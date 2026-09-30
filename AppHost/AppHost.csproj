@@ -1,0 +1,28 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.0">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AspireUseCliBundle>true</AspireUseCliBundle>
+    <UserSecretsId>e10267cd-2bf7-45b3-923d-138f430040e7</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\API\API.csproj" />
+    <ProjectReference Include="..\Web\Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" Version="13.6.0" />
+    <PackageReference Include="Aspire.Hosting.Azure.Functions" Version="13.6.0" />
+    <PackageReference Include="Aspire.Hosting.Azure.KeyVault" Version="13.6.0" />
+    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.6.0" />
+    <PackageReference Include="Aspire.Hosting.Azure.Storage" Version="13.6.0" />
+    <PackageReference Include="Aspire.Hosting.Blazor" Version="13.6.0-preview.1.26479.8" />
+    <PackageReference Include="Aspire.Hosting.Foundry" Version="13.6.0-preview.1.26479.8" />
+    <PackageReference Include="Aspire.Hosting.Redis" Version="13.6.0" />
+  </ItemGroup>
+
+</Project>
