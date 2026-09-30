@@ -53,11 +53,11 @@ public static class Services
                 .WithName("FlowMate");
 
             // Add KeyVault
-            // var keyVaultConfig = configuration
-            //     .GetSection("KeyVault")
-            //     .Get<KeyVaultConfig>();
+            var keyVaultConfig = configuration
+                .GetSection("KeyVault")
+                .Get<KeyVaultConfig>();
 
-            // config.AddSecretClient(new Uri(configuration["KEYVAULT_URI"] ?? throw new InvalidOperationException("KEYVAULT_URI is not set in configuration")));
+            config.AddSecretClient(new Uri(configuration["FLOWMATE_SECRETS_URI"] ?? throw new InvalidOperationException("FLOWMATE_SECRETS_URI is not set in configuration")));
         });
 
         #endregion
@@ -72,7 +72,12 @@ public static class Services
 
         services.AddDbContext<DatabaseContext>(options =>
         {
-            var accountEndpoint = NormaliseCosmosAccountEndpoint(configuration["Database:AccountName"] ?? configuration["Database__AccountName"] ?? string.Empty);
+            var accountEndpoint = NormaliseCosmosAccountEndpoint(
+                configuration["Database:AccountEndpoint"]
+                    ?? configuration["Database__AccountEndpoint"]
+                    ?? configuration["Database:AccountName"]
+                    ?? configuration["Database__AccountName"]
+                    ?? string.Empty);
             var accountKey = configuration["Database:Key"] ?? configuration["Database__Key"] ?? string.Empty;
 
             var databaseName = ResolveCosmosDatabaseName(configuration, globalConfig.Environment);
