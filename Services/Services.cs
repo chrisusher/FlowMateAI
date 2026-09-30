@@ -50,7 +50,7 @@ public static class Services
                 ?? throw new InvalidOperationException("ConnectionStrings:Storage is not set in configuration");
 
             config.AddBlobServiceClient(storageConnectionString)
-                .WithName("AppTemplate");
+                .WithName("FlowMate");
 
             // Add KeyVault
             // var keyVaultConfig = configuration
@@ -70,28 +70,28 @@ public static class Services
             .GetSection("Global")
             .Get<GlobalConfig>() ?? new GlobalConfig();
 
-//         services.AddDbContext<DatabaseContext>(options =>
-//         {
-//             var accountEndpoint = NormaliseCosmosAccountEndpoint(configuration["Database:AccountName"] ?? configuration["Database__AccountName"] ?? string.Empty);
-//             var accountKey = configuration["Database:Key"] ?? configuration["Database__Key"] ?? string.Empty;
+        services.AddDbContext<DatabaseContext>(options =>
+        {
+            var accountEndpoint = NormaliseCosmosAccountEndpoint(configuration["Database:AccountName"] ?? configuration["Database__AccountName"] ?? string.Empty);
+            var accountKey = configuration["Database:Key"] ?? configuration["Database__Key"] ?? string.Empty;
 
-//             var databaseName = ResolveCosmosDatabaseName(configuration, globalConfig.Environment);
+            var databaseName = ResolveCosmosDatabaseName(configuration, globalConfig.Environment);
 
-//             Console.WriteLine($"[AppTemplate] Using Cosmos endpoint '{accountEndpoint}' and database '{databaseName}'.");
+            Console.WriteLine($"[FlowMate] Using Cosmos endpoint '{accountEndpoint}' and database '{databaseName}'.");
 
-//             options.UseCosmos(
-//                 accountEndpoint,
-//                 accountKey,
-//                 databaseName
-//             );
+            options.UseCosmos(
+                accountEndpoint,
+                accountKey,
+                databaseName
+            );
 
-//             options.EnableSensitiveDataLogging();
+            options.EnableSensitiveDataLogging();
 
-// #if DEBUG
-//             options.EnableDetailedErrors();
-//             options.LogTo(Console.WriteLine, LogLevel.Information);
-// #endif
-//         });
+#if DEBUG
+            options.EnableDetailedErrors();
+            options.LogTo(Console.WriteLine, LogLevel.Information);
+#endif
+        });
 
         services.AddTransient<IStorageService>(services =>
         {

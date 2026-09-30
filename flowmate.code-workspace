@@ -1,0 +1,31 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "extensions": {
+        "recommendations": [
+            "ms-azuretools.vscode-azurefunctions",
+            "ms-dotnettools.csharp",
+            "microsoft-aspire.aspire-vscode",
+            "ms-dotnettools.csdevkit"
+        ]
+    },
+    "settings": {
+        "azureFunctions.preDeployTask": "publish Backend (functions)",
+        "chat.mcp.gallery.enabled": true,
+        "chat.viewSessions.enabled": true,
+        "chat.tools.terminal.autoApprove": {
+            "git rev-parse --show-toplevel": true,
+            "git status --short": true,
+            "git diff": true,
+            "dotnet --version": true,
+            "dotnet --info": true
+        },
+        "azureFunctions.projectRuntime": "~4",
+        "azureFunctions.projectLanguage": "C#",
+        "dotnet.defaultSolution": "FlowMateAI.slnx",
+        "explorer.fileNesting.enabled": true
+    }
+}

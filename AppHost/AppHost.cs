@@ -2,7 +2,7 @@ using Aspire.Hosting.Foundry;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-builder.Environment.ApplicationName = "App-Template";
+builder.Environment.ApplicationName = "FlowMate AI";
 
 // Parameters
 var environment = builder.AddParameter("environment", false);
@@ -29,24 +29,23 @@ storage.AddQueues("queues");
 storage.AddTables("tables");
 
 // Cosmos DB
-var cosmosDb = builder.AddAzureCosmosDB("cosmosDb");
+var cosmosDb = builder.AddAzureCosmosDB("cosmosDb")
+.WithAccessKeyAuthentication();
 
-var database = cosmosDb.AddCosmosDatabase("database", "app-template");
-database.AddContainer("weather", "/id", "weather");
+var database = cosmosDb.AddCosmosDatabase("database", "flowmate");
 
 // Key Vault
-var keyVault = builder.AddAzureKeyVault("app-template-secrets");
+var keyVault = builder.AddAzureKeyVault("flowmate-secrets");
 
 // Service Bus
-var serviceBus = builder.AddAzureServiceBus("app-template-service-bus");
-var weatherQueue = serviceBus.AddServiceBusQueue("weather-queue", "weather-queue");
+var serviceBus = builder.AddAzureServiceBus("flowmate-service-bus");
 
 var dashboardOtlpEndpoint = builder.Configuration["ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL"];
 var otlpProtocol = string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_PROTOCOL"]) ? "grpc" : builder.Configuration["OTEL_EXPORTER_OTLP_PROTOCOL"];
 
 // Foundry
-var foundry = builder.AddFoundry("app-template-ai");
-var foundryProject = foundry.AddProject("app-template-ai-project");
+var foundry = builder.AddFoundry("flowmate-ai");
+var foundryProject = foundry.AddProject("flowmate-ai-project");
 var luna = foundry.AddDeployment("gpt56-luna", FoundryModel.OpenAI.Gpt56Luna);
 
 var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
@@ -63,7 +62,6 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithReference(keyVault)
     .WithReference(database)
     .WithReference(serviceBus)
-    .WithReference(weatherQueue)
     .WithReference(foundryProject)
     .WithExternalHttpEndpoints();
 
