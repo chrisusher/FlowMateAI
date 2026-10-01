@@ -10,7 +10,7 @@ public class TestConfig
 
     public bool LocalSetup()
     {
-        switch(Environment)
+        switch (Environment)
         {
             case EnvironmentType.Local:
             case EnvironmentType.Development:

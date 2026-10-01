@@ -18,6 +18,8 @@ The signed-in Azure account needs permission to create resource groups and resou
 
 ## GitHub Actions settings
 
+For the Auth0 dashboard setup and the exact frontend/API values, see [Auth0 setup for Azure](auth0-azure-setup.md).
+
 Configure these repository secrets:
 
 - `AZURE_STATIC_WEB_APPS_API_TOKEN`: deployment token for the Static Web App.

@@ -17,7 +17,9 @@ public sealed class StripeWebhook(IBillingService billing)
         var signature = request.Headers.TryGetValues("Stripe-Signature", out var values) ? values.FirstOrDefault() : null;
         var accepted = await billing.ProcessWebhookAsync(payload, signature, cancellationToken);
         var response = request.CreateResponse(accepted ? HttpStatusCode.OK : HttpStatusCode.BadRequest);
-        if (!accepted) await response.WriteStringAsync("Invalid Stripe webhook signature or payload.", cancellationToken);
+
+        if (!accepted)
+            await response.WriteStringAsync("Invalid Stripe webhook signature or payload.", cancellationToken);
         return response;
     }
 }

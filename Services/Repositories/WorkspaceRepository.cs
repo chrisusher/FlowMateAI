@@ -20,7 +20,10 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
     {
         await EnsureCreatedAsync(cancellationToken);
         var document = await database.Workspaces.FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
-        if (document is not null && !string.IsNullOrEmpty(expectedRevision) && document.ETag != expectedRevision) return null;
+
+        if (document is not null && !string.IsNullOrEmpty(expectedRevision) && document.ETag != expectedRevision)
+            return null;
+
         if (document is null)
         {
             document = new WorkspaceDocument { Id = "workspace", UserId = ownerId };
@@ -67,11 +70,13 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
 
     private async Task EnsureCreatedAsync(CancellationToken cancellationToken)
     {
-        if (_initialized) return;
+        if (_initialized)
+            return;
         await InitializationLock.WaitAsync(cancellationToken);
         try
         {
-            if (_initialized) return;
+            if (_initialized)
+                return;
             await database.Database.EnsureCreatedAsync(cancellationToken);
             _initialized = true;
         }

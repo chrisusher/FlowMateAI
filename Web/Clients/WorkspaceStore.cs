@@ -22,6 +22,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         var module = await ModuleAsync();
         ClientId = await module.InvokeAsync<string>("getClientId");
         var json = await module.InvokeAsync<string?>("read", StorageKey);
+
         if (!string.IsNullOrWhiteSpace(json))
             Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, JsonOptions) ?? new();
 
@@ -34,11 +35,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 using var response = await http.SendAsync(request);
                 response.EnsureSuccessStatusCode();
                 var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(JsonOptions);
+
                 if (remote is not null)
                 {
                     Data = remote.Workspace;
                     _revision = remote.Revision;
-                    if (Data.Projects.Count == 0) Data.DisplayName = auth.Session.Name ?? "FlowMate user";
+
+                    if (Data.Projects.Count == 0)
+                        Data.DisplayName = auth.Session.Name ?? "FlowMate user";
                 }
             }
             catch (HttpRequestException) { /* Keep the user's local workspace available during an API outage. */ }
@@ -67,6 +71,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         Data.ClientId = ClientId;
         var json = JsonSerializer.Serialize(Data, JsonOptions);
         await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
+
         if (auth.Session.SignedIn && !string.IsNullOrWhiteSpace(auth.Session.AccessToken))
         {
             try
@@ -77,19 +82,24 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 };
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                 using var response = await http.SendAsync(request);
+
                 if (response.IsSuccessStatusCode)
                 {
                     var saved = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(JsonOptions);
-                    if (saved is not null) _revision = saved.Revision;
+
+                    if (saved is not null)
+                        _revision = saved.Revision;
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
                 {
                     using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
                     refresh.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                     using var latest = await http.SendAsync(refresh);
+
                     if (latest.IsSuccessStatusCode)
                     {
                         var remote = await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(JsonOptions);
+
                         if (remote is not null)
                         {
                             Data = remote.Workspace;
@@ -110,15 +120,19 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     public async Task<CoachResponse?> AskCoachAsync(string prompt, string? conversationId, CancellationToken cancellationToken = default)
     {
-        if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken)) return null;
+        if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
+            return null;
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/coach")
         {
             Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: JsonOptions)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
         using var response = await http.SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode) return null;
+
+        if (!response.IsSuccessStatusCode)
+            return null;
         var result = await response.Content.ReadFromJsonAsync<CoachResponse>(JsonOptions, cancellationToken);
+
         if (result is not null)
         {
             _revision = result.Revision;
@@ -133,15 +147,19 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private void RecoverTimer()
     {
         var timer = Data.Timer;
+
         if ((timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak) && timer.EndsAt is { } end && (timer.OwnerClientId == ClientId || end <= DateTimeOffset.UtcNow))
         {
             var left = (int)Math.Ceiling((end - DateTimeOffset.UtcNow).TotalSeconds);
-            if (left > 0) { timer.RemainingSeconds = left; return; }
+
+            if (left > 0)
+            { timer.RemainingSeconds = left; return; }
 
             if (timer.Phase == TimerPhase.Focus)
             {
                 foreach (var interval in timer.CompletedIntervals)
                     RecordFocus(interval.StartedAt, interval.EndedAt, timer.TaskId, timer.ProjectId, (int)(interval.EndedAt - interval.StartedAt).TotalSeconds);
+
                 if (timer.StartedAt is { } started)
                     RecordFocus(started, end, timer.TaskId, timer.ProjectId, Math.Max(0, timer.DurationSeconds - timer.CompletedIntervals.Sum(i => (int)(i.EndedAt - i.StartedAt).TotalSeconds)));
             }
@@ -157,9 +175,12 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public void RecordFocus(DateTimeOffset started, DateTimeOffset ended, string? taskId, string projectId, int plannedSeconds)
     {
         var finish = started.AddSeconds(Math.Max(0, Math.Min((ended - started).TotalSeconds, plannedSeconds)));
-        if (finish <= started) return;
+
+        if (finish <= started)
+            return;
         TimeZoneInfo zone;
-        try { zone = TimeZoneInfo.FindSystemTimeZoneById(Data.TimeZone); }
+        try
+        { zone = TimeZoneInfo.FindSystemTimeZoneById(Data.TimeZone); }
         catch { zone = TimeZoneInfo.Local; }
 
         var cursor = started;
@@ -169,13 +190,17 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             var localDate = TimeZoneInfo.ConvertTime(cursor, zone).Date;
             var nextMidnight = DateTime.SpecifyKind(localDate.AddDays(1), DateTimeKind.Unspecified);
-            while (zone.IsInvalidTime(nextMidnight)) nextMidnight = nextMidnight.AddMinutes(1);
+            while (zone.IsInvalidTime(nextMidnight))
+                nextMidnight = nextMidnight.AddMinutes(1);
             var nextBoundary = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(nextMidnight, zone), TimeSpan.Zero);
             var segmentEnd = nextBoundary < finish ? nextBoundary : finish;
-            if (segmentEnd <= cursor) segmentEnd = finish;
+
+            if (segmentEnd <= cursor)
+                segmentEnd = finish;
             elapsed += (segmentEnd - cursor).TotalSeconds;
             var cumulativeMinutes = (int)Math.Floor(elapsed / 60d);
             var segmentMinutes = cumulativeMinutes - assignedMinutes;
+
             if (segmentMinutes > 0)
                 Data.Sessions.Add(new() { StartedAt = cursor, EndedAt = segmentEnd, FocusMinutes = segmentMinutes, TaskId = taskId, ProjectId = projectId });
             assignedMinutes = cumulativeMinutes;

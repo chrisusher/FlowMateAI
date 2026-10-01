@@ -31,7 +31,9 @@ public sealed class Billing(Auth0TokenValidator tokens, IBillingService billing)
     public async Task<HttpResponseData> Summary([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/billing")] HttpRequestData request, CancellationToken cancellationToken)
     {
         var (userId, email) = await UserAsync(request, cancellationToken);
-        if (userId is null) return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
+
+        if (userId is null)
+            return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
         var summary = await billing.GetSummaryAsync(userId, cancellationToken);
         var response = request.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(summary, cancellationToken);
@@ -42,7 +44,9 @@ public sealed class Billing(Auth0TokenValidator tokens, IBillingService billing)
     public async Task<HttpResponseData> StartTrial([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/billing/trial")] HttpRequestData request, CancellationToken cancellationToken)
     {
         var (userId, email) = await UserAsync(request, cancellationToken);
-        if (userId is null) return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
+
+        if (userId is null)
+            return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
         var result = await billing.StartTrialAsync(userId, email, cancellationToken);
         return await ActionResponseAsync(request, result, cancellationToken);
     }
@@ -51,11 +55,16 @@ public sealed class Billing(Auth0TokenValidator tokens, IBillingService billing)
     public async Task<HttpResponseData> Checkout([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/billing/checkout")] HttpRequestData request, CancellationToken cancellationToken)
     {
         var (userId, email) = await UserAsync(request, cancellationToken);
-        if (userId is null) return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
+
+        if (userId is null)
+            return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
         CheckoutRequest? body;
-        try { body = await JsonSerializer.DeserializeAsync<CheckoutRequest>(request.Body, JsonOptions, cancellationToken); }
+        try
+        { body = await JsonSerializer.DeserializeAsync<CheckoutRequest>(request.Body, JsonOptions, cancellationToken); }
         catch (JsonException) { body = null; }
-        if (body is null) return await ErrorAsync(request, HttpStatusCode.BadRequest, "invalid_request", "Choose monthly or annual billing.", cancellationToken);
+
+        if (body is null)
+            return await ErrorAsync(request, HttpStatusCode.BadRequest, "invalid_request", "Choose monthly or annual billing.", cancellationToken);
         return await ActionResponseAsync(request, await billing.CreateCheckoutAsync(userId, email, body.Annual, cancellationToken), cancellationToken);
     }
 
@@ -63,7 +72,9 @@ public sealed class Billing(Auth0TokenValidator tokens, IBillingService billing)
     public async Task<HttpResponseData> Portal([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/billing/portal")] HttpRequestData request, CancellationToken cancellationToken)
     {
         var (userId, _) = await UserAsync(request, cancellationToken);
-        if (userId is null) return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
+
+        if (userId is null)
+            return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
         return await ActionResponseAsync(request, await billing.CreatePortalAsync(userId, cancellationToken), cancellationToken);
     }
 

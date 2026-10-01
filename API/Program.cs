@@ -11,64 +11,66 @@ using API.Security;
 using Services;
 
 var host = new HostBuilder()
-	.ConfigureFunctionsWebApplication(app =>
-	{
-		app.Use(next => new FunctionExecutionDelegate(async context =>
-		{
-			var httpContext = context.GetHttpContext();
+    .ConfigureFunctionsWebApplication(app =>
+    {
+        app.Use(next => new FunctionExecutionDelegate(async context =>
+        {
+            var httpContext = context.GetHttpContext();
 
-			if (httpContext is not null)
-			{
-				var origin = httpContext.Request.Headers.Origin.ToString();
-				var allowedOrigins = context.InstanceServices.GetRequiredService<IConfiguration>()
-					.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
-				if (!string.IsNullOrWhiteSpace(origin) && allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
-					httpContext.Response.Headers["Access-Control-Allow-Origin"] = origin;
-				httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, If-Match";
-				httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-				httpContext.Response.Headers["Vary"] = "Origin";
-				if (httpContext.Request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
-				{
-					httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
-					return;
-				}
-			}
+            if (httpContext is not null)
+            {
+                var origin = httpContext.Request.Headers.Origin.ToString();
+                var allowedOrigins = context.InstanceServices.GetRequiredService<IConfiguration>()
+                    .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 
-			await next(context);
-		}));
-	})
-	.ConfigureServices((context, services) =>
-	{
-		// Configure logging to suppress Azure Storage noise
-		services.Configure<LoggerFilterOptions>(options =>
-		{
-			options.AddFilter("Azure.Storage.Blobs", LogLevel.Error);
-			options.AddFilter("Azure.Storage.Common", LogLevel.Error);
-			options.AddFilter("Azure.Core", LogLevel.Error);
-			options.AddFilter("Azure", LogLevel.Error);
-			options.AddFilter("Microsoft.Azure.Storage", LogLevel.Error);
-			options.AddFilter("Microsoft.Azure.WebJobs.Host.Blobs", LogLevel.Error);
-			options.AddFilter("Microsoft.Azure.WebJobs.Extensions.Storage", LogLevel.Error);
-		});
+                if (!string.IsNullOrWhiteSpace(origin) && allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                    httpContext.Response.Headers["Access-Control-Allow-Origin"] = origin;
+                httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, If-Match";
+                httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+                httpContext.Response.Headers["Vary"] = "Origin";
 
-		services.AddOpenTelemetry()
-			.ConfigureResource(resource => resource.AddService("Backend"))
-			.WithTracing(tracing =>
-			{
-				tracing
-					.SetSampler(new AlwaysOnSampler())
-					.AddSource("Services.Clients.MarketDataClient")
-					.AddHttpClientInstrumentation();
+                if (httpContext.Request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+                {
+                    httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+                    return;
+                }
+            }
 
-				tracing.AddOtlpExporter();
-			});
+            await next(context);
+        }));
+    })
+    .ConfigureServices((context, services) =>
+    {
+        // Configure logging to suppress Azure Storage noise
+        services.Configure<LoggerFilterOptions>(options =>
+        {
+            options.AddFilter("Azure.Storage.Blobs", LogLevel.Error);
+            options.AddFilter("Azure.Storage.Common", LogLevel.Error);
+            options.AddFilter("Azure.Core", LogLevel.Error);
+            options.AddFilter("Azure", LogLevel.Error);
+            options.AddFilter("Microsoft.Azure.Storage", LogLevel.Error);
+            options.AddFilter("Microsoft.Azure.WebJobs.Host.Blobs", LogLevel.Error);
+            options.AddFilter("Microsoft.Azure.WebJobs.Extensions.Storage", LogLevel.Error);
+        });
 
-		services.AddHttpClient();
-		services.AddSingleton<Auth0TokenValidator>();
+        services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource.AddService("Backend"))
+            .WithTracing(tracing =>
+            {
+                tracing
+                    .SetSampler(new AlwaysOnSampler())
+                    .AddSource("Services.Clients.MarketDataClient")
+                    .AddHttpClientInstrumentation();
 
-		var configuration = context.Configuration;
-		services.AddServices(configuration);
-	})
-	.Build();
+                tracing.AddOtlpExporter();
+            });
+
+        services.AddHttpClient();
+        services.AddSingleton<Auth0TokenValidator>();
+
+        var configuration = context.Configuration;
+        services.AddServices(configuration);
+    })
+    .Build();
 
 host.Run();

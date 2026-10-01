@@ -20,6 +20,7 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
         var authorization = request.Headers.TryGetValues("Authorization", out var values) ? values.FirstOrDefault() : null;
         var principal = await tokens.ValidateAsync(authorization, cancellationToken);
         var ownerId = principal?.FindFirst("sub")?.Value;
+
         if (string.IsNullOrWhiteSpace(ownerId))
             return await ErrorAsync(request, HttpStatusCode.Unauthorized, new ApiError("unauthorized", "A valid FlowMate access token is required."), cancellationToken);
 
@@ -27,18 +28,23 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
         {
             var workspace = await workspaces.GetAsync(ownerId, cancellationToken);
             var response = request.CreateResponse(HttpStatusCode.OK);
-            if (!string.IsNullOrEmpty(workspace.Revision)) response.Headers.Add("ETag", workspace.Revision);
+
+            if (!string.IsNullOrEmpty(workspace.Revision))
+                response.Headers.Add("ETag", workspace.Revision);
             await response.WriteAsJsonAsync(workspace, cancellationToken);
             return response;
         }
 
         WorkspaceSaveRequest? save;
-        try { save = await JsonSerializer.DeserializeAsync<WorkspaceSaveRequest>(request.Body, JsonOptions, cancellationToken); }
+        try
+        { save = await JsonSerializer.DeserializeAsync<WorkspaceSaveRequest>(request.Body, JsonOptions, cancellationToken); }
         catch (JsonException) { save = null; }
+
         if (save?.Workspace is null)
             return await ErrorAsync(request, HttpStatusCode.BadRequest, new ApiError("invalid_request", "Workspace data is missing or invalid."), cancellationToken);
 
         var result = await workspaces.SaveAsync(ownerId, save, cancellationToken);
+
         if (!result.Succeeded)
         {
             var status = result.ErrorCode == "project_limit" ? HttpStatusCode.PaymentRequired : HttpStatusCode.Conflict;
@@ -46,7 +52,9 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
         }
 
         var saved = request.CreateResponse(HttpStatusCode.OK);
-        if (!string.IsNullOrEmpty(result.Response!.Revision)) saved.Headers.Add("ETag", result.Response.Revision);
+
+        if (!string.IsNullOrEmpty(result.Response!.Revision))
+            saved.Headers.Add("ETag", result.Response.Revision);
         await saved.WriteAsJsonAsync(result.Response, cancellationToken);
         return saved;
     }

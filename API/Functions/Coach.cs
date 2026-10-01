@@ -22,11 +22,15 @@ public sealed class Coach(Auth0TokenValidator tokens, IFocusCoachService coach, 
         var authorization = request.Headers.TryGetValues("Authorization", out var values) ? values.FirstOrDefault() : null;
         var principal = await tokens.ValidateAsync(authorization, cancellationToken);
         var userId = principal?.FindFirst("sub")?.Value;
-        if (string.IsNullOrWhiteSpace(userId)) return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(userId))
+            return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
 
         CoachRequest? input;
-        try { input = await JsonSerializer.DeserializeAsync<CoachRequest>(request.Body, JsonOptions, cancellationToken); }
+        try
+        { input = await JsonSerializer.DeserializeAsync<CoachRequest>(request.Body, JsonOptions, cancellationToken); }
         catch (JsonException) { input = null; }
+
         if (input is null || string.IsNullOrWhiteSpace(input.Prompt) || input.Prompt.Length > 4000)
             return await ErrorAsync(request, HttpStatusCode.BadRequest, "invalid_request", "Enter a message of up to 4,000 characters.", cancellationToken);
 
@@ -34,7 +38,8 @@ public sealed class Coach(Auth0TokenValidator tokens, IFocusCoachService coach, 
         var conversation = workspace.Workspace.Conversations.FirstOrDefault(c => c.Id == input.ConversationId);
         FocusCoachAnswer answer;
         var history = conversation?.Messages ?? [];
-        try { answer = await coach.AskAsync(userId, input.Prompt, history, cancellationToken); }
+        try
+        { answer = await coach.AskAsync(userId, input.Prompt, history, cancellationToken); }
         catch (CoachQuotaExceededException quota)
         {
             return await ErrorAsync(request, (HttpStatusCode)429, "prompt_limit", $"You've used {quota.Used} of {quota.Limit} monthly coach prompts.", cancellationToken);
@@ -63,7 +68,9 @@ public sealed class Coach(Auth0TokenValidator tokens, IFocusCoachService coach, 
         workspace.Workspace.Conversations.Remove(conversation);
         workspace.Workspace.Conversations.Insert(0, conversation);
         var saved = await workspaces.SaveAsync(userId, new WorkspaceSaveRequest(workspace.Workspace, workspace.Revision), cancellationToken);
-        if (!saved.Succeeded) return await ErrorAsync(request, HttpStatusCode.Conflict, "workspace_conflict", "Your workspace changed on another device. Reload and try again.", cancellationToken);
+
+        if (!saved.Succeeded)
+            return await ErrorAsync(request, HttpStatusCode.Conflict, "workspace_conflict", "Your workspace changed on another device. Reload and try again.", cancellationToken);
 
         var response = request.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new CoachResponse(conversation, saved.Response!.Revision, answer.PromptsUsed, answer.PromptLimit), cancellationToken);

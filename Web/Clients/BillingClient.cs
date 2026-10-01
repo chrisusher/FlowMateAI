@@ -9,7 +9,9 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
     public async Task<IReadOnlyList<BillingPrice>> GetPricesAsync(CancellationToken cancellationToken = default)
     {
         using var response = await http.GetAsync("api/v1/billing/prices", cancellationToken);
-        if (!response.IsSuccessStatusCode) return [];
+
+        if (!response.IsSuccessStatusCode)
+            return [];
         return await response.Content.ReadFromJsonAsync<List<BillingPrice>>(cancellationToken: cancellationToken) ?? [];
     }
 
@@ -32,7 +34,9 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
     private async Task<BillingActionResponse> PostAsync(string path, object? body, CancellationToken cancellationToken)
     {
         using var request = Authorized(HttpMethod.Post, path);
-        if (body is not null) request.Content = JsonContent.Create(body);
+
+        if (body is not null)
+            request.Content = JsonContent.Create(body);
         using var response = await http.SendAsync(request, cancellationToken);
         return await response.Content.ReadFromJsonAsync<BillingActionResponse>(cancellationToken: cancellationToken)
             ?? new(false, null, "request_failed", "The billing request could not be completed.");
@@ -41,6 +45,7 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
     private HttpRequestMessage Authorized(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, path);
+
         if (!string.IsNullOrWhiteSpace(auth.Session.AccessToken))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
         return request;

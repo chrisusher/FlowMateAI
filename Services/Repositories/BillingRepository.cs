@@ -19,7 +19,9 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
     {
         await EnsureCreatedAsync(cancellationToken);
         var existing = await database.BillingEntitlements.FirstOrDefaultAsync(x => x.Id == "billing" && x.UserId == entitlement.UserId, cancellationToken);
-        if (existing is null) database.BillingEntitlements.Add(entitlement);
+
+        if (existing is null)
+            database.BillingEntitlements.Add(entitlement);
         else
         {
             existing.StripeCustomerId = entitlement.StripeCustomerId;
@@ -43,17 +45,20 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
     public async Task MarkEventProcessedAsync(string eventId, CancellationToken cancellationToken = default)
     {
         database.StripeEvents.Add(new StripeEventDocument { Id = eventId });
-        try { await database.SaveChangesAsync(cancellationToken); }
+        try
+        { await database.SaveChangesAsync(cancellationToken); }
         catch (DbUpdateException) { /* A concurrent webhook already recorded the same event id. */ }
     }
 
     private async Task EnsureCreatedAsync(CancellationToken cancellationToken)
     {
-        if (_initialized) return;
+        if (_initialized)
+            return;
         await InitializationLock.WaitAsync(cancellationToken);
         try
         {
-            if (_initialized) return;
+            if (_initialized)
+                return;
             await database.Database.EnsureCreatedAsync(cancellationToken);
             _initialized = true;
         }

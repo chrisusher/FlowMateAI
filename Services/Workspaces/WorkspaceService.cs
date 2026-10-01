@@ -20,6 +20,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
     public async Task<WorkspaceSaveResult> SaveAsync(string ownerId, WorkspaceSaveRequest request, CancellationToken cancellationToken = default)
     {
         var existing = await repository.GetAsync(ownerId, cancellationToken);
+
         if (existing is not null && !string.IsNullOrEmpty(request.Revision) && existing.ETag != request.Revision)
             return new(null, "revision_conflict", "This workspace changed on another device. Reload it and try again.");
 
@@ -30,11 +31,13 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         var existingProjectIds = current.Projects.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
         var newProjects = request.Workspace.Projects.Count(p => !existingProjectIds.Contains(p.Id));
         var availableSlots = Math.Max(0, projectLimit - current.Projects.Count);
+
         if (newProjects > availableSlots)
             return new(null, "project_limit", $"The {plan} plan includes up to {projectLimit} projects. Existing projects are kept when your plan changes.");
 
         var timerActive = current.Timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused;
         var timerExpired = current.Timer.EndsAt is { } currentEnd && currentEnd <= DateTimeOffset.UtcNow;
+
         if (timerActive && !timerExpired && current.Timer.OwnerClientId != request.Workspace.ClientId && !SameTimer(current.Timer, request.Workspace.Timer))
             return new(null, "timer_conflict", "A timer is already active on another device.");
 

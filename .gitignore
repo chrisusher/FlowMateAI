@@ -482,3 +482,8 @@ $RECYCLE.BIN/
 
 # Codex
 .codex*
+
+# Local CLI configuration may contain service credentials.
+CLI/appsettings.json
+CLI/appsettings.*.json
+!CLI/appsettings.example.json
