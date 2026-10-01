@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using API.Functions.V1;
 using API.Security;
+using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Coach;
@@ -14,7 +15,6 @@ namespace API.Functions.V1.Coach;
 
 public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Function("FocusCoach")]
     public async Task<HttpResponseData> Run(
@@ -32,7 +32,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
 
         try
         {
-            input = await JsonSerializer.DeserializeAsync<CoachRequest>(request.Body, JsonOptions, cancellationToken);
+            input = await JsonSerializer.DeserializeAsync<CoachRequest>(request.Body, SharedCommon.JsonOptions, cancellationToken);
         }
         catch (JsonException)
         {

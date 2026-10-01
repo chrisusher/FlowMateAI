@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using API.Functions.V1;
 using API.Security;
+using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Workspaces;
@@ -11,7 +12,6 @@ namespace API.Functions.V1.Workspace;
 
 public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService workspaces)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     [Function("Workspace")]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "put", Route = "v1/workspace")] HttpRequestData request, CancellationToken cancellationToken)
@@ -41,7 +41,7 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
 
         try
         {
-            save = await JsonSerializer.DeserializeAsync<WorkspaceSaveRequest>(request.Body, JsonOptions, cancellationToken);
+            save = await JsonSerializer.DeserializeAsync<WorkspaceSaveRequest>(request.Body, SharedCommon.JsonOptions, cancellationToken);
         }
         catch (JsonException)
         {

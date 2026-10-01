@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ChrisUsher.Core.Shared;
 using Microsoft.JSInterop;
 using System.Net.Http.Headers;
 using Shared.Contracts;
@@ -9,7 +10,6 @@ namespace Web.Clients;
 public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client auth)
 {
     private const string StoragePrefix = "flowmate.workspace.v1.";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private IJSObjectReference? _module;
     private string StorageKey => StoragePrefix + Uri.EscapeDataString(auth.Session.Sub ?? "local");
     private string? _revision;
@@ -25,7 +25,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         if (!string.IsNullOrWhiteSpace(json))
         {
-            Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, JsonOptions) ?? new();
+            Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, SharedCommon.JsonOptions) ?? new();
         }
 
         if (auth.Session.SignedIn && !string.IsNullOrWhiteSpace(auth.Session.AccessToken))
@@ -36,7 +36,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                 using var response = await http.SendAsync(request);
                 response.EnsureSuccessStatusCode();
-                var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(JsonOptions);
+                var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
                 if (remote is not null)
                 {
@@ -73,7 +73,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public async Task SaveAsync()
     {
         Data.ClientId = ClientId;
-        var json = JsonSerializer.Serialize(Data, JsonOptions);
+        var json = JsonSerializer.Serialize(Data, SharedCommon.JsonOptions);
         await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
 
         if (auth.Session.SignedIn && !string.IsNullOrWhiteSpace(auth.Session.AccessToken))
@@ -82,14 +82,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             {
                 using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/workspace")
                 {
-                    Content = JsonContent.Create(new WorkspaceSaveRequest(Data, _revision), options: JsonOptions)
+                    Content = JsonContent.Create(new WorkspaceSaveRequest(Data, _revision), options: SharedCommon.JsonOptions)
                 };
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                 using var response = await http.SendAsync(request);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var saved = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(JsonOptions);
+                    var saved = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
                     if (saved is not null)
                     {
@@ -104,14 +104,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
                     if (latest.IsSuccessStatusCode)
                     {
-                        var remote = await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(JsonOptions);
+                        var remote = await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
                         if (remote is not null)
                         {
                             Data = remote.Workspace;
                             Data.ClientId = ClientId;
                             _revision = remote.Revision;
-                            await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, JsonOptions));
+                            await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
                         }
                     }
                 }
@@ -132,7 +132,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         }
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/coach")
         {
-            Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: JsonOptions)
+            Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: SharedCommon.JsonOptions)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
         using var response = await http.SendAsync(request, cancellationToken);
@@ -141,14 +141,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             return null;
         }
-        var result = await response.Content.ReadFromJsonAsync<CoachResponse>(JsonOptions, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<CoachResponse>(SharedCommon.JsonOptions, cancellationToken);
 
         if (result is not null)
         {
             _revision = result.Revision;
             Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
             Data.Conversations.Insert(0, result.Conversation);
-            await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, JsonOptions));
+            await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
             Changed?.Invoke();
         }
 

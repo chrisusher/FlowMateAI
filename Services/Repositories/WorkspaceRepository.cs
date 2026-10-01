@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ChrisUsher.Core.Shared;
 using Services.Database;
 using Shared.Models;
 
@@ -29,7 +30,7 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
             };
             database.Workspaces.Add(document);
         }
-        document.Payload = JsonSerializer.Serialize(workspace, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        document.Payload = JsonSerializer.Serialize(workspace, SharedCommon.JsonOptions);
         document.UpdatedAt = DateTimeOffset.UtcNow;
 
         await database.SaveChangesAsync(cancellationToken);

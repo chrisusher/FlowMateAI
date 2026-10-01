@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ChrisUsher.Core.Shared;
 using Services.Repositories;
 using Services.Database;
 using Shared.Contracts;
@@ -69,7 +70,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
     }
 
     private static WorkspaceSnapshot Deserialize(string payload) =>
-        System.Text.Json.JsonSerializer.Deserialize<WorkspaceSnapshot>(payload, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) ?? new();
+        System.Text.Json.JsonSerializer.Deserialize<WorkspaceSnapshot>(payload, SharedCommon.JsonOptions) ?? new();
 
     private static bool SameTimer(TimerSnapshot left, TimerSnapshot right) =>
         left.Phase == right.Phase && left.EndsAt == right.EndsAt && left.StartedAt == right.StartedAt &&
