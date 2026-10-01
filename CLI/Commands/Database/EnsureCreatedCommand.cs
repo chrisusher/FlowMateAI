@@ -29,16 +29,19 @@ internal static class EnsureCreatedCommand
             Console.WriteLine(created
                 ? "Database resources were created."
                 : "Database resources already existed.");
+
             return 0;
         }
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine("Operation cancelled.");
+
             return 2;
         }
         catch (Exception exception)
         {
             Console.Error.WriteLine($"Database creation failed: {CliError.SafeError(exception)}");
+
             return 1;
         }
     }

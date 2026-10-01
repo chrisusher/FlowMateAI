@@ -1,8 +1,8 @@
+using CLI.Commands;
+using CLI.Commands.User;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using CLI.Commands;
-using CLI.Commands.User;
 using Services;
 using Services.Database;
 
@@ -12,6 +12,7 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+
         return await CliCommandLine.Create().Parse(args).InvokeAsync();
     }
 
@@ -45,6 +46,7 @@ public static class Program
             }
 
             var database = services.GetRequiredService<DatabaseContext>();
+
             return new UserDataResetService(database, new Azure.Storage.Blobs.BlobServiceClient(storageConnection));
         });
 

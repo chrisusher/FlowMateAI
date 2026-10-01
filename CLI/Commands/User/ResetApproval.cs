@@ -6,12 +6,14 @@ internal static class ResetApproval
     {
         if (inputRedirected)
         {
+
             return false;
         }
 
         output.Write("Delete this user's FlowMate data? [y/N] ");
         output.Flush();
         var response = input.ReadLine()?.Trim();
+
         return string.Equals(response, "y", StringComparison.OrdinalIgnoreCase)
             || string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase);
     }

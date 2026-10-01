@@ -1,6 +1,7 @@
 using System.CommandLine;
 using CLI.Commands.Database;
 using CLI.Commands.User;
+using Shared.Exceptions;
 
 namespace CLI.Commands;
 

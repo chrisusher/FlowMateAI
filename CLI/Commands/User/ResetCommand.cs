@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Services.Database;
+using Shared.Exceptions;
 
 namespace CLI.Commands.User;
 
@@ -40,6 +41,7 @@ internal static class ResetCommand
                 parseResult.GetValue(userIdOption),
                 parseResult.GetValue(approveOption),
                 cancellationToken));
+
         return command;
     }
 
@@ -81,32 +83,38 @@ internal static class ResetCommand
             if (!approved && !ResetApproval.TryApprove(Console.In, Console.Out, Console.IsInputRedirected))
             {
                 Console.Error.WriteLine("Reset declined. Pass --approve to confirm in noninteractive execution.");
+
                 return 2;
             }
 
             using var resetScope = host.Services.CreateScope();
             var resetService = resetScope.ServiceProvider.GetRequiredService<IUserDataResetService>();
+
             try
             {
                 var result = await resetService.ResetAsync(userId, operationCancellation.Token);
                 Console.WriteLine($"Deleted {result.WorkspaceDocuments} workspace documents, {result.WorkspaceRecords} workspace records, {result.BillingEntitlements} billing entitlements, and {result.ArchivedBlobs} archived blobs.");
+
                 return 0;
             }
             catch (UserDataResetException exception)
             {
                 var completed = exception.Completed;
                 Console.Error.WriteLine($"Reset failed during {exception.Stage} cleanup. Completed before failure: {completed.WorkspaceDocuments} workspace documents, {completed.WorkspaceRecords} workspace records, {completed.BillingEntitlements} billing entitlements, and {completed.ArchivedBlobs} archived blobs. Rerun reset to finish cleanup.");
+
                 return 1;
             }
         }
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine("Operation cancelled. Any earlier cleanup stages may have completed; rerun reset to finish.");
+
             return 2;
         }
         catch (Exception exception)
         {
             Console.Error.WriteLine($"User reset failed: {CliError.SafeError(exception)}");
+
             return 1;
         }
     }

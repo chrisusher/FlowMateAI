@@ -1,0 +1,12 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'FlowMate.Formatting' and '$(MSBuildProjectName)' != 'FlowMate.Formatting.CodeFixes'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)Formatting\FlowMate.Formatting.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      IsAspireProjectResource="false" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)Formatting.CodeFixes\FlowMate.Formatting.CodeFixes.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      IsAspireProjectResource="false" />
+  </ItemGroup>
+</Project>

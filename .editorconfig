@@ -18,7 +18,11 @@ dotnet_sort_system_directives_first = true
 dotnet_separate_import_directive_groups = false
 
 # C# formatting rules
-# Leave a blank line before each if statement unless it is the first statement in a block.
+# Leave a blank line before each if, try, while, for, and foreach statement unless it is first in a block.
+# Blank lines before return statements are checked by FlowMate.Formatting; switch sections are excluded.
+dotnet_diagnostic.FM0002.severity = warning
+resharper_csharp_blank_lines_before_control_transfer_statements = 0
+dotnet_diagnostic.FM0001.severity = warning
 csharp_new_line_before_open_brace = all
 csharp_new_line_before_else = true
 csharp_new_line_before_catch = true

@@ -487,3 +487,5 @@ $RECYCLE.BIN/
 CLI/appsettings.json
 CLI/appsettings.*.json
 !CLI/appsettings.example.json
+
+.build-obj/

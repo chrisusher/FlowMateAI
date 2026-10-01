@@ -1,0 +1,412 @@
+openapi: 3.0.3
+info:
+  title: FlowMate API
+  version: 0.1.0
+  description: HTTP API for FlowMate workspaces, coaching, billing, and health.
+servers:
+  - url: /api
+    description: Azure Functions HTTP route prefix
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Check API health
+      responses:
+        '200':
+          description: The API is healthy.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Healthy
+  /v1/workspace:
+    get:
+      operationId: getWorkspace
+      summary: Get the signed-in user's workspace
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace and current revision.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      operationId: saveWorkspace
+      summary: Save the signed-in user's workspace
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceSaveRequest'
+      responses:
+        '200':
+          description: Workspace saved.
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '402':
+          description: The workspace exceeds the current plan's project limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: The workspace revision conflicts with the latest saved revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/coach:
+    post:
+      operationId: askCoach
+      summary: Send a message to the focus coach
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoachRequest'
+      responses:
+        '200':
+          description: Coach response and updated conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoachResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Workspace changed while the conversation was being saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          description: Monthly coach prompt limit reached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Focus coach is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/billing/prices:
+    get:
+      operationId: getBillingPrices
+      summary: List available billing prices
+      responses:
+        '200':
+          description: Available subscription prices.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BillingPrice'
+        '503':
+          description: Billing provider is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/billing:
+    get:
+      operationId: getBillingSummary
+      summary: Get the signed-in user's billing summary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Billing summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/billing/trial:
+    post:
+      operationId: startBillingTrial
+      summary: Start a billing trial
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/BillingAction'
+        '400':
+          $ref: '#/components/responses/BillingAction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/billing/checkout:
+    post:
+      operationId: createBillingCheckout
+      summary: Create a subscription checkout session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/BillingAction'
+        '400':
+          $ref: '#/components/responses/BillingAction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/billing/portal:
+    post:
+      operationId: createBillingPortal
+      summary: Create a billing portal session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/BillingAction'
+        '400':
+          $ref: '#/components/responses/BillingAction'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/webhooks/stripe:
+    post:
+      operationId: receiveStripeWebhook
+      summary: Receive a Stripe webhook event
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Webhook accepted.
+        '400':
+          description: Webhook signature or payload is invalid.
+          content:
+            text/plain:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  headers:
+    ETag:
+      description: Revision token for the current workspace.
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: Request body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: A valid access token is required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    BillingAction:
+      description: Billing operation result.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BillingActionResponse'
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    BillingActionResponse:
+      type: object
+      required: [succeeded]
+      properties:
+        succeeded:
+          type: boolean
+        url:
+          type: string
+          format: uri
+          nullable: true
+        code:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+    BillingPrice:
+      type: object
+      required: [interval, currency, unitAmount, display]
+      properties:
+        interval:
+          type: string
+        currency:
+          type: string
+        unitAmount:
+          type: integer
+          format: int64
+        display:
+          type: string
+    BillingSummary:
+      type: object
+      required: [plan, status, trialUsed, promptsUsed, promptLimit]
+      properties:
+        plan:
+          type: string
+        status:
+          type: string
+        trialUsed:
+          type: boolean
+        periodEndsAt:
+          type: string
+          format: date-time
+          nullable: true
+        promptsUsed:
+          type: integer
+        promptLimit:
+          type: integer
+    CheckoutRequest:
+      type: object
+      required: [annual]
+      properties:
+        annual:
+          type: boolean
+    CoachRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          maxLength: 4000
+        conversationId:
+          type: string
+          nullable: true
+    CoachResponse:
+      type: object
+      required: [conversation, revision, promptsUsed, promptLimit]
+      properties:
+        conversation:
+          $ref: '#/components/schemas/ConversationRecord'
+        revision:
+          type: string
+        promptsUsed:
+          type: integer
+        promptLimit:
+          type: integer
+    ConversationRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessageRecord'
+        updatedAt:
+          type: string
+          format: date-time
+    ChatMessageRecord:
+      type: object
+      properties:
+        role:
+          type: string
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    WorkspaceSaveRequest:
+      type: object
+      required: [workspace]
+      properties:
+        workspace:
+          $ref: '#/components/schemas/WorkspaceSnapshot'
+        revision:
+          type: string
+          nullable: true
+    WorkspaceResponse:
+      type: object
+      required: [workspace, revision]
+      properties:
+        workspace:
+          $ref: '#/components/schemas/WorkspaceSnapshot'
+        revision:
+          type: string
+    WorkspaceSnapshot:
+      type: object
+      properties:
+        displayName:
+          type: string
+        timeZone:
+          type: string
+        plan:
+          type: string
+        clientId:
+          type: string
+        muted:
+          type: boolean
+        projects:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        tasks:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        sessions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        timer:
+          type: object
+          additionalProperties: true
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationRecord'

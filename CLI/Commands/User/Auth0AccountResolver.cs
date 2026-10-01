@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Shared.Exceptions;
 
 namespace CLI.Commands.User;
 

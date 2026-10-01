@@ -45,6 +45,7 @@ public static class Services
                 {
                     return false;
                 }
+
                 return true;
             });
         });
@@ -77,6 +78,7 @@ public static class Services
         services.AddTransient<IStorageService>(services =>
         {
             var blobServiceClient = services.GetRequiredService<BlobServiceClient>();
+
             return new BlobStorageService(blobServiceClient);
         });
 
@@ -165,20 +167,27 @@ public static class Services
             ?? ConnectionValue(cosmosConnection, "AccountKey")
             ?? string.Empty;
         var databaseName = ResolveCosmosDatabaseName(configuration, globalEnvironment);
+
         return new CosmosDatabaseSettings(accountEndpoint, accountKey, databaseName);
     }
 
     private static string? ConnectionValue(string? connectionString, string name)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
+        {
             return null;
+        }
+
         foreach (var part in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var separator = part.IndexOf('=');
 
             if (separator > 0 && part[..separator].Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
                 return part[(separator + 1)..];
+            }
         }
+
         return null;
     }
 
@@ -186,6 +195,7 @@ public static class Services
     {
         if (string.IsNullOrWhiteSpace(accountEndpoint))
         {
+
             return string.Empty;
         }
 
@@ -194,11 +204,13 @@ public static class Services
         if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
+
             return trimmed.TrimEnd('/') + "/";
         }
 
         if (trimmed.Contains("documents.azure.com", StringComparison.OrdinalIgnoreCase))
         {
+
             return $"https://{trimmed.Trim('/')}";
         }
 

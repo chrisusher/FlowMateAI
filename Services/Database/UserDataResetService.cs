@@ -3,23 +3,10 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
+using Shared.Exceptions;
+using Shared.Models;
 
 namespace Services.Database;
-
-public sealed record UserDataResetResult(int WorkspaceDocuments, int WorkspaceRecords, int BillingEntitlements, int ArchivedBlobs)
-{
-    public static UserDataResetResult Empty { get; } = new(0, 0, 0, 0);
-}
-
-public sealed class UserDataResetException(
-    string stage,
-    UserDataResetResult completed,
-    Exception innerException)
-    : Exception($"User data reset failed during {stage} cleanup.", innerException)
-{
-    public string Stage { get; } = stage;
-    public UserDataResetResult Completed { get; } = completed;
-}
 
 public interface IUserDataResetService
 {
@@ -44,6 +31,7 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
 
         async Task RunStageAsync(string stage, Func<Task> action)
         {
+
             try
             {
                 await action();
@@ -59,9 +47,14 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
         await RunStageAsync("workspace document", async () =>
         {
             List<WorkspaceDocument> matches;
+
             try
             { matches = await database.Workspaces.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
-            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound) { return; }
+            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+
+                return;
+            }
             database.Workspaces.RemoveRange(matches);
             await database.SaveChangesAsync(cancellationToken);
             workspaceDocuments = matches.Count;
@@ -70,9 +63,14 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
         await RunStageAsync("workspace record", async () =>
         {
             List<WorkspaceRecordDocument> matches;
+
             try
             { matches = await database.WorkspaceRecords.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
-            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound) { return; }
+            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+
+                return;
+            }
             database.WorkspaceRecords.RemoveRange(matches);
             await database.SaveChangesAsync(cancellationToken);
             workspaceRecords = matches.Count;
@@ -81,9 +79,14 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
         await RunStageAsync("billing entitlement", async () =>
         {
             List<BillingEntitlementDocument> matches;
+
             try
             { matches = await database.BillingEntitlements.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
-            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound) { return; }
+            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+
+                return;
+            }
             database.BillingEntitlements.RemoveRange(matches);
             await database.SaveChangesAsync(cancellationToken);
             billingEntitlements = matches.Count;
@@ -94,15 +97,20 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             var container = blobClient.GetBlobContainerClient(ActivityContainerName);
 
             if (!(await container.ExistsAsync(cancellationToken)).Value)
+            {
                 return;
+            }
 
             var prefix = Uri.EscapeDataString(userId) + "/";
+
             await foreach (var blob in container.GetBlobsAsync(BlobTraits.None, BlobStates.None, prefix, cancellationToken))
             {
                 var response = await container.GetBlobClient(blob.Name).DeleteIfExistsAsync(cancellationToken: cancellationToken);
 
                 if (response.Value)
+                {
                     archivedBlobs++;
+                }
             }
         });
 

@@ -1,13 +1,13 @@
+using API.Security;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
-using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
-using API.Security;
 using Services;
 
 var host = new HostBuilder()
@@ -24,7 +24,10 @@ var host = new HostBuilder()
                     .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 
                 if (!string.IsNullOrWhiteSpace(origin) && allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                {
                     httpContext.Response.Headers["Access-Control-Allow-Origin"] = origin;
+                }
+
                 httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, If-Match";
                 httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
                 httpContext.Response.Headers["Vary"] = "Origin";
@@ -32,6 +35,7 @@ var host = new HostBuilder()
                 if (httpContext.Request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
                 {
                     httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+
                     return;
                 }
             }

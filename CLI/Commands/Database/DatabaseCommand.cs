@@ -8,6 +8,7 @@ internal static class DatabaseCommand
     {
         var command = new Command("database", "Database administration");
         command.Subcommands.Add(EnsureCreatedCommand.Create());
+
         return command;
     }
 }

@@ -1,16 +1,14 @@
 using System.Net;
-using Services.Billing;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Services.Billing;
 
-namespace API.Functions;
+namespace API.Functions.V1.Webhooks;
 
 public sealed class StripeWebhook(IBillingService billing)
 {
     [Function("StripeWebhook")]
-    public async Task<HttpResponseData> Run(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "webhooks/stripe")] HttpRequestData request,
-        CancellationToken cancellationToken)
+    public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/webhooks/stripe")] HttpRequestData request, CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(request.Body);
         var payload = await reader.ReadToEndAsync(cancellationToken);
@@ -19,7 +17,10 @@ public sealed class StripeWebhook(IBillingService billing)
         var response = request.CreateResponse(accepted ? HttpStatusCode.OK : HttpStatusCode.BadRequest);
 
         if (!accepted)
+        {
             await response.WriteStringAsync("Invalid Stripe webhook signature or payload.", cancellationToken);
+        }
+
         return response;
     }
 }

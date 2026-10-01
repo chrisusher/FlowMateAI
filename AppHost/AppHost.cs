@@ -1,5 +1,5 @@
-using Aspire.Hosting.Foundry;
 using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Foundry;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -124,6 +124,7 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
             environmentVariables["Auth0__ManagementClientSecret"] = auth0ClientSecret;
         }
     }
+
     return environmentVariables;
 }
 
@@ -166,6 +167,7 @@ cli.WithProcessCommand(
         {
             spec.EnvironmentVariables[variable.Key] = variable.Value;
         }
+
         return spec;
     });
 
@@ -209,10 +211,12 @@ cli.WithProcessCommand(
             WorkingDirectory = cliWorkingDirectory,
             InheritEnvironmentVariables = false
         };
+
         foreach (var variable in variables)
         {
             spec.EnvironmentVariables[variable.Key] = variable.Value;
         }
+
         return spec;
     },
     commandOptions: new ProcessCommandOptions
@@ -279,10 +283,12 @@ cli.WithProcessCommand(
             WorkingDirectory = cliWorkingDirectory,
             InheritEnvironmentVariables = false
         };
+
         foreach (var variable in variables)
         {
             spec.EnvironmentVariables[variable.Key] = variable.Value;
         }
+
         return spec;
     },
     commandOptions: new ProcessCommandOptions

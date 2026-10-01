@@ -24,7 +24,9 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         var json = await module.InvokeAsync<string?>("read", StorageKey);
 
         if (!string.IsNullOrWhiteSpace(json))
+        {
             Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, JsonOptions) ?? new();
+        }
 
         if (auth.Session.SignedIn && !string.IsNullOrWhiteSpace(auth.Session.AccessToken))
         {
@@ -42,7 +44,9 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     _revision = remote.Revision;
 
                     if (Data.Projects.Count == 0)
+                    {
                         Data.DisplayName = auth.Session.Name ?? "FlowMate user";
+                    }
                 }
             }
             catch (HttpRequestException) { /* Keep the user's local workspace available during an API outage. */ }
@@ -88,7 +92,9 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     var saved = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(JsonOptions);
 
                     if (saved is not null)
+                    {
                         _revision = saved.Revision;
+                    }
                 }
                 else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
                 {
@@ -121,7 +127,9 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public async Task<CoachResponse?> AskCoachAsync(string prompt, string? conversationId, CancellationToken cancellationToken = default)
     {
         if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
+        {
             return null;
+        }
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/coach")
         {
             Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: JsonOptions)
@@ -130,7 +138,9 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         using var response = await http.SendAsync(request, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
+        {
             return null;
+        }
         var result = await response.Content.ReadFromJsonAsync<CoachResponse>(JsonOptions, cancellationToken);
 
         if (result is not null)
@@ -141,6 +151,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, JsonOptions));
             Changed?.Invoke();
         }
+
         return result;
     }
 
@@ -153,15 +164,23 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             var left = (int)Math.Ceiling((end - DateTimeOffset.UtcNow).TotalSeconds);
 
             if (left > 0)
-            { timer.RemainingSeconds = left; return; }
+            {
+                timer.RemainingSeconds = left;
+
+                return;
+            }
 
             if (timer.Phase == TimerPhase.Focus)
             {
                 foreach (var interval in timer.CompletedIntervals)
+                {
                     RecordFocus(interval.StartedAt, interval.EndedAt, timer.TaskId, timer.ProjectId, (int)(interval.EndedAt - interval.StartedAt).TotalSeconds);
+                }
 
                 if (timer.StartedAt is { } started)
+                {
                     RecordFocus(started, end, timer.TaskId, timer.ProjectId, Math.Max(0, timer.DurationSeconds - timer.CompletedIntervals.Sum(i => (int)(i.EndedAt - i.StartedAt).TotalSeconds)));
+                }
             }
 
             // A closed tab never starts the next focus session on the user's behalf.
@@ -177,8 +196,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         var finish = started.AddSeconds(Math.Max(0, Math.Min((ended - started).TotalSeconds, plannedSeconds)));
 
         if (finish <= started)
+        {
             return;
+        }
         TimeZoneInfo zone;
+
         try
         { zone = TimeZoneInfo.FindSystemTimeZoneById(Data.TimeZone); }
         catch { zone = TimeZoneInfo.Local; }
@@ -186,23 +208,31 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         var cursor = started;
         var elapsed = 0d;
         var assignedMinutes = 0;
+
         while (cursor < finish)
         {
             var localDate = TimeZoneInfo.ConvertTime(cursor, zone).Date;
             var nextMidnight = DateTime.SpecifyKind(localDate.AddDays(1), DateTimeKind.Unspecified);
+
             while (zone.IsInvalidTime(nextMidnight))
+            {
                 nextMidnight = nextMidnight.AddMinutes(1);
+            }
             var nextBoundary = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(nextMidnight, zone), TimeSpan.Zero);
             var segmentEnd = nextBoundary < finish ? nextBoundary : finish;
 
             if (segmentEnd <= cursor)
+            {
                 segmentEnd = finish;
+            }
             elapsed += (segmentEnd - cursor).TotalSeconds;
             var cumulativeMinutes = (int)Math.Floor(elapsed / 60d);
             var segmentMinutes = cumulativeMinutes - assignedMinutes;
 
             if (segmentMinutes > 0)
+            {
                 Data.Sessions.Add(new() { StartedAt = cursor, EndedAt = segmentEnd, FocusMinutes = segmentMinutes, TaskId = taskId, ProjectId = projectId });
+            }
             assignedMinutes = cumulativeMinutes;
             cursor = segmentEnd;
         }

@@ -1,7 +1,7 @@
 using System.CommandLine;
 using CLI.Commands;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Services;
 using Services.Database;
 using Services.Repositories;
@@ -26,6 +26,7 @@ internal static class GrantProCommand
         command.Options.Add(userIdOption);
         command.SetAction(async (parseResult, cancellationToken) =>
             await ExecuteAsync(parseResult.GetValue(emailOption), parseResult.GetValue(userIdOption), cancellationToken));
+
         return command;
     }
 
@@ -60,16 +61,19 @@ internal static class GrantProCommand
             Console.WriteLine($"Auth0 user ID: {userId}");
             Console.WriteLine($"Cosmos database: {settings.DatabaseName}");
             Console.WriteLine("This is a manual preview grant; no Stripe subscription or payment was created.");
+
             return 0;
         }
         catch (OperationCanceledException)
         {
             Console.Error.WriteLine("Operation cancelled.");
+
             return 2;
         }
         catch (Exception exception)
         {
             Console.Error.WriteLine($"Pro access grant failed: {CliError.SafeError(exception)}");
+
             return 1;
         }
     }
