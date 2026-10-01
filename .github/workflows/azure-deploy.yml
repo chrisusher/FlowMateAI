@@ -1,0 +1,85 @@
+name: Build and deploy FlowMate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Configure browser-safe runtime settings
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
+          AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
+          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+        run: |
+          python - <<'PY'
+          import json, os
+          path = "Web/appsettings.json"
+          with open(path, encoding="utf-8") as source:
+              settings = json.load(source)
+          settings["ApiBaseUrl"] = os.environ["API_BASE_URL"]
+          settings["Auth0"]["Domain"] = os.environ["AUTH0_DOMAIN"]
+          settings["Auth0"]["ClientId"] = os.environ["AUTH0_CLIENT_ID"]
+          settings["Auth0"]["Audience"] = os.environ["AUTH0_AUDIENCE"]
+          with open(path, "w", encoding="utf-8") as destination:
+              json.dump(settings, destination, indent=2)
+          PY
+      - name: Publish Blazor WebAssembly
+        run: |
+          dotnet restore Web/Web.csproj --configfile NuGet.config
+          dotnet publish Web/Web.csproj -c Release --no-restore -o artifacts/web-publish
+          mkdir -p artifacts/web
+          cp -a artifacts/web-publish/wwwroot/. artifacts/web/
+          sed -i 's|<base href="/frontend/" />|<base href="/" />|' artifacts/web/index.html
+      - name: Publish Azure Functions API
+        run: |
+          dotnet restore API/API.csproj --configfile NuGet.config
+          dotnet publish API/API.csproj -c Release --no-restore -o artifacts/api
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: artifacts/web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: functions-api
+          path: artifacts/api
+
+  deploy-web:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: artifacts/web
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: artifacts/web
+          skip_app_build: true
+
+  deploy-api:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: functions-api
+          path: artifacts/api
+      - uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
+          package: artifacts/api
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}

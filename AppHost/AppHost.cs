@@ -71,10 +71,12 @@ var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithReference(api)
     .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"));
 
-builder.AddBlazorGateway("frontend-gateway")
+var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WaitFor(api)
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/frontend/")
     .WithBlazorClientApp(frontend);
+
+api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"));
 
 builder.Build().Run();

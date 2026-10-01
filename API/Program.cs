@@ -1,10 +1,13 @@
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using API.Security;
 using Services;
 
 var host = new HostBuilder()
@@ -17,13 +20,18 @@ var host = new HostBuilder()
 			if (httpContext is not null)
 			{
 				var origin = httpContext.Request.Headers.Origin.ToString();
-				var allowedOrigin = string.IsNullOrWhiteSpace(origin) ? "*" : origin;
-				var path = httpContext.Request.Path.Value ?? string.Empty;
-
-				httpContext.Response.Headers["Access-Control-Allow-Origin"] = allowedOrigin;
-				httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
-				httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
+				var allowedOrigins = context.InstanceServices.GetRequiredService<IConfiguration>()
+					.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+				if (!string.IsNullOrWhiteSpace(origin) && allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+					httpContext.Response.Headers["Access-Control-Allow-Origin"] = origin;
+				httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, If-Match";
+				httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 				httpContext.Response.Headers["Vary"] = "Origin";
+				if (httpContext.Request.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+				{
+					httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+					return;
+				}
 			}
 
 			await next(context);
@@ -56,6 +64,7 @@ var host = new HostBuilder()
 			});
 
 		services.AddHttpClient();
+		services.AddSingleton<Auth0TokenValidator>();
 
 		var configuration = context.Configuration;
 		services.AddServices(configuration);

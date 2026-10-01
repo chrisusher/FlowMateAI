@@ -5,14 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/frontend/" />
     <title>FlowMate AI</title>
-    <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="_content/Radzen.Blazor/css/material.css" />
     <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="Web.styles.css" />
-    <link rel="icon" type="image/png" href="favicon.png" />
+    <meta name="theme-color" content="#f7f7f4" />
+    <script>
+        const theme = localStorage.getItem('flowmate.theme');
+        document.documentElement.dataset.theme = theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    </script>
 </head>
 <body>
     <div id="app">Loading...</div>
     <script src="_framework/blazor.webassembly.js" autostart="false"></script>
     <script type="module" src="js/blazor-startup.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
 </body>
 </html>

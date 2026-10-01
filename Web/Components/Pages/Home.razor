@@ -1,7 +1,331 @@
-﻿@page "/"
+@page "/"
+@page "/{View}"
+@implements IAsyncDisposable
+@inject WorkspaceStore Store
+@inject Auth0Client Auth
+@inject BillingClient Billing
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
 
-<PageTitle>Home</PageTitle>
+<PageTitle>@Title &#8212; FlowMate</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="app-frame">
+    <aside class="sidebar">
+        <a class="brand" href="/"><span class="brand-mark">f</span><span>flowmate<span class="brand-ai">.ai</span></span></a>
+        <div class="workspace-label">WORKSPACE</div>
+        <nav class="side-nav">
+            @foreach (var item in NavItems)
+            {
+                <a class="side-link @(CurrentView == item.Key ? "active" : "")" href="@(item.Key == "today" ? "/" : "/" + item.Key)">
+                    <span class="nav-icon">@((MarkupString)item.Icon)</span><span>@item.Label</span>
+                    @if (item.Key == "today" && PlannedTasks.Any()) { <span class="nav-count">@PlannedTasks.Count()</span> }
+                </a>
+            }
+        </nav>
+        <div class="sidebar-bottom">
+        <div class="upgrade-card"><div class="upgrade-spark">&#10022;</div><strong>Make room for more</strong><p>Unlock deeper insights and longer history.</p><a href="/pricing">Explore Pro <span>&#8599;</span></a></div>
+            <a class="profile-link" href="/settings"><span class="avatar">AM</span><span class="profile-copy"><strong>@Store.Data.DisplayName</strong><small>@Store.Data.Plan plan</small></span><span class="more-icon">&#8942;</span></a>
+        </div>
+    </aside>
 
-Welcome to your new app.
+    <main class="main-area">
+        <header class="topbar">
+            <div class="crumb"><span>Workspace</span><b>/</b><strong>@Title</strong></div>
+            <div class="top-actions"><span class="date-chip">@UserNow.ToString("ddd, d MMM")</span><button class="icon-button" title="Toggle theme" @onclick="ToggleTheme">@(IsDark ? "&#9788;" : "&#9790;")</button>@if (Auth.IsConfigured && !Auth.Session.SignedIn) { <button class="quiet-button" @onclick='() => Go("settings")'>Sign in</button> } else { <button class="user-chip" title="Account settings" @onclick='() => Go("settings")'>@Initials</button> }</div>
+        </header>
+        <section class="content-area">
+            @if (Auth.IsConfigured && !Auth.Session.SignedIn)
+            {
+                <div class="auth-screen"><div class="auth-mark">f</div><div class="eyebrow">A QUIETER WAY TO GET THINGS DONE</div><h1>Your focus, in good company.</h1><p>Sign in to keep your projects, plans, and focus history private to your account.</p><button class="auth-provider" @onclick='() => Login(Auth.GoogleConnection)'><span>G</span> Continue with Google</button><button class="auth-provider" @onclick='() => Login(Auth.GitHubConnection)'><span>GH</span> Continue with GitHub</button><button class="auth-provider" @onclick='() => Login(Auth.MicrosoftPersonalConnection)'><span>M</span> Microsoft personal account</button><button class="auth-provider" @onclick='() => Login(Auth.MicrosoftWorkSchoolConnection)'><span>M</span> Microsoft work or school</button><small>Accounts from different providers stay separate unless you link them in Auth0.</small></div>
+            }
+            else if (CurrentView == "today")
+            {
+                <div class="page-heading"><div><div class="eyebrow">@Greeting, @FirstName</div><h1>Make today count.</h1><p class="subheading">A little focus goes a long way. Here's your plan for today.</p></div><button class="quiet-button" @onclick='() => Go("tasks")'>+ Add a task</button></div>
+                <div class="today-grid">
+                    <div class="left-column">
+                        <article class="focus-card">
+                            <div class="focus-card-top"><div><span class="focus-kicker"><i class="live-dot @(IsRunning ? "on" : "")"></i>@TimerLabel</span><h2>@(ActiveTask?.Title ?? "Ready when you are")</h2><p>@(ActiveProject?.Name ?? "Choose a task and settle in")</p></div><button class="sound-button" title="Toggle sounds" @onclick="ToggleMute">@(Store.Data.Muted ? "&#9834;" : "&#9835;")</button></div>
+                            <div class="timer-face"><svg class="timer-ring" viewBox="0 0 240 240" aria-hidden="true"><circle class="ring-track" cx="120" cy="120" r="106"/><circle class="ring-progress" cx="120" cy="120" r="106" style="stroke-dasharray: @(RingCircumference); stroke-dashoffset: @RingOffset"/></svg><div class="timer-readout"><span class="timer-digits">@TimeLeft</span><span class="timer-caption">@TimerCaption</span></div></div>
+                            <div class="timer-controls">
+                                @if (Store.Data.Timer.Phase == TimerPhase.Focus && CanControlTimer) { <button class="timer-primary" @onclick="PauseTimer">&#10074;&#10074; <span>Pause</span></button> }
+                                else if ((Store.Data.Timer.Phase is TimerPhase.ShortBreak or TimerPhase.LongBreak) && CanControlTimer) { <span class="timer-other-device">Break in progress</span> }
+                                else if (IsRunning) { <span class="timer-other-device">Timer active on another device</span> }
+                                else if (Store.Data.Timer.Phase == TimerPhase.Paused && CanControlTimer) { <button class="timer-primary" @onclick="ResumeTimer">&#9654; <span>Resume focus</span></button> }
+                                else if (Store.Data.Timer.Phase == TimerPhase.Paused) { <span class="timer-other-device">Timer paused on another device</span> }
+                                else { <button class="timer-primary" @onclick="StartFocus">&#9654; <span>Start focus</span></button> }
+                                @if (CanControlTimer && Store.Data.Timer.Phase is TimerPhase.ShortBreak or TimerPhase.LongBreak) { <button class="timer-secondary" @onclick="SkipBreak">Skip break</button> }
+                                else if (CanControlTimer && Store.Data.Timer.Phase is TimerPhase.Focus or TimerPhase.Paused) { <button class="timer-secondary" @onclick="EndFocus">Finish</button> }
+                            </div>
+                            <div class="session-note"><span class="session-dots">@for (var i = 0; i < 4; i++) { <i class="@(i < Store.Data.Timer.CompletedPomodoros % 4 ? "filled" : "")"></i> }</span><span>@(4 - Store.Data.Timer.CompletedPomodoros % 4) until a long break</span><button @onclick="CycleTask" title="Choose a different task">Change task &rarr;</button></div>
+                        </article>
+                        <article class="panel plan-panel">
+                            <div class="panel-heading"><div><h3>Today's plan</h3><p>@PlannedTasks.Count() tasks &#8212; @DoneTasks.Count() completed</p></div><button class="text-button" @onclick='() => Go("tasks")'>View all <span>&rarr;</span></button></div>
+                            <div class="task-list">
+                                @if (!PlannedTasks.Any()) { <div class="empty-state">Your day is open. Add a task to get started.</div> }
+                                @foreach (var task in PlannedTasks)
+                                {
+                                    <div class="task-row @(task.IsComplete ? "completed" : "")"><button class="check-circle @(task.IsComplete ? "checked" : "")" @onclick="() => ToggleComplete(task)">@(task.IsComplete ? "\u2713" : "")</button><button class="task-title" @onclick="() => SelectTask(task)">@task.Title</button><span class="priority priority-@task.Priority.ToString().ToLowerInvariant()">@task.Priority</span><span class="task-minutes">&#9679; @TaskTodayMinutes(task.Id)<span>m</span></span><button class="row-menu" title="Remove from today's plan" @onclick="() => TogglePlan(task)">&#8942;</button></div>
+                                }
+                            </div>
+                            <button class="add-inline" @onclick="AddQuickTask">+ Add a task</button>
+                        </article>
+                    </div>
+                    <div class="right-column">
+                        <article class="panel stats-panel"><div class="panel-heading"><div><h3>Your focus</h3><p>@UserNow.ToString("dddd, d MMMM")</p></div><span class="stat-icon">&#10024;</span></div><div class="focus-total"><strong>@TodayMinutes<span>m</span></strong><span>of focused time</span></div><div class="stat-meter"><i style="width:@Math.Min(100, TodayMinutes / 180d * 100)%"></i></div><div class="stat-foot"><span>Daily goal</span><strong>3h</strong></div><div class="stats-divider"></div><div class="mini-stat-row"><div><small>Sessions</small><strong>@TodaySessions</strong></div><div><small>Tasks done</small><strong>@DoneTasks.Count()</strong></div><div><small>Streak</small><strong>@FocusStreak days <span>&#128293;</span></strong></div></div></article>
+                        <article class="coach-card"><div class="coach-orb">&#10024;</div><div class="coach-label">YOUR FOCUS COACH</div><h3>A calmer way to plan your day.</h3><p>Get a little perspective on what deserves your attention today.</p><button @onclick='() => Go("coach")'>Talk it through <span>&rarr;</span></button><div class="coach-footer"><i></i> Grounded in your tasks &amp; focus time</div></article>
+                        <article class="panel project-today"><div class="panel-heading"><div><h3>By project</h3><p>Focus time today</p></div><button class="text-button" @onclick='() => Go("reports")'>Report &rarr;</button></div>
+                            @foreach (var project in Store.Data.Projects.Take(3)) { var mins = ProjectTodayMinutes(project.Id); <div class="project-meter-row"><span class="project-color" style="background:@project.Color"></span><span class="project-meter-name">@project.Name</span><strong>@mins<span>m</span></strong></div><div class="project-meter"><i style="width:@(TodayMinutes == 0 ? 0 : Math.Min(100, mins * 100d / TodayMinutes))%;background:@project.Color"></i></div> }
+                        </article>
+                    </div>
+                </div>
+            }
+            else if (CurrentView == "projects")
+            {
+                <div class="page-heading"><div><div class="eyebrow">YOUR WORK</div><h1>Projects</h1><p class="subheading">A home for the things you're moving forward.</p></div><button class="quiet-button" @onclick="AddProject">+ New project</button></div>
+                <div class="project-grid">@foreach (var project in Store.Data.Projects) { var tasks = Store.Data.Tasks.Where(t => t.ProjectId == project.Id).ToList(); <article class="panel project-card"><div class="project-card-head"><span class="project-square" style="background:@project.Color">@project.Name[..1]</span><span class="project-menu">&#8942;</span></div><h3>@project.Name</h3><p>@tasks.Count(t => !t.IsComplete) active tasks</p><div class="project-progress"><span><i style="width:@(tasks.Count == 0 ? 0 : tasks.Count(t => t.IsComplete) * 100d / tasks.Count)%"></i></span><small>@tasks.Count(t => t.IsComplete)/@tasks.Count</small></div><div class="project-card-foot"><span>&#9679; @ProjectMinutes(project.Id) min focused</span><span class="project-color-dot" style="background:@project.Color"></span></div></article> }</div>
+                <article class="panel project-tip"><span>&#10024;</span><div><strong>Keep it focused</strong><p>Free includes up to 3 projects. Pro gives you room for 25.</p></div><a href="/pricing">Compare plans &rarr;</a></article>
+            }
+            else if (CurrentView == "tasks")
+            {
+                <div class="page-heading"><div><div class="eyebrow">MAKE PROGRESS</div><h1>All tasks</h1><p class="subheading">Keep your next steps clear and manageable.</p></div><button class="quiet-button" @onclick="AddQuickTask">+ New task</button></div>
+                <article class="panel all-tasks"><div class="task-filters"><button class="filter-chip active">All <span>@Store.Data.Tasks.Count</span></button><button class="filter-chip" @onclick="ToggleAllPlan">Today <span>@PlannedTasks.Count()</span></button><span class="filter-spacer"></span><span class="filter-caption">Sorted by priority</span></div>@foreach (var task in Store.Data.Tasks.OrderBy(t => t.IsComplete).ThenByDescending(t => t.Priority)) { <div class="task-row @(task.IsComplete ? "completed" : "")"><button class="check-circle @(task.IsComplete ? "checked" : "")" @onclick="() => ToggleComplete(task)">@(task.IsComplete ? "\u2713" : "")</button><button class="task-title" @onclick="() => SelectTask(task)">@task.Title</button><span class="task-project"><i class="project-color" style="background:@(Store.Project(task.ProjectId)?.Color ?? "#aaa")"></i>@Store.Project(task.ProjectId)?.Name</span><span class="priority priority-@task.Priority.ToString().ToLowerInvariant()">@task.Priority</span><button class="plan-toggle @(task.PlannedToday ? "planned" : "")" @onclick="() => TogglePlan(task)">@(task.PlannedToday ? "Planned today" : "+ Plan today")</button><button class="task-edit" title="Edit task" @onclick="() => OpenTaskEditor(task)">&#9998;</button></div> }</article>
+            }
+            else if (CurrentView == "reports")
+            {
+                <div class="page-heading"><div><div class="eyebrow">YOUR PROGRESS</div><h1>Focus reports</h1><p class="subheading">Notice what moves forward when you give it your attention.</p></div><select class="period-select" @bind="Period"><option value="Day">Today</option><option value="Week">This week</option><option value="Month">This month</option></select></div>
+                <div class="report-summary"><article class="panel report-number"><span>FOCUS TIME</span><strong>@PeriodMinutes <small>min</small></strong><p>@PeriodLabel</p></article><article class="panel report-number"><span>SESSIONS</span><strong>@PeriodSessions</strong><p>Pomodoros completed</p></article><article class="panel report-number"><span>TOP PROJECT</span><strong class="top-project-name">@TopProjectName</strong><p>@TopProjectMinutes minutes focused</p></article></div>
+                <article class="panel chart-panel"><div class="panel-heading"><div><h3>Focus over time</h3><p>Minutes by day &#8212; your local time</p></div><div class="chart-legend"><i></i> Focus time</div></div><div class="bar-chart">@foreach (var day in ChartDays) { <div class="bar-column"><span class="bar-value">@day.Minutes</span><div class="bar-track"><i style="height:@(Math.Max(4, day.Minutes * 100d / Math.Max(30, ChartDays.Max(d => d.Minutes))))%"></i></div><small>@day.Label</small></div> }</div></article>
+                <article class="panel breakdown-panel"><div class="panel-heading"><div><h3>By project</h3><p>Where your attention went</p></div></div>@foreach (var project in Store.Data.Projects) { var mins = PeriodProjectMinutes(project.Id); <div class="breakdown-row"><span class="project-color" style="background:@project.Color"></span><strong>@project.Name</strong><span class="breakdown-bar"><i style="width:@(PeriodMinutes == 0 ? 0 : mins * 100d / PeriodMinutes)%;background:@project.Color"></i></span><small>@mins min</small></div> }</article>
+                @if (Store.Data.Plan == "Free") { <div class="history-note">Free reports include your last 30 days. <a href="/pricing">Unlock a year of history with Pro &rarr;</a></div> }
+            }
+            else if (CurrentView == "coach")
+            {
+                <div class="page-heading"><div><div class="eyebrow">A THOUGHTFUL COMPANION</div><h1>Focus coach</h1><p class="subheading">A clear head starts with a useful conversation.</p></div><button class="quiet-button" @onclick="NewConversation">+ New conversation</button></div>
+                <div class="coach-layout"><article class="panel conversation-list"><div class="panel-heading"><div><h3>Saved chats</h3><p>Your reflections, kept close.</p></div></div>@foreach (var conversation in Store.Data.Conversations.OrderByDescending(c => c.UpdatedAt)) { <button class="conversation-item @(conversation.Id == ActiveConversation.Id ? "selected" : "")" disabled="@_sending" @onclick="() => SelectConversation(conversation)"><strong>@conversation.Title</strong><small>@conversation.UpdatedAt.ToLocalTime().ToString("d MMM, h:mm tt")</small></button> }</article><article class="panel chat-panel"><div class="chat-header"><span class="coach-avatar">&#10024;</span><div><strong>FlowMate coach</strong><small><i></i> Here to help you find focus</small></div><span class="read-only">READ ONLY</span></div><RadzenChat @ref="_chat" @key="ActiveConversation.Id" class="flowmate-radzen-chat" CurrentUserId="user" Users="ChatUsers" Messages="ChatMessages" MessageSent="SendMessage" Disabled="_sending" ShowUsers="false" ShowUserNames="false" Placeholder="Ask about your tasks, projects, or focus time..." EmptyMessage="What would make today feel meaningful?" TimestampFormat="h:mm tt"><EmptyTemplate><div class="coach-welcome"><span>&#10024;</span><h3>What would make today feel meaningful?</h3><p>I can help you sort through your priorities, based on the work you've already planned.</p><div class="suggestion-chips"><button @onclick='() => UsePrompt("Help me choose what to focus on today")'>Help me prioritize</button><button @onclick='() => UsePrompt("How has my focus been this week?")'>Review my week</button></div></div></EmptyTemplate></RadzenChat><div class="coach-note">Coach can suggest, never change your work.</div></article></div>
+                @if (Store.Data.Plan == "Free") { <div class="history-note">@AiPromptsUsed of 10 monthly coach prompts used. <a href="/pricing">Get 100 prompts with Pro &rarr;</a></div> }
+            }
+            else if (CurrentView == "pricing")
+            {
+                <div class="pricing-intro"><div class="eyebrow">SIMPLE, THOUGHTFUL PLANS</div><h1>More space to focus.</h1><p>Start for free. Grow when you're ready.</p><div class="billing-toggle"><button class="@(Annual ? "" : "selected")" @onclick="() => Annual = false">Monthly</button><button class="@(Annual ? "selected" : "")" @onclick="() => Annual = true">Yearly <span>Save 20%</span></button></div>@if (!string.IsNullOrEmpty(BillingMessage)) { <p class="billing-message">@BillingMessage</p> }</div><div class="pricing-grid"><article class="panel pricing-card"><span class="plan-label">FREE</span><h2>Start with focus.</h2><div class="price">£0 <small>forever</small></div><p>Everything you need to build a steady focus habit.</p><button class="plan-button secondary" disabled>Current plan</button><ul><li>&#10003; Up to 3 projects</li><li>&#10003; Tasks and daily planning</li><li>&#10003; Focus timer and reports</li><li>&#10003; 30 days of report history</li><li>&#10003; 10 coach prompts each month</li></ul></article><article class="panel pricing-card pro-card"><div class="popular-tag">A LITTLE MORE ROOM</div><span class="plan-label">FLOWMATE PRO</span><h2>Make focus a practice.</h2><div class="price">@PriceLabel</div><p>More history, more insight, and space for every project.</p><button class="plan-button primary" disabled="@(BillingState?.TrialUsed == true)" @onclick="StartTrial">@(BillingState?.TrialUsed == true ? "Trial already used" : "Start your 14-day free trial")</button><small class="trial-copy">No card needed &middot; missing payment method cancels at trial end</small><button class="checkout-button" @onclick="BuyPro">Subscribe @(Annual ? "annually" : "monthly")</button><ul><li>&#10003; Up to 25 projects</li><li>&#10003; One year of report history</li><li>&#10003; 100 coach prompts each month</li><li>&#10003; Everything in Free</li></ul></article></div>
+            }
+            else
+            {
+                <div class="page-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h1>Settings</h1><p class="subheading">Your space, tuned to how you work.</p></div></div>
+                <div class="settings-layout"><div class="settings-nav"><a class="selected">Profile</a><a href="/settings#preferences">Preferences</a><a href="/settings#billing">Plan &amp; billing</a></div><div class="settings-content"><article class="panel settings-panel"><div class="settings-heading"><div><h3>Profile</h3><p>Personal details for your FlowMate account.</p></div></div><label class="field-label">Name<input class="field-input" @bind="Store.Data.DisplayName" /></label><label class="field-label">Email address<input class="field-input" value="@(Auth.Session.Email ?? "")" disabled /></label><label class="field-label">Time zone<select class="field-input" @bind="Store.Data.TimeZone"><option>Europe/London</option><option>America/New_York</option><option>America/Los_Angeles</option><option>Europe/Paris</option><option>Asia/Tokyo</option></select><small>Used to split focus time across calendar days.</small></label><div class="profile-actions"><button class="quiet-button" @onclick="Save">Save changes</button>@if (Auth.Session.SignedIn) { <button class="text-button" @onclick="Logout">Sign out</button> }</div></article><article class="panel settings-panel" id="preferences"><div class="settings-heading"><div><h3>Preferences</h3><p>Make FlowMate feel at home.</p></div></div><div class="setting-row"><div><strong>Appearance</strong><small>Follow system preference until you choose a theme.</small></div><button class="setting-control" @onclick="ToggleTheme">@(IsDark ? "Dark mode on" : "Light mode on")</button></div><div class="setting-row"><div><strong>Timer sounds</strong><small>A soft cue at the end of focus and break sessions.</small></div><button class="setting-control" @onclick="ToggleMute">@(Store.Data.Muted ? "Muted" : "On")</button></div><div class="setting-row"><div><strong>Focus length</strong><small>Short breaks are 5 minutes; long breaks are 15.</small></div><span class="setting-static">25 minutes</span></div></article><article class="panel settings-panel" id="billing"><div class="settings-heading"><div><h3>Plan &amp; billing</h3><p>You're currently on the @Store.Data.Plan plan.</p></div><button class="text-button" @onclick="OpenBillingPortal">Manage billing</button></div><div class="setting-row"><div><strong>@Store.Data.Plan plan</strong><small>Up to @(Store.Data.Plan == "Pro" ? 25 : 3) projects | @((Store.Data.Plan == "Pro") ? "100" : "10") coach prompts / month</small></div><span class="plan-status">Active</span></div></article></div></div>
+            }
+            @if (_taskDialogOpen)
+            {
+                <div class="modal-shade" @onclick="CloseTaskDialog"><section class="task-dialog" @onclick:stopPropagation="true"><div class="dialog-heading"><div><span class="eyebrow">PLAN YOUR NEXT STEP</span><h2>@(_editingTask ? "Edit task" : "New task")</h2></div><button class="dialog-close" @onclick="CloseTaskDialog">&#8212;</button></div><EditForm Model="_draftTask" OnValidSubmit="SaveTask"><label class="field-label">Task name<InputText class="field-input" @bind-Value="_draftTask.Title" placeholder="What needs your attention?" /></label><div class="dialog-fields"><label class="field-label">Project<InputSelect class="field-input" @bind-Value="_draftTask.ProjectId">@foreach (var project in Store.Data.Projects) { <option value="@project.Id">@project.Name</option> }</InputSelect></label><label class="field-label">Priority<InputSelect class="field-input" @bind-Value="_draftTask.Priority"><option value="@TaskPriority.High">High</option><option value="@TaskPriority.Medium">Medium</option><option value="@TaskPriority.Low">Low</option></InputSelect></label></div><label class="field-label">Due date<InputDate TValue="DateOnly?" class="field-input" @bind-Value="_draftTask.DueDate" /></label><label class="dialog-checkbox"><InputCheckbox @bind-Value="_draftTask.PlannedToday" /> Add to today's plan</label><div class="dialog-actions"><button type="button" class="text-button" @onclick="CloseTaskDialog">Cancel</button><button type="submit" class="timer-primary">Save task</button></div></EditForm></section></div>
+            }
+        </section>
+    </main>
+</div>
+
+@code {
+    [Parameter] public string? View { get; set; }
+    private bool _ready, IsDark, Annual;
+    private string? BillingMessage;
+    private IReadOnlyList<BillingPrice> Prices = [];
+    private BillingSummary? BillingState;
+    private IJSObjectReference? _workspaceModule;
+    private TaskRecord _draftTask = new();
+    private bool _taskDialogOpen, _editingTask;
+    private string Initials => string.Concat((Auth.Session.Name ?? Store.Data.DisplayName).Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(n => char.ToUpperInvariant(n[0])));
+    private bool _sending;
+    private List<ChatMessage> ChatMessages = [];
+    private readonly List<ChatUser> ChatUsers = [new() { Id = "user", Name = "You" }, new() { Id = "coach", Name = "FlowMate" }];
+    private string CurrentView => (View ?? "today").ToLowerInvariant() is "projects" or "tasks" or "reports" or "coach" or "pricing" or "settings" ? View!.ToLowerInvariant() : "today";
+    private string Title => CurrentView switch { "projects" => "Projects", "tasks" => "Tasks", "reports" => "Reports", "coach" => "Focus coach", "pricing" => "Plans", "settings" => "Settings", _ => "Today" };
+    private string PriceLabel => Prices.FirstOrDefault(p => p.Interval == (Annual ? "year" : "month"))?.Display ?? "Price set in Stripe";
+    private string FirstName => Store.Data.DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "there";
+    private DateTime UserNow { get { try { return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(Store.Data.TimeZone)).DateTime; } catch { return DateTime.Now; } } }
+    private DateOnly TodayDate => DateOnly.FromDateTime(UserNow);
+    private string Greeting => UserNow.Hour < 12 ? "GOOD MORNING" : UserNow.Hour < 18 ? "GOOD AFTERNOON" : "GOOD EVENING";
+    private IEnumerable<TaskRecord> PlannedTasks => Store.Data.Tasks.Where(t => t.PlannedToday);
+    private IEnumerable<TaskRecord> DoneTasks => PlannedTasks.Where(t => t.IsComplete);
+    private TaskRecord? ActiveTask => Store.Task(Store.Data.Timer.TaskId);
+    private ProjectRecord? ActiveProject => Store.Project(Store.Data.Timer.ProjectId);
+    private bool IsRunning => Store.Data.Timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak;
+    private bool CanControlTimer => string.IsNullOrEmpty(Store.Data.Timer.OwnerClientId) || Store.Data.Timer.OwnerClientId == Store.ClientId;
+    private string TimerLabel => Store.Data.Timer.Phase switch { TimerPhase.Focus => "FOCUS SESSION", TimerPhase.ShortBreak or TimerPhase.LongBreak => "TAKE A BREATHER", TimerPhase.Paused => "PAUSED", _ => "YOUR FOCUS SPACE" };
+    private string TimerCaption => Store.Data.Timer.Phase switch { TimerPhase.ShortBreak or TimerPhase.LongBreak => "A moment for yourself", TimerPhase.Paused => "Pick up when you're ready", _ => "One thing at a time" };
+    private int SecondsLeft => IsRunning && Store.Data.Timer.EndsAt is { } end ? Math.Max(0, (int)Math.Ceiling((end - DateTimeOffset.UtcNow).TotalSeconds)) : Store.Data.Timer.RemainingSeconds;
+    private string TimeLeft => $"{SecondsLeft / 60:00}:{SecondsLeft % 60:00}";
+    private double RingCircumference => 2 * Math.PI * 106;
+    private double RingOffset => RingCircumference * (1 - (Store.Data.Timer.DurationSeconds <= 0 ? 1 : (double)SecondsLeft / Store.Data.Timer.DurationSeconds));
+    private int TodayMinutes => Store.Data.Sessions.Where(s => LocalDate(s.StartedAt) == TodayDate).Sum(s => s.FocusMinutes);
+    private int TodaySessions => Store.Data.Sessions.Count(s => LocalDate(s.StartedAt) == TodayDate);
+    private int FocusStreak
+    {
+        get
+        {
+            var focusDays = Store.Data.Sessions.Select(session => LocalDate(session.StartedAt)).ToHashSet();
+            var day = focusDays.Contains(TodayDate) ? TodayDate : TodayDate.AddDays(-1);
+            var streak = 0;
+            while (focusDays.Contains(day)) { streak++; day = day.AddDays(-1); }
+            return streak;
+        }
+    }
+    private ReportPeriod Period { get; set; } = ReportPeriod.Week;
+    private DateTime PeriodStart => Period switch { ReportPeriod.Day => UserNow.Date, ReportPeriod.Month => new(UserNow.Year, UserNow.Month, 1), _ => UserNow.Date.AddDays(-(((int)UserNow.DayOfWeek + 6) % 7)) };
+    private DateTime PeriodEnd => Period switch { ReportPeriod.Day => UserNow.Date.AddDays(1), ReportPeriod.Month => PeriodStart.AddMonths(1), _ => PeriodStart.AddDays(7) };
+    private IEnumerable<FocusSessionRecord> PeriodRecords => Store.Data.Sessions.Where(s => { var d = LocalDate(s.StartedAt).ToDateTime(TimeOnly.MinValue); return d >= PeriodStart && d < PeriodEnd; });
+    private int PeriodMinutes => PeriodRecords.Sum(s => s.FocusMinutes);
+    private int PeriodSessions => PeriodRecords.Count();
+    private string PeriodLabel => Period switch { ReportPeriod.Day => "Today", ReportPeriod.Month => PeriodStart.ToString("MMMM yyyy"), _ => $"{PeriodStart:d MMM} to {PeriodEnd.AddDays(-1):d MMM}" };
+    private string TopProjectName => Store.Data.Projects.OrderByDescending(p => PeriodProjectMinutes(p.Id)).FirstOrDefault()?.Name ?? "No projects yet";
+    private int TopProjectMinutes => Store.Data.Projects.Select(p => PeriodProjectMinutes(p.Id)).DefaultIfEmpty().Max();
+    private List<(string Label, int Minutes)> ChartDays { get { var start = PeriodStart; var end = PeriodEnd; return Enumerable.Range(0, Math.Clamp((int)(end - start).TotalDays, 1, 31)).Select(i => { var date = start.AddDays(i); var mins = PeriodRecords.Where(s => LocalDate(s.StartedAt) == DateOnly.FromDateTime(date)).Sum(s => s.FocusMinutes); return (Period == ReportPeriod.Month ? date.ToString("d") : date.ToString("ddd")[..1], mins); }).ToList(); } }
+    private int AiPromptsUsed => BillingState?.PromptsUsed ?? Store.Data.Conversations.Sum(c => c.Messages.Count(m => m.Role == "user"));
+    private ConversationRecord ActiveConversation => Store.Data.Conversations.FirstOrDefault() ?? new() { Title = "Today, with intention" };
+    private static readonly (string Key, string Label, string Icon)[] NavItems = [("today", "Today", "&#9711;"), ("projects", "Projects", "&#9638;"), ("tasks", "Tasks", "&#9745;"), ("reports", "Reports", "&#9636;"), ("coach", "Focus coach", "&#10024;")];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitialiseAsync();
+        await Store.InitialiseAsync();
+        if (Store.Data.Conversations.Count == 0)
+            Store.Data.Conversations.Add(new() { Title = "Today, with intention" });
+        LoadChatMessages();
+        try { Prices = await Billing.GetPricesAsync(); } catch (HttpRequestException) { }
+        if (Auth.Session.SignedIn) { try { BillingState = await Billing.GetSummaryAsync(); } catch (HttpRequestException) { } }
+        var savedTheme = await JS.InvokeAsync<string?>("localStorage.getItem", "flowmate.theme");
+        IsDark = savedTheme == "dark" || (savedTheme is null && await JS.InvokeAsync<bool>("eval", "window.matchMedia('(prefers-color-scheme: dark)').matches"));
+        await JS.InvokeVoidAsync("eval", $"document.documentElement.dataset.theme='{(IsDark ? "dark" : "light")}'");
+        Store.Changed += OnStoreChanged;
+        _ready = true;
+        _ = RunClockAsync();
+    }
+
+    private void OnStoreChanged() { if (_ready) _ = InvokeAsync(StateHasChanged); }
+    private async Task RunClockAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try { while (await timer.WaitForNextTickAsync()) { if (IsRunning && CanControlTimer && SecondsLeft <= 0) await TimerElapsed(); else if (IsRunning) await InvokeAsync(StateHasChanged); } } catch (ObjectDisposedException) { }
+    }
+    private async Task TimerElapsed()
+    {
+        var timer = Store.Data.Timer;
+        if (timer.Phase == TimerPhase.Focus)
+        {
+            RecordTimerIntervals(timer.EndsAt ?? DateTimeOffset.UtcNow);
+            timer.CompletedPomodoros++;
+            await Play("break");
+            BeginBreak(timer.CompletedPomodoros % 4 == 0 ? 15 : 5);
+        }
+        else { await Play("resume"); StartFocusInternal(); }
+        await Save();
+    }
+    private void StartFocusInternal() { var timer = Store.Data.Timer; timer.CompletedIntervals.Clear(); timer.OwnerClientId = Store.ClientId; timer.Phase = TimerPhase.Focus; timer.DurationSeconds = 25 * 60; timer.RemainingSeconds = timer.DurationSeconds; timer.StartedAt = DateTimeOffset.UtcNow; timer.EndsAt = timer.StartedAt.Value.AddSeconds(timer.DurationSeconds); if (string.IsNullOrEmpty(timer.TaskId)) { var task = PlannedTasks.FirstOrDefault(t => !t.IsComplete); if (task is not null) { timer.TaskId = task.Id; timer.ProjectId = task.ProjectId; } } }
+    private async Task StartFocus() { if (Store.Data.Timer.Phase is TimerPhase.Focus or TimerPhase.Paused or TimerPhase.ShortBreak or TimerPhase.LongBreak) return; StartFocusInternal(); await Save(); }
+    private void BeginBreak(int minutes) { var t = Store.Data.Timer; t.Phase = minutes == 15 ? TimerPhase.LongBreak : TimerPhase.ShortBreak; t.DurationSeconds = minutes * 60; t.RemainingSeconds = t.DurationSeconds; t.StartedAt = DateTimeOffset.UtcNow; t.EndsAt = t.StartedAt.Value.AddSeconds(t.DurationSeconds); }
+    private async Task PauseTimer() { var t = Store.Data.Timer; if (t.Phase != TimerPhase.Focus) return; var now = DateTimeOffset.UtcNow; if (t.StartedAt is { } start && now > start) t.CompletedIntervals.Add(new() { StartedAt = start, EndedAt = now }); t.RemainingSeconds = SecondsLeft; t.Phase = TimerPhase.Paused; t.EndsAt = null; t.StartedAt = null; t.PausedAt = now; await Save(); }
+    private async Task ResumeTimer() { var t = Store.Data.Timer; if (t.Phase != TimerPhase.Paused) return; t.Phase = TimerPhase.Focus; t.StartedAt = DateTimeOffset.UtcNow; t.EndsAt = t.StartedAt.Value.AddSeconds(t.RemainingSeconds); t.PausedAt = null; await Save(); }
+    private async Task EndFocus() { var t = Store.Data.Timer; if (t.Phase is not (TimerPhase.Focus or TimerPhase.Paused)) return; RecordTimerIntervals(DateTimeOffset.UtcNow); ResetTimer(); await Save(); }
+    private async Task SkipBreak() { if (Store.Data.Timer.Phase is not (TimerPhase.ShortBreak or TimerPhase.LongBreak)) return; ResetTimer(); StartFocusInternal(); await Save(); }
+    private void RecordTimerIntervals(DateTimeOffset activeEnd) { var t = Store.Data.Timer; var usedSeconds = 0; foreach (var interval in t.CompletedIntervals) { var seconds = Math.Max(0, (int)(interval.EndedAt - interval.StartedAt).TotalSeconds); Store.RecordFocus(interval.StartedAt, interval.EndedAt, t.TaskId, t.ProjectId, seconds); usedSeconds += seconds; } if (t.StartedAt is { } start && activeEnd > start) { var seconds = (int)(activeEnd - start).TotalSeconds; Store.RecordFocus(start, activeEnd, t.TaskId, t.ProjectId, Math.Min(seconds, Math.Max(0, t.DurationSeconds - usedSeconds))); } }
+    private void ResetTimer() { var t = Store.Data.Timer; t.Phase = TimerPhase.Idle; t.EndsAt = null; t.StartedAt = null; t.PausedAt = null; t.RemainingSeconds = 0; t.DurationSeconds = 0; t.CompletedIntervals.Clear(); t.OwnerClientId = ""; }
+    private async Task ToggleComplete(TaskRecord task) { task.IsComplete = !task.IsComplete; if (task.IsComplete) task.PlannedToday = true; await Save(); }
+    private async Task TogglePlan(TaskRecord task) { task.PlannedToday = !task.PlannedToday; await Save(); }
+    private async Task ToggleAllPlan() { foreach (var task in Store.Data.Tasks) task.PlannedToday = !task.PlannedToday; await Save(); }
+    private async Task SelectTask(TaskRecord task) { Store.Data.Timer.TaskId = task.Id; Store.Data.Timer.ProjectId = task.ProjectId; await Save(); }
+    private async Task CycleTask() { var tasks = PlannedTasks.Where(t => !t.IsComplete).ToList(); if (tasks.Count == 0) { Navigation.NavigateTo("/tasks"); return; } var ix = tasks.FindIndex(t => t.Id == Store.Data.Timer.TaskId); var next = tasks[(ix + 1) % tasks.Count]; await SelectTask(next); }
+    private Task AddQuickTask() { var project = Store.Data.Projects.FirstOrDefault(); _draftTask = new() { ProjectId = project?.Id ?? "", PlannedToday = true }; _editingTask = false; _taskDialogOpen = true; return Task.CompletedTask; }
+    private void OpenTaskEditor(TaskRecord task) { _draftTask = new() { Id = task.Id, Title = task.Title, ProjectId = task.ProjectId, DueDate = task.DueDate, Priority = task.Priority, IsComplete = task.IsComplete, PlannedToday = task.PlannedToday, FocusMinutesToday = task.FocusMinutesToday, CreatedAt = task.CreatedAt }; _editingTask = true; _taskDialogOpen = true; }
+    private void CloseTaskDialog() => _taskDialogOpen = false;
+    private async Task SaveTask() { if (string.IsNullOrWhiteSpace(_draftTask.Title)) return; if (_editingTask) { var index = Store.Data.Tasks.FindIndex(t => t.Id == _draftTask.Id); if (index >= 0) Store.Data.Tasks[index] = _draftTask; } else Store.Data.Tasks.Add(_draftTask); _taskDialogOpen = false; await Save(); }
+    private async Task AddProject() { if (Store.Data.Projects.Count >= (Store.Data.Plan == "Pro" ? 25 : 3)) { Navigation.NavigateTo("/pricing"); return; } var name = await JS.InvokeAsync<string?>("prompt", "Name your new project"); if (string.IsNullOrWhiteSpace(name)) return; Store.Data.Projects.Add(new() { Name = name.Trim(), Color = new[] { "#5b68e8", "#2c9b82", "#df9b39", "#cb6a78" }[Store.Data.Projects.Count % 4] }); await Save(); }
+    private async Task ToggleMute() { Store.Data.Muted = !Store.Data.Muted; await Save(); }
+    private async Task Play(string kind) { if (!Store.Data.Muted) { _workspaceModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/workspace.js"); await _workspaceModule.InvokeVoidAsync("playTone", kind); } }
+    private async Task ToggleTheme() { IsDark = !IsDark; await JS.InvokeVoidAsync("eval", $"document.documentElement.dataset.theme='{(IsDark ? "dark" : "light")}'"); await JS.InvokeVoidAsync("localStorage.setItem", "flowmate.theme", IsDark ? "dark" : "light"); }
+    private void Go(string view) => Navigation.NavigateTo(view == "today" ? "/" : "/" + view);
+    private async Task StartTrial()
+    {
+        try
+        {
+            var result = await Billing.StartTrialAsync();
+            if (!result.Succeeded) { BillingMessage = result.Message; return; }
+            BillingState = await Billing.GetSummaryAsync();
+            Store.Data.Plan = BillingState?.Plan ?? "Free";
+            await Save();
+            BillingMessage = result.Message;
+        }
+        catch (HttpRequestException) { BillingMessage = "Billing is temporarily unavailable."; }
+    }
+    private async Task BuyPro()
+    {
+        try
+        {
+            var result = await Billing.CheckoutAsync(Annual);
+            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Url)) Navigation.NavigateTo(result.Url, forceLoad: true);
+            else BillingMessage = result.Message;
+        }
+        catch (HttpRequestException) { BillingMessage = "Checkout is temporarily unavailable."; }
+    }
+    private async Task OpenBillingPortal()
+    {
+        try
+        {
+            var result = await Billing.PortalAsync();
+            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Url)) Navigation.NavigateTo(result.Url, forceLoad: true);
+            else BillingMessage = result.Message;
+        }
+        catch (HttpRequestException) { BillingMessage = "Billing is temporarily unavailable."; }
+    }
+    private async Task Login(string connection) => await Auth.LoginAsync(connection);
+    private async Task Logout() => await Auth.LogoutAsync();
+    private int ProjectTodayMinutes(string id) => Store.Data.Sessions.Where(s => s.ProjectId == id && LocalDate(s.StartedAt) == TodayDate).Sum(s => s.FocusMinutes);
+    private int TaskTodayMinutes(string id) => Store.Data.Sessions.Where(s => s.TaskId == id && LocalDate(s.StartedAt) == TodayDate).Sum(s => s.FocusMinutes);
+    private int ProjectMinutes(string id) => Store.Data.Sessions.Where(s => s.ProjectId == id).Sum(s => s.FocusMinutes);
+    private int PeriodProjectMinutes(string id) => PeriodRecords.Where(s => s.ProjectId == id).Sum(s => s.FocusMinutes);
+    private DateOnly LocalDate(DateTimeOffset instant) { try { return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(Store.Data.TimeZone)).DateTime); } catch { return DateOnly.FromDateTime(instant.LocalDateTime); } }
+    private async Task NewConversation() { Store.Data.Conversations.Insert(0, new() { Title = "A fresh perspective" }); ChatMessages = []; await Save(); }
+    private async Task SelectConversation(ConversationRecord c) { if (Store.Data.Conversations.Remove(c)) Store.Data.Conversations.Insert(0, c); LoadChatMessages(); await Save(); }
+    private async Task UsePrompt(string prompt)
+    {
+        if (_sending) return;
+        await _chat!.SendMessage(prompt, "user");
+    }
+    private RadzenChat? _chat;
+    private void LoadChatMessages() => ChatMessages = ActiveConversation.Messages.Select(message => new ChatMessage
+    {
+        Content = message.Text,
+        UserId = message.Role == "user" ? "user" : "coach",
+        Timestamp = message.CreatedAt.LocalDateTime
+    }).ToList();
+    private async Task SendMessage(ChatMessage message)
+    {
+        var text = message.Content.Trim();
+        if (text.Length == 0) return;
+        if (_sending) return;
+        _sending = true;
+        var conversation = ActiveConversation;
+        ChatMessages.Add(message);
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            if (Auth.Session.SignedIn)
+            {
+                CoachResponse? saved = null;
+                try { saved = await Store.AskCoachAsync(text, conversation.Id); }
+                catch (HttpRequestException) { }
+                if (saved is not null)
+                {
+                    BillingState = BillingState is null ? null : BillingState with { PromptsUsed = saved.PromptsUsed, PromptLimit = saved.PromptLimit };
+                    if (ActiveConversation.Id == conversation.Id) LoadChatMessages();
+                    return;
+                }
+            }
+
+            conversation.Messages.Add(new() { Role = "user", Text = text });
+            conversation.UpdatedAt = DateTimeOffset.UtcNow;
+            conversation.Messages.Add(new() { Role = "assistant", Text = Auth.Session.SignedIn ? "I couldn't reach the focus coach just now. Please try again." : CoachReply(text) });
+            await Save();
+            if (ActiveConversation.Id == conversation.Id) LoadChatMessages();
+        }
+        finally { _sending = false; await InvokeAsync(StateHasChanged); }
+    }
+    private string CoachReply(string prompt) { var next = PlannedTasks.Where(t => !t.IsComplete).OrderByDescending(t => t.Priority).FirstOrDefault(); var projectText = Store.Data.Projects.Count == 0 ? "your next step" : string.Join(", ", Store.Data.Projects.Take(2).Select(p => p.Name)); if (prompt.Contains("week", StringComparison.OrdinalIgnoreCase)) return $"You've logged {PeriodMinutes} focused minutes this week across {PeriodSessions} sessions. Your work has been spread across {projectText}. What felt easiest to return to?"; return next is null ? $"Your plan is clear for now. You've already put {TodayMinutes} minutes into focused work today. Would a short reset help you choose what comes next?" : $"Looking at what you've planned, **{next.Title}** feels like a useful next step{(next.Priority == TaskPriority.High ? " because you marked it high priority" : "")} . You have {TodayMinutes} focused minutes behind you today. Could you give this one a single 25-minute session?"; }
+    private async Task Save() { await Store.SaveAsync(); }
+    public async ValueTask DisposeAsync() { Store.Changed -= OnStoreChanged; if (_workspaceModule is not null) await _workspaceModule.DisposeAsync(); }
+}

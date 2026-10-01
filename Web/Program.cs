@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Radzen;
 using Web.Clients;
 using Web.Components;
 using Web.Managers;
@@ -42,7 +43,9 @@ public class Program
         });
 
         // API clients
-        builder.Services.AddScoped<WeatherApiClient>();
+        builder.Services.AddScoped<Auth0Client>();
+        builder.Services.AddScoped<BillingClient>();
+        builder.Services.AddScoped<WorkspaceStore>();
 
         #region Managers
 
@@ -56,6 +59,7 @@ public class Program
 
         // Add logging
         builder.Services.AddLogging();
+        builder.Services.AddRadzenComponents();
 
         var host = builder.Build();
 

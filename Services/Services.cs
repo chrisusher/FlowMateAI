@@ -6,6 +6,10 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Services.Database;
+using Services.Repositories;
+using Services.Workspaces;
+using Services.Billing;
+using Services.Coach;
 using Shared.Config;
 
 namespace Services;
@@ -52,12 +56,7 @@ public static class Services
             config.AddBlobServiceClient(storageConnectionString)
                 .WithName("FlowMate");
 
-            // Add KeyVault
-            var keyVaultConfig = configuration
-                .GetSection("KeyVault")
-                .Get<KeyVaultConfig>();
-
-            config.AddSecretClient(new Uri(configuration["FLOWMATE_SECRETS_URI"] ?? throw new InvalidOperationException("FLOWMATE_SECRETS_URI is not set in configuration")));
+            // Application secrets are supplied through server-side app settings or the host secret store.
         });
 
         #endregion
@@ -72,13 +71,18 @@ public static class Services
 
         services.AddDbContext<DatabaseContext>(options =>
         {
+            var cosmosConnection = configuration.GetConnectionString("database");
             var accountEndpoint = NormaliseCosmosAccountEndpoint(
                 configuration["Database:AccountEndpoint"]
                     ?? configuration["Database__AccountEndpoint"]
                     ?? configuration["Database:AccountName"]
                     ?? configuration["Database__AccountName"]
+                    ?? ConnectionValue(cosmosConnection, "AccountEndpoint")
                     ?? string.Empty);
-            var accountKey = configuration["Database:Key"] ?? configuration["Database__Key"] ?? string.Empty;
+            var accountKey = configuration["Database:Key"]
+                ?? configuration["Database__Key"]
+                ?? ConnectionValue(cosmosConnection, "AccountKey")
+                ?? string.Empty;
 
             var databaseName = ResolveCosmosDatabaseName(configuration, globalConfig.Environment);
 
@@ -89,8 +93,6 @@ public static class Services
                 accountKey,
                 databaseName
             );
-
-            options.EnableSensitiveDataLogging();
 
 #if DEBUG
             options.EnableDetailedErrors();
@@ -103,6 +105,13 @@ public static class Services
             var blobServiceClient = services.GetRequiredService<BlobServiceClient>();
             return new BlobStorageService(blobServiceClient);
         });
+
+        services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+        services.AddScoped<IActivityArchiveRepository, BlobActivityArchiveRepository>();
+        services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<IBillingRepository, BillingRepository>();
+        services.AddScoped<IBillingService, StripeBillingService>();
+        services.AddScoped<IFocusCoachService, FoundryFocusCoachService>();
 
         #region Config
         services.AddSingleton(functionsConfig!);
@@ -125,8 +134,6 @@ public static class Services
 
         #endregion
 
-        services.AddSingleton(s => services.BuildServiceProvider());
-
         return services;
     }
 
@@ -139,7 +146,19 @@ public static class Services
             return configuredDatabaseName;
         }
 
-        return $"StockTraderAgent-{environment ?? "Development"}";
+        return $"flowmate-{environment ?? "Development"}";
+    }
+
+    private static string? ConnectionValue(string? connectionString, string name)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString)) return null;
+        foreach (var part in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = part.IndexOf('=');
+            if (separator > 0 && part[..separator].Equals(name, StringComparison.OrdinalIgnoreCase))
+                return part[(separator + 1)..];
+        }
+        return null;
     }
 
     internal static string NormaliseCosmosAccountEndpoint(string? accountEndpoint)
