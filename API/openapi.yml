@@ -7,7 +7,7 @@ servers:
   - url: /api
     description: Azure Functions HTTP route prefix
 paths:
-  /v1/health:
+  /health:
     get:
       operationId: getHealth
       summary: Check API health
