@@ -8,3 +8,35 @@
 .auth-screen{width:min(390px,100%);margin:7vh auto 0;text-align:center;display:flex;align-items:center;flex-direction:column}.auth-mark{height:48px;width:48px;border-radius:15px;background:#5b68e8;color:white;display:grid;place-items:center;font:800 31px Manrope;margin-bottom:20px;box-shadow:0 6px 18px #5b68e833}.auth-screen h1{font:700 27px Manrope;letter-spacing:-.9px;margin:9px 0}.auth-screen>p{color:#92958f;font-size:11px;line-height:1.65;max-width:325px;margin:0 0 23px}.auth-provider{width:100%;height:43px;border:1px solid var(--line);background:var(--surface);border-radius:9px;margin:0 0 9px;color:var(--text);font-size:11px;font-weight:600;position:relative}.auth-provider span{position:absolute;left:14px;top:10px;color:#7478dd;font-size:14px}.auth-screen>small{font-size:9px;color:#a0a39d;line-height:1.6;margin-top:9px}.profile-actions{display:flex;align-items:center;gap:12px}
 .modal-shade{position:fixed;inset:0;background:#15181875;z-index:20;display:grid;place-items:center;padding:18px;backdrop-filter:blur(3px)}.task-dialog{width:min(440px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:23px;box-shadow:0 20px 70px #0002}.dialog-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.dialog-heading h2{font:650 19px Manrope;margin:5px 0 0}.dialog-close{border:0;background:none;color:#92958f;font-size:23px}.task-dialog .field-label{max-width:none;margin:13px 0}.dialog-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.dialog-checkbox{display:flex;align-items:center;gap:8px;font-size:10px;color:#737770;margin:15px 0}.dialog-checkbox input{accent-color:#626ee4}.dialog-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;border-top:1px solid var(--line);padding-top:14px;margin-top:17px}.task-edit{border:0;background:none;color:#989b95;font-size:12px;padding:5px}
 .chat-panel{min-height:505px}.flowmate-radzen-chat{flex:1;min-height:405px;display:flex}.flowmate-radzen-chat.rz-chat{width:100%;border:0;border-radius:0;background:transparent}.flowmate-radzen-chat .rz-chat-message-content{font-size:11px;line-height:1.6}.flowmate-radzen-chat .rz-chat-input{font-size:11px}.coach-note{border-top:1px solid var(--line);padding:9px 15px;color:#aaa;font-size:9px}.conversation-item:disabled{opacity:.65;cursor:wait}
+
+/* Keep headings legible over the active theme's surfaces. */
+h1,h2,h3,h4,h5,h6,.page-heading h1,.pricing-intro h1,.panel-heading h3,.settings-heading h3{color:var(--text)}
+.workspace-loading{min-height:260px;display:flex;align-items:center;justify-content:center;gap:11px;color:var(--muted);font-size:13px}
+.loading-spinner{width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:workspace-spin .8s linear infinite}
+@keyframes workspace-spin{to{transform:rotate(360deg)}}
+
+/* Tablet navigation keeps its labels while giving the content usable width. */
+@media(max-width:780px) and (min-width:561px){
+    .sidebar{width:176px;padding:20px 11px 14px}
+    .brand{justify-content:flex-start;padding:0 6px;margin-bottom:30px;font-size:16px}
+    .brand>span:last-child,.side-link:not(.active) span:not(.nav-icon),.side-link.active span:not(.nav-icon),.more-icon{display:inline}
+    .workspace-label{display:block}
+    .sidebar-bottom .upgrade-card{display:block}
+    .profile-copy{display:grid}
+    .side-link{justify-content:flex-start;padding:0 9px;gap:9px;font-size:12px}
+    .side-link .nav-icon{flex:none}
+    .profile-link{justify-content:flex-start;padding-top:13px}
+    .main-area{margin-left:176px;width:calc(100% - 176px)}
+}
+
+/* On phones, use a labeled bottom bar so every destination stays discoverable. */
+@media(max-width:560px){
+    .sidebar{inset:auto 0 0;width:100%;height:66px;padding:4px 6px max(4px,env(safe-area-inset-bottom));border-right:0;border-top:1px solid var(--line)}
+    .brand,.workspace-label,.sidebar-bottom{display:none}
+    .side-nav{display:flex;align-items:stretch;justify-content:space-around;gap:2px;width:100%}
+    .side-link,.side-link:not(.active) span:not(.nav-icon),.side-link.active span:not(.nav-icon){display:flex;flex:1;min-width:0;height:56px;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 0;font-size:9px;line-height:1.2}
+    .side-link .nav-icon{width:auto;height:22px;font-size:17px;line-height:22px}
+    .nav-count{display:none}
+    .main-area{margin-left:0;width:100%;padding-bottom:66px}
+    .content-area{padding-bottom:28px}
+}

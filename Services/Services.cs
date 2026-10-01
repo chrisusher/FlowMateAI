@@ -14,6 +14,8 @@ using Shared.Config;
 
 namespace Services;
 
+public sealed record CosmosDatabaseSettings(string AccountEndpoint, string AccountKey, string DatabaseName);
+
 public static class Services
 {
     public static IServiceCollection AddServices(
@@ -38,10 +40,12 @@ public static class Services
             logging.AddFilter((category, level) =>
             {
                 // Filter out Azure Storage request/response logs that are Information level or lower
+
                 if (category?.StartsWith("Azure.") == true && level <= LogLevel.Information)
                 {
                     return false;
                 }
+
                 return true;
             });
         });
@@ -69,40 +73,12 @@ public static class Services
             .GetSection("Global")
             .Get<GlobalConfig>() ?? new GlobalConfig();
 
-        services.AddDbContext<DatabaseContext>(options =>
-        {
-            var cosmosConnection = configuration.GetConnectionString("database");
-            var accountEndpoint = NormaliseCosmosAccountEndpoint(
-                configuration["Database:AccountEndpoint"]
-                    ?? configuration["Database__AccountEndpoint"]
-                    ?? configuration["Database:AccountName"]
-                    ?? configuration["Database__AccountName"]
-                    ?? ConnectionValue(cosmosConnection, "AccountEndpoint")
-                    ?? string.Empty);
-            var accountKey = configuration["Database:Key"]
-                ?? configuration["Database__Key"]
-                ?? ConnectionValue(cosmosConnection, "AccountKey")
-                ?? string.Empty;
-
-            var databaseName = ResolveCosmosDatabaseName(configuration, globalConfig.Environment);
-
-            Console.WriteLine($"[FlowMate] Using Cosmos endpoint '{accountEndpoint}' and database '{databaseName}'.");
-
-            options.UseCosmos(
-                accountEndpoint,
-                accountKey,
-                databaseName
-            );
-
-#if DEBUG
-            options.EnableDetailedErrors();
-            options.LogTo(Console.WriteLine, LogLevel.Information);
-#endif
-        });
+        services.AddDatabase(configuration);
 
         services.AddTransient<IStorageService>(services =>
         {
             var blobServiceClient = services.GetRequiredService<BlobServiceClient>();
+
             return new BlobStorageService(blobServiceClient);
         });
 
@@ -149,15 +125,69 @@ public static class Services
         return $"flowmate-{environment ?? "Development"}";
     }
 
+    public static IServiceCollection AddDatabase(this IServiceCollection services, IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var globalConfig = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
+        var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+        services.AddDbContext<DatabaseContext>(options =>
+        {
+            Console.WriteLine($"[FlowMate] Using Cosmos endpoint '{settings.AccountEndpoint}' and database '{settings.DatabaseName}'.");
+            options.UseCosmos(settings.AccountEndpoint, settings.AccountKey, settings.DatabaseName);
+
+#if DEBUG
+            options.EnableDetailedErrors();
+            options.LogTo(Console.WriteLine, LogLevel.Information);
+#endif
+        });
+
+        return services;
+    }
+
+    public static CosmosDatabaseSettings ResolveDatabaseSettings(IConfiguration configuration, string? environment = null)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var cosmosConnection = configuration.GetConnectionString("database");
+        var globalEnvironment = environment
+            ?? configuration["Global:Environment"]
+            ?? configuration["Global__Environment"]
+            ?? configuration["DOTNET_ENVIRONMENT"]
+            ?? "Development";
+        var accountEndpoint = NormaliseCosmosAccountEndpoint(
+            configuration["Database:AccountEndpoint"]
+                ?? configuration["Database__AccountEndpoint"]
+                ?? configuration["Database:AccountName"]
+                ?? configuration["Database__AccountName"]
+                ?? ConnectionValue(cosmosConnection, "AccountEndpoint")
+                ?? string.Empty);
+        var accountKey = configuration["Database:Key"]
+            ?? configuration["Database__Key"]
+            ?? ConnectionValue(cosmosConnection, "AccountKey")
+            ?? string.Empty;
+        var databaseName = ResolveCosmosDatabaseName(configuration, globalEnvironment);
+
+        return new CosmosDatabaseSettings(accountEndpoint, accountKey, databaseName);
+    }
+
     private static string? ConnectionValue(string? connectionString, string name)
     {
-        if (string.IsNullOrWhiteSpace(connectionString)) return null;
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return null;
+        }
+
         foreach (var part in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var separator = part.IndexOf('=');
+
             if (separator > 0 && part[..separator].Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
                 return part[(separator + 1)..];
+            }
         }
+
         return null;
     }
 
@@ -165,6 +195,7 @@ public static class Services
     {
         if (string.IsNullOrWhiteSpace(accountEndpoint))
         {
+
             return string.Empty;
         }
 
@@ -173,11 +204,13 @@ public static class Services
         if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
+
             return trimmed.TrimEnd('/') + "/";
         }
 
         if (trimmed.Contains("documents.azure.com", StringComparison.OrdinalIgnoreCase))
         {
+
             return $"https://{trimmed.Trim('/')}";
         }
 

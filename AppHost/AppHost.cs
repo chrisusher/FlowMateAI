@@ -1,3 +1,4 @@
+using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Foundry;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -66,6 +67,257 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithReference(serviceBus)
     .WithReference(foundryProject)
     .WithExternalHttpEndpoints();
+
+var cli = builder.AddProject<Projects.CLI>("cli")
+    .WithArgs("--help")
+    .WithReference(database)
+    .WithReference(blobs)
+    .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
+    .WithEnvironment("Global__Environment", environment)
+    .WithExplicitStart()
+    .ExcludeFromManifest();
+
+var buildConfiguration = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.Name ?? "Debug";
+var cliAssemblyPath = Path.GetFullPath(Path.Combine(
+    AppContext.BaseDirectory, "..", "..", "..", "..", "CLI", "bin", buildConfiguration, "net10.0", "CLI.dll"));
+
+var cliWorkingDirectory = Path.GetDirectoryName(cliAssemblyPath)!;
+var auth0Authority = builder.Configuration["Auth0:Authority"];
+var auth0ClientId = builder.Configuration["Auth0:ManagementClientId"];
+var auth0ClientSecret = builder.Configuration["Auth0:ManagementClientSecret"];
+
+#pragma warning disable ASPIREPROCESSCOMMAND001
+IReadOnlyDictionary<string, string> BuildCliEnvironment(
+    string? cosmosConnection,
+    string? storageConnection,
+    string? runtimeEnvironment,
+    bool includeStorageSettings,
+    bool includeAuth0Settings)
+{
+    var environmentVariables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["ConnectionStrings__database"] = cosmosConnection ?? string.Empty,
+        ["Database__DatabaseName"] = database.Resource.DatabaseName,
+        ["Global__Environment"] = runtimeEnvironment ?? builder.Environment.EnvironmentName,
+        ["DOTNET_ENVIRONMENT"] = runtimeEnvironment ?? builder.Environment.EnvironmentName
+    };
+
+    if (includeStorageSettings && !string.IsNullOrWhiteSpace(storageConnection))
+    {
+        environmentVariables["ConnectionStrings__Storage"] = storageConnection;
+    }
+
+    if (includeAuth0Settings)
+    {
+        if (!string.IsNullOrWhiteSpace(auth0Authority))
+        {
+            environmentVariables["Auth0__Authority"] = auth0Authority;
+        }
+
+        if (!string.IsNullOrWhiteSpace(auth0ClientId))
+        {
+            environmentVariables["Auth0__ManagementClientId"] = auth0ClientId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(auth0ClientSecret))
+        {
+            environmentVariables["Auth0__ManagementClientSecret"] = auth0ClientSecret;
+        }
+    }
+
+    return environmentVariables;
+}
+
+async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
+    CancellationToken cancellationToken,
+    bool includeStorageSettings,
+    bool includeAuth0Settings)
+{
+    var cosmosConnection = await database.Resource.ConnectionStringExpression.GetValueAsync(cancellationToken);
+
+    var storageConnection = includeStorageSettings
+        ? await blobs.Resource.ConnectionStringExpression.GetValueAsync(cancellationToken)
+        : null;
+
+    var configuredEnvironment = await environment.Resource.GetValueAsync(cancellationToken);
+
+    return BuildCliEnvironment(cosmosConnection, storageConnection, configuredEnvironment, includeStorageSettings, includeAuth0Settings);
+}
+
+cli.WithProcessCommand(
+    commandName: "ensure-database-created",
+    displayName: "Ensure database created",
+    processSpecFactory: async context =>
+    {
+        if (!File.Exists(cliAssemblyPath))
+        {
+            throw new FileNotFoundException("Build the CLI project before invoking its Aspire command.", cliAssemblyPath);
+        }
+
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: false, includeAuth0Settings: false);
+
+        var spec = new ProcessCommandSpec("dotnet")
+        {
+            Arguments = [cliAssemblyPath, "database", "ensure-created"],
+            WorkingDirectory = cliWorkingDirectory,
+            InheritEnvironmentVariables = false
+        };
+
+        foreach (var variable in variables)
+        {
+            spec.EnvironmentVariables[variable.Key] = variable.Value;
+        }
+
+        return spec;
+    });
+
+cli.WithProcessCommand(
+    commandName: "create-pro-account",
+    displayName: "Create new Pro account",
+    processSpecFactory: async context =>
+    {
+        if (!File.Exists(cliAssemblyPath))
+        {
+            throw new FileNotFoundException("Build the CLI project before invoking its Aspire command.", cliAssemblyPath);
+        }
+
+        var email = context.Arguments.GetString("email");
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new InvalidOperationException("An email address is required.");
+        }
+
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: false, includeAuth0Settings: true);
+
+        var arguments = new List<string>
+        {
+            cliAssemblyPath,
+            "user",
+            "grant-pro",
+            "--email",
+            email
+        };
+        var userId = context.Arguments.GetString("user-id");
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            arguments.AddRange(["--user-id", userId]);
+        }
+
+        var spec = new ProcessCommandSpec("dotnet")
+        {
+            Arguments = arguments,
+            WorkingDirectory = cliWorkingDirectory,
+            InheritEnvironmentVariables = false
+        };
+
+        foreach (var variable in variables)
+        {
+            spec.EnvironmentVariables[variable.Key] = variable.Value;
+        }
+
+        return spec;
+    },
+    commandOptions: new ProcessCommandOptions
+    {
+        Arguments =
+        [
+            new InteractionInput
+            {
+                Name = "email",
+                Label = "Email address", InputType = InputType.Text,
+                Required = true
+            },
+            new InteractionInput
+            {
+                Name = "user-id",
+                Label = "Auth0 user ID (when needed)",
+                InputType = InputType.Text
+            }
+        ]
+    });
+
+cli.WithProcessCommand(
+    commandName: "reset-user-data",
+    displayName: "Reset user data",
+    processSpecFactory: async context =>
+    {
+        if (!File.Exists(cliAssemblyPath))
+        {
+            throw new FileNotFoundException("Build the CLI project before invoking its Aspire command.", cliAssemblyPath);
+        }
+
+        var email = context.Arguments.GetString("email");
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new InvalidOperationException("An email address is required.");
+        }
+
+        if (!bool.TryParse(context.Arguments.GetString("approve"), out var approve) || !approve)
+        {
+            throw new InvalidOperationException("Approval is required before the reset process can start. Set approve to true.");
+        }
+
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: true, includeAuth0Settings: true);
+
+        var arguments = new List<string>
+        {
+            cliAssemblyPath,
+            "user",
+            "reset",
+            "--email",
+            email, "--approve"
+        };
+        var userId = context.Arguments.GetString("user-id");
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            arguments.AddRange(["--user-id", userId]);
+        }
+
+        var spec = new ProcessCommandSpec("dotnet")
+        {
+            Arguments = arguments,
+            WorkingDirectory = cliWorkingDirectory,
+            InheritEnvironmentVariables = false
+        };
+
+        foreach (var variable in variables)
+        {
+            spec.EnvironmentVariables[variable.Key] = variable.Value;
+        }
+
+        return spec;
+    },
+    commandOptions: new ProcessCommandOptions
+    {
+        Arguments =
+        [
+            new InteractionInput
+            {
+                Name = "email",
+                Label = "Email",
+                InputType = InputType.Text,
+                Required = true
+            },
+            new InteractionInput
+            {
+                Name = "user-id",
+                Label = "Auth0 user ID (when needed)",
+                InputType = InputType.Text
+            },
+            new InteractionInput
+            {
+                Name = "approve",
+                Label = "Approve deletion",
+                InputType = InputType.Boolean,
+                Value = "false"
+            }
+        ]
+    });
+#pragma warning restore ASPIREPROCESSCOMMAND001
 
 var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithReference(api)

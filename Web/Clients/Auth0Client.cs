@@ -25,5 +25,11 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
     public async Task LoginAsync(string? connection = null) => await (await ModuleAsync()).InvokeVoidAsync("login", new { domain = Domain, clientId = ClientId, audience = Audience }, connection);
     public async Task LogoutAsync() => await (await ModuleAsync()).InvokeVoidAsync("logout", new { domain = Domain, clientId = ClientId, audience = Audience });
     private async Task<IJSObjectReference> ModuleAsync() => _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/auth0.js");
-    public async ValueTask DisposeAsync() { if (_module is not null) await _module.DisposeAsync(); }
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            await _module.DisposeAsync();
+        }
+    }
 }

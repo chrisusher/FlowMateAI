@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Shared.Exceptions;
 using Services.Billing;
 using Services.Workspaces;
 
@@ -16,16 +17,26 @@ public sealed class FoundryFocusCoachService(
 {
     public async Task<FocusCoachAnswer> AskAsync(string userId, string prompt, IReadOnlyList<Shared.Models.ChatMessageRecord> history, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > 4000) throw new ArgumentException("Enter a message of up to 4,000 characters.", nameof(prompt));
+        if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > 4000)
+        {
+            throw new ArgumentException("Enter a message of up to 4,000 characters.", nameof(prompt));
+        }
         var endpoint = configuration["Foundry:Endpoint"]?.TrimEnd('/');
         var deployment = configuration["Foundry:Deployment"];
         var key = configuration["Foundry:ApiKey"];
         var apiVersion = configuration["Foundry:ApiVersion"] ?? "2024-10-21";
+
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(deployment) || string.IsNullOrWhiteSpace(key))
+        {
             throw new InvalidOperationException("The Azure AI Foundry coach is not configured.");
+        }
 
         var (allowed, used, limit) = await billing.ConsumePromptAsync(userId, cancellationToken);
-        if (!allowed) throw new CoachQuotaExceededException(used, limit);
+
+        if (!allowed)
+        {
+            throw new CoachQuotaExceededException(used, limit);
+        }
 
         var result = await workspaces.GetAsync(userId, cancellationToken);
         var workspace = result.Workspace;
@@ -55,19 +66,33 @@ public sealed class FoundryFocusCoachService(
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
         var text = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-        if (string.IsNullOrWhiteSpace(text)) throw new HttpRequestException("Foundry returned an empty coach response.");
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new HttpRequestException("Foundry returned an empty coach response.");
+        }
+
         return new(text.Trim(), used, limit);
     }
 
     private static string LocalDate(DateTimeOffset instant, string timeZone)
     {
-        try { return TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(timeZone)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); }
-        catch { return instant.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); }
+        try
+        {
+
+            return TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(timeZone)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+
+            return instant.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
     }
 
     private static int MinutesForLocalDay(IEnumerable<Shared.Models.FocusSessionRecord> sessions, DateTimeOffset now, string timeZone)
     {
         var day = LocalDate(now, timeZone);
+
         return sessions.Where(s => LocalDate(s.StartedAt, timeZone) == day).Sum(s => s.FocusMinutes);
     }
 }
