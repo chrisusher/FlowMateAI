@@ -8,7 +8,7 @@ namespace API.Functions.V1.Health;
 public sealed class HealthCheck(ILogger<HealthCheck> logger)
 {
     [Function("HealthCheck")]
-    public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/health")] HttpRequestData request)
+    public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "health")] HttpRequestData request)
     {
         logger.LogInformation("HealthCheck HTTP trigger processed a request.");
         var response = request.CreateResponse(HttpStatusCode.OK);
