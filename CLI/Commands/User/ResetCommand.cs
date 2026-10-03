@@ -77,7 +77,7 @@ internal static class ResetCommand
             Console.WriteLine($"Cosmos database: {settings.DatabaseName}");
             Console.WriteLine($"Email: {email}");
             Console.WriteLine($"Auth0 user ID: {userId}");
-            Console.WriteLine("Scope: all matching workspace documents, workspace records, billing entitlements, and archived blobs under this user's exact prefix.");
+            Console.WriteLine("Scope: this user's workspace documents, workspace records, billing entitlements, MCP credentials and usage data, and archived blobs.");
             Console.WriteLine("Auth0 identities, Stripe customers/subscriptions, and shared Stripe event records are preserved.");
 
             if (!approved && !ResetApproval.TryApprove(Console.In, Console.Out, Console.IsInputRedirected))
@@ -93,14 +93,14 @@ internal static class ResetCommand
             try
             {
                 var result = await resetService.ResetAsync(userId, operationCancellation.Token);
-                Console.WriteLine($"Deleted {result.WorkspaceDocuments} workspace documents, {result.WorkspaceRecords} workspace records, {result.BillingEntitlements} billing entitlements, and {result.ArchivedBlobs} archived blobs.");
+                Console.WriteLine($"Deleted {result.WorkspaceDocuments} workspace documents, {result.WorkspaceRecords} workspace records, {result.BillingEntitlements} billing entitlements, {result.McpKeys} MCP credentials, {result.McpUsageRecords} MCP usage records, and {result.ArchivedBlobs} archived blobs.");
 
                 return 0;
             }
             catch (UserDataResetException exception)
             {
                 var completed = exception.Completed;
-                Console.Error.WriteLine($"Reset failed during {exception.StageLabel} cleanup. Completed before failure: {completed.WorkspaceDocuments} workspace documents, {completed.WorkspaceRecords} workspace records, {completed.BillingEntitlements} billing entitlements, and {completed.ArchivedBlobs} archived blobs. Rerun reset to finish cleanup.");
+                Console.Error.WriteLine($"Reset failed during {exception.StageLabel} cleanup. Completed before failure: {completed.WorkspaceDocuments} workspace documents, {completed.WorkspaceRecords} workspace records, {completed.BillingEntitlements} billing entitlements, {completed.McpKeys} MCP credentials, {completed.McpUsageRecords} MCP usage records, and {completed.ArchivedBlobs} archived blobs. Rerun reset to finish cleanup.");
 
                 return 1;
             }

@@ -36,35 +36,6 @@ public sealed class UserDataResetRepository(DatabaseContext database, IConfigura
         return matches.Count;
     }
 
-    public async Task<int> RevokeMcpKeysAsync(string userId, CancellationToken cancellationToken = default)
-    {
-        if (cosmos is null)
-        {
-            return 0;
-        }
-
-        var container = cosmos.GetContainer(DatabaseName, "McpKeys");
-        var query = new QueryDefinition("SELECT * FROM c WHERE c.userId = @userId").WithParameter("@userId", userId);
-
-        using var iterator = container.GetItemQueryIterator<McpKeyDocument>(query, requestOptions: new QueryRequestOptions
-        {
-            PartitionKey = new PartitionKey(userId)
-        });
-        var count = 0;
-
-        while (iterator.HasMoreResults)
-        {
-            foreach (var item in await iterator.ReadNextAsync(cancellationToken))
-            {
-                item.RevokedAt = DateTimeOffset.UtcNow;
-                await container.ReplaceItemAsync(item, item.Id, new PartitionKey(userId), cancellationToken: cancellationToken);
-                count++;
-            }
-        }
-
-        return count;
-    }
-
     public async Task<int> DeleteMcpUsageAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (cosmos is null)

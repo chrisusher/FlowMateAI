@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Text.Json;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
 using Microsoft.Extensions.Configuration;
@@ -212,7 +211,8 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         entries.Select(entry => new McpTimesheetEntry(entry.SessionId, entry.ProjectId, entry.ProjectName, entry.TaskId, entry.TaskName, entry.StartedAt, entry.EndedAt, entry.FocusMinutes, entry.LocalDate)).ToArray(),
         nextCursor);
 
-    private static string CreateFirstCursor(string userId, ReportPeriod period, WorkspaceReport report) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{userId}|{period.ToWireValue()}|{report.QueryDate:yyyy-MM-dd}|100|{report.Revision}"));
+    private static string CreateFirstCursor(string userId, ReportPeriod period, WorkspaceReport report) =>
+        ReportPageCursor.Encode(userId, period, report.QueryDate, 100, report.Revision);
 
     private sealed class Entitlement { public string Plan { get; set; } = BillingPlan.Free.ToString(); 
     

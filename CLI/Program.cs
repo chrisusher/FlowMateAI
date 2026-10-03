@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Services;
-using Services.Database;
 
 namespace CLI;
 
@@ -33,26 +32,8 @@ public static class Program
             .AddEnvironmentVariables();
 
         builder.AddServiceDefaults();
-        builder.Services.AddDatabase(builder.Configuration);
-        var databaseSettings = Services.Services.ResolveDatabaseSettings(builder.Configuration);
-        builder.Services.AddSingleton(new Microsoft.Azure.Cosmos.CosmosClient(databaseSettings.AccountEndpoint, databaseSettings.AccountKey));
+        builder.Services.AddServices(builder.Configuration);
         builder.Services.AddHttpClient<Auth0ManagementClient>();
-        builder.Services.AddScoped<IUserDataResetService>(services =>
-        {
-            var configuration = services.GetRequiredService<IConfiguration>();
-            var storageConnection = configuration.GetConnectionString("Storage");
-
-            if (string.IsNullOrWhiteSpace(storageConnection))
-            {
-                throw new InvalidOperationException("ConnectionStrings:Storage is required for user reset.");
-            }
-
-            var database = services.GetRequiredService<DatabaseContext>();
-            var cosmos = services.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>();
-            var settings = Services.Services.ResolveDatabaseSettings(configuration);
-
-            return new UserDataResetService(database, new Azure.Storage.Blobs.BlobServiceClient(storageConnection), cosmos, settings.DatabaseName);
-        });
 
         return builder.Build();
     }

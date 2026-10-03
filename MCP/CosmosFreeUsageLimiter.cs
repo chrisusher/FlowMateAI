@@ -1,5 +1,6 @@
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
 
 namespace MCP;
 
@@ -94,6 +95,26 @@ public sealed class CosmosFreeUsageLimiter(CosmosClient cosmos, IConfiguration c
         }
     }
 
-    private sealed class UsageDocument { public string Id { get; set; } = "usage"; public string UserId { get; set; } = ""; public string UtcDay { get; set; } = ""; public int DailyCount { get; set; } public List<DateTimeOffset> RecentAdmissions { get; set; } = []; public int Ttl { get; set; } }
+    private sealed class UsageDocument
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; } = "usage";
+
+        [JsonProperty("userId")]
+        public string UserId { get; set; } = "";
+
+        [JsonProperty("utcDay")]
+        public string UtcDay { get; set; } = "";
+
+        [JsonProperty("dailyCount")]
+        public int DailyCount { get; set; }
+
+        [JsonProperty("recentAdmissions")]
+        public List<DateTimeOffset> RecentAdmissions { get; set; } = [];
+
+        [JsonProperty("ttl")]
+        public int Ttl { get; set; }
+    }
 }
+
 public sealed class UsageAdmissionUnavailableException : Exception;

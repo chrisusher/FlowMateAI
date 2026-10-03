@@ -1,4 +1,4 @@
-using System.Text;
+using System.Text.Json;
 using Services.Repositories;
 using Shared.Enums;
 using Shared.Models;
@@ -71,26 +71,37 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
 
         if (!string.IsNullOrEmpty(cursor))
         {
-            var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
-            var pieces = decoded.Split('|');
+            ReportPageCursor? decoded;
 
-            if (pieces.Length != 5 || pieces[0] != userId || pieces[1] != period.ToWireValue() || pieces[2] != report.QueryDate.ToString("yyyy-MM-dd"))
+            try
+            {
+                decoded = JsonSerializer.Deserialize<ReportPageCursor>(Convert.FromBase64String(cursor));
+            }
+            catch (FormatException)
+            {
+                throw new InvalidReportCursorException();
+            }
+            catch (JsonException)
             {
                 throw new InvalidReportCursorException();
             }
 
-            if (pieces[4] != report.Revision)
+            if (decoded is null || decoded.UserId != userId || decoded.Period != period.ToWireValue() || decoded.QueryDate != report.QueryDate.ToString("yyyy-MM-dd") || decoded.Offset < 0)
+            {
+                throw new InvalidReportCursorException();
+            }
+
+            if (decoded.Revision != report.Revision)
             {
                 throw new ReportRevisionChangedException();
             }
 
-            if (!int.TryParse(pieces[3], out offset) || offset < 0)
-            {
-                throw new InvalidReportCursorException();
-            }
+            offset = decoded.Offset;
         }
         var page = report.Entries.Skip(offset).Take(100).ToArray();
-        var next = offset + page.Length < report.Entries.Count ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{userId}|{period.ToWireValue()}|{report.QueryDate:yyyy-MM-dd}|{offset + page.Length}|{report.Revision}")) : null;
+        var next = offset + page.Length < report.Entries.Count
+            ? ReportPageCursor.Encode(userId, period, report.QueryDate, offset + page.Length, report.Revision)
+            : null;
 
         return new(report, page, next);
     }
@@ -121,3 +132,12 @@ public sealed class ReportHistoryUnavailableException : Exception;
 public sealed class ReportRevisionChangedException : Exception;
 public sealed class InvalidReportCursorException : Exception;
 public sealed class InvalidWorkspaceTimeZoneException : Exception;
+
+public sealed record ReportPageCursor(string UserId, string Period, string QueryDate, int Offset, string Revision)
+{
+    public static string Encode(string userId, ReportPeriod period, DateOnly queryDate, int offset, string revision)
+    {
+        var cursor = new ReportPageCursor(userId, period.ToWireValue(), queryDate.ToString("yyyy-MM-dd"), offset, revision);
+        return Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(cursor));
+    }
+}

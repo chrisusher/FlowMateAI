@@ -15,6 +15,7 @@ public interface IMcpCredentialService
     Task<CreatedMcpKey> CreateAsync(string userId, string name, int expiryDays, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<McpKeyMetadata>> ListAsync(string userId, CancellationToken cancellationToken = default);
     Task<bool> RevokeAsync(string userId, string id, CancellationToken cancellationToken = default);
+    Task<int> DeleteAllForUserAsync(string userId, CancellationToken cancellationToken = default);
     Task<ValidatedMcpKey?> ValidateAsync(string? key, CancellationToken cancellationToken = default);
 }
 
@@ -111,6 +112,24 @@ public sealed class McpCredentialService(IMcpCredentialRepository repository, Se
         }
 
         return true;
+    }
+
+    public async Task<int> DeleteAllForUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var documents = await repository.ListAsync(userId, cancellationToken);
+
+        if (documents.Count > 0 && secrets is null)
+        {
+            throw new InvalidOperationException("Key Vault is not configured; MCP credentials cannot be fully deleted.");
+        }
+
+        foreach (var document in documents)
+        {
+            await secrets!.StartDeleteSecretAsync(document.VaultSecretName, cancellationToken);
+            await repository.DeleteAsync(userId, document.Id, cancellationToken);
+        }
+
+        return documents.Count;
     }
 
     public async Task<ValidatedMcpKey?> ValidateAsync(string? key, CancellationToken cancellationToken = default)

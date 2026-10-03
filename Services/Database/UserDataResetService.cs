@@ -2,6 +2,7 @@ using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Services.Repositories;
+using Services.Mcp;
 using Shared.Exceptions;
 using Shared.Enums;
 using Shared.Models;
@@ -17,7 +18,7 @@ public interface IUserDataResetService
 /// Removes application-owned data for one Auth0 subject. This deliberately never creates
 /// the Cosmos database, containers, or the archive container.
 /// </summary>
-public sealed class UserDataResetService(IUserDataResetRepository repository, BlobServiceClient blobClient) : IUserDataResetService
+public sealed class UserDataResetService(IUserDataResetRepository repository, BlobServiceClient blobClient, IMcpCredentialService credentials) : IUserDataResetService
 {
     private const string ActivityContainerName = "flowmate-activity";
 
@@ -87,7 +88,7 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
             }
         });
 
-        await RunStageAsync(UserDataResetStage.McpKeys, async () => mcpKeys = await repository.RevokeMcpKeysAsync(userId, cancellationToken));
+        await RunStageAsync(UserDataResetStage.McpKeys, async () => mcpKeys = await credentials.DeleteAllForUserAsync(userId, cancellationToken));
         
         await RunStageAsync(UserDataResetStage.McpUsage, async () => mcpUsageRecords = await repository.DeleteMcpUsageAsync(userId, cancellationToken));
 
