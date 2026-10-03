@@ -1,0 +1,37 @@
+@inherits WorkspaceComponentBase
+@inject Auth0Client Auth
+
+<article class="panel settings-panel">
+    <div class="settings-heading">
+        <div>
+            <h3>Profile</h3>
+            <p>Personal details for your FlowMate account.</p>
+        </div>
+    </div>
+    <label class="field-label">
+        Name
+        <input class="field-input" @bind="Store.Data.DisplayName" />
+    </label>
+    <label class="field-label">
+        Email address
+        <input class="field-input" value="@(Auth.Session.Email ?? "")" disabled />
+    </label>
+    <label class="field-label">
+        Time zone
+        <select class="field-input" @bind="Store.Data.TimeZone">
+            <option>Europe/London</option>
+            <option>America/New_York</option>
+            <option>America/Los_Angeles</option>
+            <option>Europe/Paris</option>
+            <option>Asia/Tokyo</option>
+        </select>
+        <small>Used to split focus time across calendar days.</small>
+    </label>
+    <div class="profile-actions">
+        <button class="quiet-button" @onclick="Store.SaveAsync">Save changes</button>
+        @if (Auth.Session.SignedIn)
+        {
+            <button class="text-button" @onclick="Auth.LogoutAsync">Sign out</button>
+        }
+    </div>
+</article>

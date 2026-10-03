@@ -1,0 +1,32 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceAppearanceManager Appearance
+
+<article class="panel settings-panel" id="preferences">
+    <div class="settings-heading">
+        <div>
+            <h3>Preferences</h3>
+            <p>Make FlowMate feel at home.</p>
+        </div>
+    </div>
+    <div class="setting-row">
+        <div>
+            <strong>Appearance</strong>
+            <small>Follow system preference until you choose a theme.</small>
+        </div>
+        <button class="setting-control" @onclick="Appearance.ToggleTheme">@(Appearance.IsDark ? "Dark mode on" : "Light mode on")</button>
+    </div>
+    <div class="setting-row">
+        <div>
+            <strong>Timer sounds</strong>
+            <small>A soft cue at the end of focus and break sessions.</small>
+        </div>
+        <button class="setting-control" @onclick="Appearance.ToggleMute">@(Store.Data.Muted ? "Muted" : "On")</button>
+    </div>
+    <div class="setting-row">
+        <div>
+            <strong>Focus length</strong>
+            <small>Short breaks are 5 minutes; long breaks are 15.</small>
+        </div>
+        <span class="setting-static">25 minutes</span>
+    </div>
+</article>

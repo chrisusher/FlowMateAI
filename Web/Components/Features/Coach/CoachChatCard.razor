@@ -1,0 +1,30 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceCoachManager Coach
+
+<article class="panel chat-panel">
+    <div class="chat-header">
+        <span class="coach-avatar">&#10024;</span>
+        <div>
+            <strong>FlowMate coach</strong>
+            <small>
+                <i></i>
+                Here to help you find focus
+            </small>
+        </div>
+        <span class="read-only">READ ONLY</span>
+    </div>
+    <RadzenChat @ref="_chat" @key="Coach.ActiveConversation.Id" class="flowmate-radzen-chat" CurrentUserId="user" Users="Coach.ChatUsers" Messages="Coach.ChatMessages" MessageSent="Coach.SendMessage" Disabled="Coach.Sending" ShowUsers="false" ShowUserNames="false" Placeholder="Ask about your tasks, projects, or focus time..." EmptyMessage="What would make today feel meaningful?" TimestampFormat="h:mm tt">
+        <EmptyTemplate>
+            <div class="coach-welcome">
+                <span>&#10024;</span>
+                <h3>What would make today feel meaningful?</h3>
+                <p>I can help you sort through your priorities, based on the work you've already planned.</p>
+                <div class="suggestion-chips">
+                    <button @onclick='() => UsePrompt("Help me choose what to focus on today")'>Help me prioritize</button>
+                    <button @onclick='() => UsePrompt("How has my focus been this week?")'>Review my week</button>
+                </div>
+            </div>
+        </EmptyTemplate>
+    </RadzenChat>
+    <div class="coach-note">Coach can suggest, never change your work.</div>
+</article>

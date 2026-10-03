@@ -1,0 +1,27 @@
+@page "/pricing"
+@layout WorkspaceLayout
+@inherits WorkspaceComponentBase
+@inject WorkspaceBillingManager Billing
+
+<PageTitle>Plans &#8212; FlowMate</PageTitle>
+
+<div class="pricing-intro">
+    <div class="eyebrow">SIMPLE, THOUGHTFUL PLANS</div>
+    <h1>More space to focus.</h1>
+    <p>Start for free. Grow when you're ready.</p>
+    <div class="billing-toggle">
+        <button class="@(Billing.Annual ? "" : "selected")" @onclick="() => Billing.Annual = false">Monthly</button>
+        <button class="@(Billing.Annual ? "selected" : "")" @onclick="() => Billing.Annual = true">
+            Yearly
+            <span>Save 20%</span>
+        </button>
+    </div>
+    @if (!string.IsNullOrEmpty(Billing.BillingMessage))
+    {
+        <p class="billing-message">@Billing.BillingMessage</p>
+    }
+</div>
+<div class="pricing-grid">
+    <FreePlanCard />
+    <ProPlanCard />
+</div>

@@ -1,0 +1,33 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+@inject WorkspaceTaskManager Tasks
+
+<article class="panel plan-panel">
+    <div class="panel-heading">
+        <div>
+            <h3>Today's plan</h3>
+            <p>@Stats.PlannedTasks.Count() tasks &#8212; @Stats.DoneTasks.Count() completed</p>
+        </div>
+        <button class="text-button" @onclick='() => Go("tasks")'>
+            View all
+            <span>&rarr;</span>
+        </button>
+    </div>
+    <div class="task-list">
+        @if (!Stats.PlannedTasks.Any())
+        {
+            <div class="empty-state">Your day is open. Add a task to get started.</div>
+        }
+        @foreach (var task in Stats.PlannedTasks)
+        {
+            <div class="task-row @(task.IsComplete ? "completed" : "")">
+                <button class="check-circle @(task.IsComplete ? "checked" : "")" @onclick="() => Tasks.ToggleComplete(task)">@(task.IsComplete ? "\u2713" : "")</button>
+                <button class="task-title" @onclick="() => Tasks.SelectTask(task)">@task.Title</button>
+                <span class="priority priority-@task.Priority.ToString().ToLowerInvariant()">@task.Priority</span>
+                <span class="task-minutes">&#9679; @Stats.TaskTodayMinutes(task.Id)<span>m</span></span>
+                <button class="row-menu" title="Remove from today's plan" @onclick="() => Tasks.TogglePlan(task)">&#8942;</button>
+            </div>
+        }
+    </div>
+    <button class="add-inline" @onclick="Tasks.AddQuickTask">+ Add a task</button>
+</article>

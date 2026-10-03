@@ -489,3 +489,5 @@ CLI/appsettings.*.json
 !CLI/appsettings.example.json
 
 .build-obj/
+
+.tmp*

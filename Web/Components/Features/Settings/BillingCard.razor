@@ -1,0 +1,19 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceBillingManager Billing
+
+<article class="panel settings-panel" id="billing">
+    <div class="settings-heading">
+        <div>
+            <h3>Plan &amp; billing</h3>
+            <p>You're currently on the @Store.Data.Plan plan.</p>
+        </div>
+        <button class="text-button" @onclick="Billing.OpenBillingPortal">Manage billing</button>
+    </div>
+    <div class="setting-row">
+        <div>
+            <strong>@Store.Data.Plan plan</strong>
+            <small>Up to @(Store.Data.Plan == "Pro" ? 25 : 3) projects | @((Store.Data.Plan == "Pro") ? "100" : "10") coach prompts / month</small>
+        </div>
+        <span class="plan-status">Active</span>
+    </div>
+</article>

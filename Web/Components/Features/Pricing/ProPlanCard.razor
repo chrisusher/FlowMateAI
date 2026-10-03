@@ -1,0 +1,19 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceBillingManager Billing
+
+<article class="panel pricing-card pro-card">
+    <div class="popular-tag">A LITTLE MORE ROOM</div>
+    <span class="plan-label">FLOWMATE PRO</span>
+    <h2>Make focus a practice.</h2>
+    <div class="price">@Billing.PriceLabel</div>
+    <p>More history, more insight, and space for every project.</p>
+    <button class="plan-button primary" disabled="@(Billing.BillingState?.TrialUsed == true)" @onclick="Billing.StartTrial">@(Billing.BillingState?.TrialUsed == true ? "Trial already used" : "Start your 14-day free trial")</button>
+    <small class="trial-copy">No card needed &middot; missing payment method cancels at trial end</small>
+    <button class="checkout-button" @onclick="Billing.BuyPro">Subscribe @(Billing.Annual ? "annually" : "monthly")</button>
+    <ul>
+        <li>&#10003; Up to 25 projects</li>
+        <li>&#10003; One year of report history</li>
+        <li>&#10003; 100 coach prompts each month</li>
+        <li>&#10003; Everything in Free</li>
+    </ul>
+</article>

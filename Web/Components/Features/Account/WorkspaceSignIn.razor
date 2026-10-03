@@ -1,0 +1,26 @@
+@inherits WorkspaceComponentBase
+@inject Auth0Client Auth
+
+<div class="auth-screen">
+    <div class="auth-mark">f</div>
+    <div class="eyebrow">A QUIETER WAY TO GET THINGS DONE</div>
+    <h1>Your focus, in good company.</h1>
+    <p>Sign in to keep your projects, plans, and focus history private to your account.</p>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.GoogleConnection)'>
+        <span>G</span>
+        Continue with Google
+    </button>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.GitHubConnection)'>
+        <span>GH</span>
+        Continue with GitHub
+    </button>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.MicrosoftPersonalConnection)'>
+        <span>M</span>
+        Microsoft personal account
+    </button>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.MicrosoftWorkSchoolConnection)'>
+        <span>M</span>
+        Microsoft work or school
+    </button>
+    <small>Accounts from different providers stay separate unless you link them in Auth0.</small>
+</div>

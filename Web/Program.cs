@@ -47,6 +47,14 @@ public class Program
         builder.Services.AddScoped<BillingClient>();
         builder.Services.AddScoped<WorkspaceStore>();
 
+        builder.Services.AddScoped<WorkspaceStatistics>();
+        builder.Services.AddScoped<WorkspaceTaskManager>();
+        builder.Services.AddScoped<WorkspaceProjectManager>();
+        builder.Services.AddScoped<WorkspaceTimerManager>();
+        builder.Services.AddScoped<WorkspaceBillingManager>();
+        builder.Services.AddScoped<WorkspaceCoachManager>();
+        builder.Services.AddScoped<WorkspaceAppearanceManager>();
+
         #region Managers
 
         // Add theme manager

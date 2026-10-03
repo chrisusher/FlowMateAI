@@ -1,0 +1,26 @@
+@page "/coach"
+@layout WorkspaceLayout
+@inherits WorkspaceComponentBase
+@inject WorkspaceCoachManager Coach
+
+<PageTitle>Focus coach &#8212; FlowMate</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">A THOUGHTFUL COMPANION</div>
+        <h1>Focus coach</h1>
+        <p class="subheading">A clear head starts with a useful conversation.</p>
+    </div>
+    <button class="quiet-button" @onclick="Coach.NewConversation">+ New conversation</button>
+</div>
+<div class="coach-layout">
+    <ConversationListCard />
+    <CoachChatCard />
+</div>
+@if (Store.Data.Plan == "Free")
+{
+    <div class="history-note">
+        @Coach.AiPromptsUsed of 10 monthly coach prompts used.
+        <a href="pricing">Get 100 prompts with Pro &rarr;</a>
+    </div>
+}
