@@ -1,4 +1,5 @@
 using Web.Components.Features.Today;
+using Shared.Enums;
 
 namespace Web.Tests;
 

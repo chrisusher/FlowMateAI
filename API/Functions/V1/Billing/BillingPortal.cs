@@ -1,8 +1,6 @@
-using System.Net;
+using API.Security;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using API.Functions.V1;
-using API.Security;
 using Services.Billing;
 
 namespace API.Functions.V1.Billing;

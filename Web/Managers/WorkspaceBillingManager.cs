@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Shared.Contracts;
+using Shared.Enums;
 using Web.Clients;
 
 namespace Web.Managers;
@@ -78,7 +79,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
                 return;
             }
             BillingState = await client.GetSummaryAsync();
-            Store.Data.Plan = BillingState?.Plan ?? "Free";
+            Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState?.Plan);
             await Store.SaveAsync();
             BillingMessage = result.Message;
         }

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="ChrisUsher.Core.Shared" Version="0.1.1" />
+    <PackageReference Include="ChrisUsher.Core.Shared" Version="0.2.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 

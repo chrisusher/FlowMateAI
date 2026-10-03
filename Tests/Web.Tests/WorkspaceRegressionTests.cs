@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using ChrisUsher.Core.Shared;
 using Shared.Contracts;
+using Shared.Enums;
 using Web.Components;
 using Web.Components.Features.Reports;
 using Web.Components.Features.Today;

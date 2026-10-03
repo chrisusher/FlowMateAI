@@ -1,12 +1,10 @@
-using System.Net;
-using System.Text.Json;
-using API.Functions.V1;
 using API.Security;
 using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Workspaces;
 using Shared.Contracts;
+using Shared.Enums;
 
 namespace API.Functions.V1.Workspace;
 
@@ -57,9 +55,9 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
 
         if (!result.Succeeded)
         {
-            var status = result.ErrorCode == "project_limit" ? HttpStatusCode.PaymentRequired : HttpStatusCode.Conflict;
+            var status = result.ErrorCode == WorkspaceSaveErrorCode.ProjectLimit ? HttpStatusCode.PaymentRequired : HttpStatusCode.Conflict;
 
-            return await HttpFunction.ErrorAsync(request, status, result.ErrorCode ?? "save_failed", result.ErrorMessage ?? "The workspace could not be saved.", cancellationToken);
+            return await HttpFunction.ErrorAsync(request, status, ToErrorCode(result.ErrorCode), result.ErrorMessage ?? "The workspace could not be saved.", cancellationToken);
         }
         var saved = request.CreateResponse(HttpStatusCode.OK);
 
@@ -72,4 +70,12 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
 
         return saved;
     }
+
+    private static string ToErrorCode(WorkspaceSaveErrorCode? code) => code switch
+    {
+        WorkspaceSaveErrorCode.ProjectLimit => "project_limit",
+        WorkspaceSaveErrorCode.RevisionConflict => "revision_conflict",
+        WorkspaceSaveErrorCode.TimerConflict => "timer_conflict",
+        _ => "save_failed"
+    };
 }

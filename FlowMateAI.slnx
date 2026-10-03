@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="API/API.csproj" />
+  <Project Path="MCP/MCP.csproj" />
   <Project Path="AppHost/AppHost.csproj" />
   <Project Path="CLI/CLI.csproj" />
   <Project Path="Formatting/FlowMate.Formatting.csproj" />
@@ -7,6 +8,7 @@
   <Project Path="ServiceDefaults/ServiceDefaults.csproj" />
   <Project Path="Services/Services.csproj" />
   <Project Path="Shared/Shared.csproj" />
+  <Project Path="Tests/Services.Tests/Services.Tests.csproj" />
   <Project Path="Web/Web.csproj" />
   <Folder Name="/Tests/">
     <Project Path="Tests/Web.Tests/Web.Tests.csproj" />

@@ -17,7 +17,7 @@
     <ConversationListCard />
     <CoachChatCard />
 </div>
-@if (Store.Data.Plan == "Free")
+@if (Store.Data.Plan == BillingPlan.Free)
 {
     <div class="history-note">
         @Coach.AiPromptsUsed of 10 monthly coach prompts used.

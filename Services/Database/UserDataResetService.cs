@@ -1,9 +1,10 @@
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Microsoft.Azure.Cosmos;
-using Microsoft.EntityFrameworkCore;
+using Services.Repositories;
+using Services.Mcp;
 using Shared.Exceptions;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Services.Database;
@@ -17,7 +18,7 @@ public interface IUserDataResetService
 /// Removes application-owned data for one Auth0 subject. This deliberately never creates
 /// the Cosmos database, containers, or the archive container.
 /// </summary>
-public sealed class UserDataResetService(DatabaseContext database, BlobServiceClient blobClient) : IUserDataResetService
+public sealed class UserDataResetService(IUserDataResetRepository repository, BlobServiceClient blobClient, IMcpCredentialService credentials) : IUserDataResetService
 {
     private const string ActivityContainerName = "flowmate-activity";
 
@@ -28,8 +29,10 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
         var workspaceRecords = 0;
         var billingEntitlements = 0;
         var archivedBlobs = 0;
+        var mcpKeys = 0;
+        var mcpUsageRecords = 0;
 
-        async Task RunStageAsync(string stage, Func<Task> action)
+        async Task RunStageAsync(UserDataResetStage stage, Func<Task> action)
         {
 
             try
@@ -39,60 +42,31 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             catch (Exception exception) when (exception is not UserDataResetException and not OperationCanceledException)
             {
                 throw new UserDataResetException(stage,
-                    new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs),
+                    new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs)
+                    {
+                        McpKeys = mcpKeys,
+                        McpUsageRecords = mcpUsageRecords
+                    },
                     exception);
             }
         }
 
-        await RunStageAsync("workspace document", async () =>
+        await RunStageAsync(UserDataResetStage.WorkspaceDocument, async () =>
         {
-            List<WorkspaceDocument> matches;
-
-            try
-            { matches = await database.Workspaces.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
-            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-
-                return;
-            }
-            database.Workspaces.RemoveRange(matches);
-            await database.SaveChangesAsync(cancellationToken);
-            workspaceDocuments = matches.Count;
+            workspaceDocuments = await repository.DeleteWorkspaceDocumentsAsync(userId, cancellationToken);
         });
 
-        await RunStageAsync("workspace record", async () =>
+        await RunStageAsync(UserDataResetStage.WorkspaceRecord, async () =>
         {
-            List<WorkspaceRecordDocument> matches;
-
-            try
-            { matches = await database.WorkspaceRecords.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
-            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-
-                return;
-            }
-            database.WorkspaceRecords.RemoveRange(matches);
-            await database.SaveChangesAsync(cancellationToken);
-            workspaceRecords = matches.Count;
+            workspaceRecords = await repository.DeleteWorkspaceRecordsAsync(userId, cancellationToken);
         });
 
-        await RunStageAsync("billing entitlement", async () =>
+        await RunStageAsync(UserDataResetStage.BillingEntitlement, async () =>
         {
-            List<BillingEntitlementDocument> matches;
-
-            try
-            { matches = await database.BillingEntitlements.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
-            catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-
-                return;
-            }
-            database.BillingEntitlements.RemoveRange(matches);
-            await database.SaveChangesAsync(cancellationToken);
-            billingEntitlements = matches.Count;
+            billingEntitlements = await repository.DeleteBillingEntitlementsAsync(userId, cancellationToken);
         });
 
-        await RunStageAsync("archived blob", async () =>
+        await RunStageAsync(UserDataResetStage.ArchivedBlob, async () =>
         {
             var container = blobClient.GetBlobContainerClient(ActivityContainerName);
 
@@ -114,6 +88,14 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             }
         });
 
-        return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs);
+        await RunStageAsync(UserDataResetStage.McpKeys, async () => mcpKeys = await credentials.DeleteAllForUserAsync(userId, cancellationToken));
+        
+        await RunStageAsync(UserDataResetStage.McpUsage, async () => mcpUsageRecords = await repository.DeleteMcpUsageAsync(userId, cancellationToken));
+
+        return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs)
+        {
+            McpKeys = mcpKeys,
+            McpUsageRecords = mcpUsageRecords
+        };
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Shared.Enums;
 using Web.Components;
 using Web.Components.Layout;
 using Web.Components.Pages;

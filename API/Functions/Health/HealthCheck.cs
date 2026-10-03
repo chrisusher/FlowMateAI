@@ -1,9 +1,8 @@
-using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 
-namespace API.Functions.V1.Health;
+namespace API.Functions.Health;
 
 public sealed class HealthCheck(ILogger<HealthCheck> logger)
 {

@@ -45,6 +45,7 @@ public class Program
         // API clients
         builder.Services.AddScoped<Auth0Client>();
         builder.Services.AddScoped<BillingClient>();
+        builder.Services.AddScoped<McpKeysClient>();
         builder.Services.AddScoped<WorkspaceStore>();
 
         builder.Services.AddScoped<WorkspaceStatistics>();

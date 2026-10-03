@@ -1,4 +1,5 @@
 using Microsoft.JSInterop;
+using Shared.Enums;
 
 namespace Web.Managers;
 
@@ -35,9 +36,9 @@ public sealed class ThemeManager : IAsyncDisposable
             var module = await GetModuleAsync();
             var savedTheme = await module.InvokeAsync<string?>("getSavedTheme");
 
-            if (savedTheme == "dark" || savedTheme == "light")
+            if (!int.TryParse(savedTheme, out _) && Enum.TryParse<ColorTheme>(savedTheme, ignoreCase: true, out var theme) && Enum.IsDefined(theme))
             {
-                _isDarkMode = savedTheme == "dark";
+                _isDarkMode = theme == ColorTheme.Dark;
             }
             else
             {
@@ -63,7 +64,7 @@ public sealed class ThemeManager : IAsyncDisposable
         await SavePreferenceAsync();
 
         ThemeChanged?.Invoke(_isDarkMode);
-        _logger.LogDebug("Theme toggled to: {Theme}", _isDarkMode ? "dark" : "light");
+        _logger.LogDebug("Theme toggled to: {Theme}", GetTheme());
     }
 
     /// <summary>
@@ -81,14 +82,14 @@ public sealed class ThemeManager : IAsyncDisposable
         await SavePreferenceAsync();
 
         ThemeChanged?.Invoke(_isDarkMode);
-        _logger.LogDebug("Theme set to: {Theme}", _isDarkMode ? "dark" : "light");
+        _logger.LogDebug("Theme set to: {Theme}", GetTheme());
     }
 
     private async Task ApplyThemeAsync()
     {
         try
         {
-            var theme = _isDarkMode ? "dark" : "light";
+            var theme = GetTheme();
             var module = await GetModuleAsync();
             await module.InvokeVoidAsync("applyTheme", theme);
         }
@@ -102,7 +103,7 @@ public sealed class ThemeManager : IAsyncDisposable
     {
         try
         {
-            var theme = _isDarkMode ? "dark" : "light";
+            var theme = GetTheme();
             var module = await GetModuleAsync();
             await module.InvokeVoidAsync("saveTheme", theme);
         }
@@ -126,4 +127,6 @@ public sealed class ThemeManager : IAsyncDisposable
 
         return _module;
     }
+
+    private string GetTheme() => (_isDarkMode ? ColorTheme.Dark : ColorTheme.Light).ToWireValue();
 }

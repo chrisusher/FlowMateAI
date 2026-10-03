@@ -1,8 +1,9 @@
+using System.Net.Http.Headers;
 using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Microsoft.JSInterop;
-using System.Net.Http.Headers;
 using Shared.Contracts;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Web.Clients;
@@ -56,12 +57,28 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             Data.Projects =
             [
-                new() { Name = "Personal", Color = "#5b68e8" }
+                new()
+                {
+                    Name = "Personal",
+                    Color = "#5b68e8"
+                }
             ];
             Data.Tasks =
             [
-                new() { Title = "Choose one thing to focus on", ProjectId = Data.Projects[0].Id, Priority = TaskPriority.High, PlannedToday = true },
-                new() { Title = "Take a short reset", ProjectId = Data.Projects[0].Id, Priority = TaskPriority.Medium, PlannedToday = true }
+                new()
+                {
+                    Title = "Choose one thing to focus on",
+                    ProjectId = Data.Projects[0].Id,
+                    Priority = TaskPriority.High,
+                    PlannedToday = true
+                },
+                new()
+                {
+                    Title = "Take a short reset",
+                    ProjectId = Data.Projects[0].Id,
+                    Priority = TaskPriority.Medium,
+                    PlannedToday = true
+                }
             ];
         }
 
@@ -202,8 +219,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         TimeZoneInfo zone;
 
         try
-        { zone = TimeZoneInfo.FindSystemTimeZoneById(Data.TimeZone); }
-        catch { zone = TimeZoneInfo.Local; }
+        {
+            zone = TimeZoneInfo.FindSystemTimeZoneById(Data.TimeZone);
+        }
+        catch
+        {
+            zone = TimeZoneInfo.Local;
+        }
 
         var cursor = started;
         var elapsed = 0d;
