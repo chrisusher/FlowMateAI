@@ -138,6 +138,7 @@ public sealed record ReportPageCursor(string UserId, string Period, string Query
     public static string Encode(string userId, ReportPeriod period, DateOnly queryDate, int offset, string revision)
     {
         var cursor = new ReportPageCursor(userId, period.ToWireValue(), queryDate.ToString("yyyy-MM-dd"), offset, revision);
+
         return Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(cursor));
     }
 }

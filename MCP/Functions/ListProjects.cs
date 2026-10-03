@@ -4,7 +4,7 @@ using Shared.Contracts;
 using Shared.Enums;
 using Shared.Models;
 
-namespace MCP;
+namespace MCP.Functions;
 
 public sealed class ListProjects(IMcpToolInvocation invocation)
 {

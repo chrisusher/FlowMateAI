@@ -15,5 +15,8 @@ public enum BillingActionCode
     StripeUnavailable = 3,
     
     [JsonStringEnumMemberName("customer_missing")]
-    CustomerMissing = 4
+    CustomerMissing = 4,
+
+    [JsonStringEnumMemberName("request_failed")]
+    RequestFailed = 5
 }

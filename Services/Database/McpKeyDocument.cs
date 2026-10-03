@@ -2,33 +2,33 @@ namespace Services.Database;
 
 public sealed class McpKeyDocument
 {
-    [JsonProperty("id")]
+    [Newtonsoft.Json.JsonProperty("id")]
     public string Id { get; set; } = "";
 
-    [JsonProperty("userId")]
+    [Newtonsoft.Json.JsonProperty("userId")]
     public string UserId { get; set; } = "";
 
-    [JsonProperty("name")]
+    [Newtonsoft.Json.JsonProperty("name")]
     public string Name { get; set; } = "";
 
-    [JsonProperty("digest")]
+    [Newtonsoft.Json.JsonProperty("digest")]
     public string Digest { get; set; } = "";
 
-    [JsonProperty("vaultSecretName")]
+    [Newtonsoft.Json.JsonProperty("vaultSecretName")]
     public string VaultSecretName { get; set; } = "";
 
-    [JsonProperty("prefix")]
+    [Newtonsoft.Json.JsonProperty("prefix")]
     public string Prefix { get; set; } = "";
 
-    [JsonProperty("createdAt")]
+    [Newtonsoft.Json.JsonProperty("createdAt")]
     public DateTimeOffset CreatedAt { get; set; }
 
-    [JsonProperty("expiresAt")]
+    [Newtonsoft.Json.JsonProperty("expiresAt")]
     public DateTimeOffset ExpiresAt { get; set; }
 
-    [JsonProperty("revokedAt")]
+    [Newtonsoft.Json.JsonProperty("revokedAt")]
     public DateTimeOffset? RevokedAt { get; set; }
 
-    [JsonProperty("_etag")]
+    [Newtonsoft.Json.JsonProperty("_etag")]
     public string? ETag { get; set; }
 }

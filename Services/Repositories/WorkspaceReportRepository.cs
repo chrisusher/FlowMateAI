@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Shared.Models;
