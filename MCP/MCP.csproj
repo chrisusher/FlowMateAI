@@ -20,6 +20,12 @@
     <ProjectReference Include="..\Services\Services.csproj" />
     <ProjectReference Include="..\Shared\Shared.csproj" />
   </ItemGroup>
-  <ItemGroup><None Update="host.json"><CopyToOutputDirectory>Always</CopyToOutputDirectory></None></ItemGroup>
-  <ItemGroup><Using Include="System.Threading.ExecutionContext" Alias="ExecutionContext" /></ItemGroup>
+  <ItemGroup>
+    <None Update="host.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="System.Threading.ExecutionContext" Alias="ExecutionContext" />
+  </ItemGroup>
 </Project>
