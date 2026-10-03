@@ -1,3 +1,4 @@
+using Azure.Identity;
 using Azure.Storage.Blobs;
 using ChrisUsher.Core.Services.Interfaces;
 using ChrisUsher.Core.Services.Storage;
@@ -54,11 +55,27 @@ public static class Services
 
         services.AddAzureClients(config =>
         {
-            var storageConnectionString = configuration.GetConnectionString("Storage")
-                ?? throw new InvalidOperationException("ConnectionStrings:Storage is not set in configuration");
+            var storageBlobServiceUri = configuration["Storage:BlobServiceUri"];
 
-            config.AddBlobServiceClient(storageConnectionString)
-                .WithName("FlowMate");
+            if (!string.IsNullOrWhiteSpace(storageBlobServiceUri))
+            {
+                config.AddBlobServiceClient(new Uri(storageBlobServiceUri))
+                    .WithName("FlowMate");
+                
+                var clientId = configuration["Storage:ManagedIdentityClientId"]
+                    ?? throw new InvalidOperationException("Storage:ManagedIdentityClientId is required with Storage:BlobServiceUri");
+                
+                config.UseCredential(new ManagedIdentityCredential(
+                    ManagedIdentityId.FromUserAssignedClientId(clientId)));
+            }
+            else
+            {
+                var storageConnectionString = configuration.GetConnectionString("Storage")
+                    ?? throw new InvalidOperationException("ConnectionStrings:Storage or Storage:BlobServiceUri must be set in configuration");
+
+                config.AddBlobServiceClient(storageConnectionString)
+                    .WithName("FlowMate");
+            }
 
             // Application secrets are supplied through server-side app settings or the host secret store.
         });

@@ -1,20 +1,43 @@
 // configureRuntime must be supplied to Blazor.start: a beforeStart initializer
 // runs too late to replace that callback in standalone WebAssembly.
-const response = await fetch(new URL('_blazor/_configuration', document.baseURI));
-if (!response.ok) {
-    throw new Error(`Unable to load gateway configuration: ${response.status}`);
-}
+let environment;
 
-const configuration = await response.json();
-const environment = configuration.webAssembly?.environment;
-if (!environment) {
-    throw new Error('The gateway did not provide WebAssembly environment configuration.');
-}
-
-await Blazor.start({
-    configureRuntime: dotnet => {
-        for (const [name, value] of Object.entries(environment)) {
-            dotnet.withEnvironmentVariable(name, value);
-        }
+try {
+    const response = await fetch(new URL('_blazor/_configuration', document.baseURI));
+    if (response.ok) {
+        const configuration = await response.json();
+        environment = configuration.webAssembly?.environment;
     }
-});
+} catch {
+    // Standalone Static Web Apps builds use ApiBaseUrl from appsettings.json.
+}
+
+if (!environment) {
+    try {
+        const response = await fetch(new URL('appsettings.json', document.baseURI));
+        
+        if (response.ok) {
+            const configuration = await response.json();
+            
+            if (configuration.ApiBaseUrl) {
+                environment = { 
+                    ApiBaseUrl: configuration.ApiBaseUrl 
+                };
+            }
+        }
+    } catch {
+        // The gateway configuration remains authoritative when it is available.
+    }
+}
+
+if (environment) {
+    await Blazor.start({
+        configureRuntime: dotnet => {
+            for (const [name, value] of Object.entries(environment)) {
+                dotnet.withEnvironmentVariable(name, value);
+            }
+        }
+    });
+} else {
+    await Blazor.start();
+}

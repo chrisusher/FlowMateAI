@@ -8,8 +8,6 @@ builder.Environment.ApplicationName = "FlowMate AI";
 // Parameters
 var environment = builder.AddParameter("environment", false);
 
-var cache = builder.AddRedis("cache");
-
 // Storage
 var storage = builder.AddAzureStorage("storage")
     .RunAsEmulator(azurite =>
@@ -61,12 +59,12 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
     .WithHttpHealthCheck("/api/health")
     .WithReference(blobs)
-    .WithReference(cache)
     .WithReference(keyVault)
     .WithReference(database)
     .WithReference(serviceBus)
     .WithReference(foundryProject)
-    .WithExternalHttpEndpoints();
+    .WithExternalHttpEndpoints()
+    .ExcludeFromManifest();
 
 var cli = builder.AddProject<Projects.CLI>("cli")
     .WithArgs("--help")
@@ -319,16 +317,25 @@ cli.WithProcessCommand(
     });
 #pragma warning restore ASPIREPROCESSCOMMAND001
 
-var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
-    .WithReference(api)
-    .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"));
+var configuredWebOrigin = builder.Configuration["Cors:AllowedOrigin"];
 
-var gateway = builder.AddBlazorGateway("frontend-gateway")
-    .WaitFor(api)
-    .WithExternalHttpEndpoints()
-    .WithHttpHealthCheck("/frontend/")
-    .WithBlazorClientApp(frontend);
+if (builder.ExecutionContext.IsRunMode)
+{
+    var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
+        .WithReference(api)
+        .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"));
 
-api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"));
+    var gateway = builder.AddBlazorGateway("frontend-gateway")
+        .WaitFor(api)
+        .WithExternalHttpEndpoints()
+        .WithHttpHealthCheck("/frontend/")
+        .WithBlazorClientApp(frontend);
+
+    api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"));
+}
+else if (!string.IsNullOrWhiteSpace(configuredWebOrigin))
+{
+    api.WithEnvironment("Cors__AllowedOrigins__0", configuredWebOrigin);
+}
 
 builder.Build().Run();
