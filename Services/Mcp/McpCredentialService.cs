@@ -1,9 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using Azure.Security.KeyVault.Secrets;
-using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.Configuration;
 using Services.Database;
+using Services.Repositories;
 
 namespace Services.Mcp;
 
@@ -19,10 +18,8 @@ public interface IMcpCredentialService
     Task<ValidatedMcpKey?> ValidateAsync(string? key, CancellationToken cancellationToken = default);
 }
 
-public sealed class McpCredentialService(CosmosClient cosmos, IConfiguration configuration, SecretClient? secrets = null) : IMcpCredentialService
+public sealed class McpCredentialService(IMcpCredentialRepository repository, SecretClient? secrets = null) : IMcpCredentialService
 {
-    private Container Keys => cosmos.GetContainer(configuration["Database:DatabaseName"] ?? configuration["Database__DatabaseName"] ?? "flowmate-Development", "McpKeys");
-
     public async Task<CreatedMcpKey> CreateAsync(string userId, string name, int expiryDays, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
@@ -37,7 +34,18 @@ public sealed class McpCredentialService(CosmosClient cosmos, IConfiguration con
         var fullKey = $"fm_{id}.{secret}";
         var vaultName = "mcp-" + id;
         var now = DateTimeOffset.UtcNow;
-        var document = new McpKeyDocument { Id = id, UserId = userId, Name = name.Trim(), Digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fullKey))), VaultSecretName = vaultName, Prefix = fullKey[..Math.Min(13, fullKey.Length)], CreatedAt = now, ExpiresAt = now.AddDays(expiryDays) };
+
+        var document = new McpKeyDocument
+        {
+            Id = id,
+            UserId = userId,
+            Name = name.Trim(),
+            Digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fullKey))),
+            VaultSecretName = vaultName,
+            Prefix = fullKey[..Math.Min(13, fullKey.Length)],
+            CreatedAt = now,
+            ExpiresAt = now.AddDays(expiryDays)
+        };
 
         if (secrets is null)
         {
@@ -48,13 +56,13 @@ public sealed class McpCredentialService(CosmosClient cosmos, IConfiguration con
 
         try
         {
-            await Keys.CreateItemAsync(document, new PartitionKey(userId), cancellationToken: cancellationToken);
+            await repository.CreateAsync(document, cancellationToken);
         }
         catch
         {
             try
             {
-                await Keys.DeleteItemAsync<McpKeyDocument>(id, new PartitionKey(userId), cancellationToken: CancellationToken.None);
+                await repository.DeleteAsync(userId, id, CancellationToken.None);
             }
             catch { }
 
@@ -63,6 +71,7 @@ public sealed class McpCredentialService(CosmosClient cosmos, IConfiguration con
                 await secrets.StartDeleteSecretAsync(vaultName, CancellationToken.None);
             }
             catch { }
+            
             throw;
         }
 
@@ -71,20 +80,11 @@ public sealed class McpCredentialService(CosmosClient cosmos, IConfiguration con
 
     public async Task<IReadOnlyList<McpKeyMetadata>> ListAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var query = new QueryDefinition("SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC").WithParameter("@userId", userId);
-
-        using var iterator = Keys.GetItemQueryIterator<McpKeyDocument>(query, requestOptions: new QueryRequestOptions
-        {
-            PartitionKey = new PartitionKey(userId)
-        });
         var result = new List<McpKeyMetadata>();
 
-        while (iterator.HasMoreResults)
+        foreach (var item in await repository.ListAsync(userId, cancellationToken))
         {
-            foreach (var item in await iterator.ReadNextAsync(cancellationToken))
-            {
-                result.Add(new(item.Id, item.Name, item.Prefix, item.CreatedAt, item.ExpiresAt, item.RevokedAt is not null));
-            }
+            result.Add(new(item.Id, item.Name, item.Prefix, item.CreatedAt, item.ExpiresAt, item.RevokedAt is not null));
         }
 
         return result;
@@ -92,31 +92,25 @@ public sealed class McpCredentialService(CosmosClient cosmos, IConfiguration con
 
     public async Task<bool> RevokeAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var response = await Keys.ReadItemAsync<McpKeyDocument>(id, new PartitionKey(userId), cancellationToken: cancellationToken);
-            var doc = response.Resource;
+        var doc = await repository.GetAsync(userId, id, cancellationToken);
 
-            if (doc.RevokedAt is null)
-            {
-                doc.RevokedAt = DateTimeOffset.UtcNow;
-                await Keys.ReplaceItemAsync(doc, id, new PartitionKey(userId), new ItemRequestOptions
-                {
-                    IfMatchEtag = response.ETag
-                }, cancellationToken);
-            }
-
-            if (secrets is not null)
-            {
-                await secrets.StartDeleteSecretAsync(doc.VaultSecretName, cancellationToken);
-            }
-
-            return true;
-        }
-        catch (CosmosException e) when (e.StatusCode == System.Net.HttpStatusCode.NotFound)
+        if (doc is null)
         {
             return false;
         }
+
+        if (doc.RevokedAt is null)
+        {
+            doc.RevokedAt = DateTimeOffset.UtcNow;
+            await repository.ReplaceAsync(doc, doc.ETag, cancellationToken);
+        }
+
+        if (secrets is not null)
+        {
+            await secrets.StartDeleteSecretAsync(doc.VaultSecretName, cancellationToken);
+        }
+
+        return true;
     }
 
     public async Task<ValidatedMcpKey?> ValidateAsync(string? key, CancellationToken cancellationToken = default)
@@ -140,13 +134,7 @@ public sealed class McpCredentialService(CosmosClient cosmos, IConfiguration con
             return null;
         }
 
-        using var iterator = Keys.GetItemQueryIterator<McpKeyDocument>(new QueryDefinition("SELECT * FROM c WHERE c.id = @id").WithParameter("@id", id));
-        McpKeyDocument? document = null;
-
-        while (iterator.HasMoreResults && document is null)
-        {
-            document = (await iterator.ReadNextAsync(cancellationToken)).FirstOrDefault();
-        }
+        var document = await repository.FindByIdAsync(id, cancellationToken);
 
         if (document is null || document.RevokedAt is not null || document.ExpiresAt <= DateTimeOffset.UtcNow)
         {

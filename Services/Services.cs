@@ -85,8 +85,12 @@ public static class Services
 
             return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
         });
+        services.AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IMcpCredentialService, McpCredentialService>();
+        services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
+        services.AddScoped<IUserDataResetService, UserDataResetService>();
 
         if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))
         {
@@ -139,7 +143,9 @@ public static class Services
             ? new CosmosClient(settings.AccountEndpoint, new Identity::Azure.Identity.DefaultAzureCredential())
             : new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
         services.AddSingleton(client);
+        services.AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IMcpCredentialService, McpCredentialService>();
 
         return services;

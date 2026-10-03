@@ -33,8 +33,15 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
         document.Payload = JsonSerializer.Serialize(workspace, SharedCommon.JsonOptions);
         document.UpdatedAt = DateTimeOffset.UtcNow;
 
-        await database.SaveChangesAsync(cancellationToken);
-        await SynchronizeRecordsAsync(ownerId, workspace, cancellationToken);
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+            await SynchronizeRecordsAsync(ownerId, workspace, cancellationToken);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw new WorkspaceSaveConflictException(exception);
+        }
 
         return document;
     }
@@ -72,3 +79,6 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
         await database.SaveChangesAsync(cancellationToken);
     }
 }
+
+public sealed class WorkspaceSaveConflictException(Exception innerException)
+    : Exception("The workspace changed while it was being saved.", innerException);

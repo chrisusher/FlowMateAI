@@ -1,8 +1,5 @@
-using System.Net;
 using System.Text;
-using System.Text.Json;
-using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.Configuration;
+using Services.Repositories;
 using Shared.Models;
 
 namespace Services.Reporting;
@@ -20,44 +17,21 @@ public interface IWorkspaceReportService
     Task<string> GetRevisionAsync(string userId, CancellationToken cancellationToken = default);
 }
 
-public sealed class WorkspaceReportService(CosmosClient cosmos, IConfiguration configuration) : IWorkspaceReportService
+public sealed class WorkspaceReportService(IWorkspaceReportRepository repository) : IWorkspaceReportService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private Container WorkspaceContainer => cosmos.GetContainer(configuration["Database:DatabaseName"] ?? configuration["Database__DatabaseName"] ?? "flowmate-Development", "WorkspaceDocuments");
-
-    public async Task<string> GetRevisionAsync(string userId, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await WorkspaceContainer.ReadItemAsync<WorkspaceEnvelope>("workspace", new PartitionKey(userId), cancellationToken: cancellationToken);
-
-            return response.ETag ?? response.Resource.UpdatedAt.UtcTicks.ToString();
-        }
-        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
-        {
-            return "missing";
-        }
-    }
+    public Task<string> GetRevisionAsync(string userId, CancellationToken cancellationToken = default) =>
+        repository.GetRevisionAsync(userId, cancellationToken);
 
     public async Task<WorkspaceReport> GetAsync(string userId, string period, DateOnly? date, CancellationToken cancellationToken = default)
     {
-        var document = await WorkspaceContainer.ReadItemAsync<WorkspaceEnvelope>("workspace", new PartitionKey(userId), cancellationToken: cancellationToken);
-        var workspace = JsonSerializer.Deserialize<WorkspaceSnapshot>(document.Resource.Payload, JsonOptions) ?? new();
+        var source = await repository.GetWorkspaceAsync(userId, cancellationToken);
+        var workspace = source.Workspace;
         var zone = ResolveZone(workspace.TimeZone);
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).DateTime);
         var selected = date ?? today;
         var (start, end) = Period(period, selected);
-        var entitled = false;
-
-        try
-        {
-            var bill = await cosmos.GetContainer(configuration["Database:DatabaseName"] ?? configuration["Database__DatabaseName"] ?? "flowmate-Development", "BillingEntitlements")
-                .ReadItemAsync<BillingEnvelope>("billing", new PartitionKey(userId), cancellationToken: cancellationToken);
-            entitled = bill.Resource.Plan.Equals("Pro", StringComparison.OrdinalIgnoreCase) && bill.Resource.SubscriptionStatus is "active" or "trialing";
-        }
-        catch (CosmosException e) when (e.StatusCode == HttpStatusCode.NotFound)
-        {
-        }
+        var billing = await repository.GetBillingAccessAsync(userId, cancellationToken);
+        var entitled = billing is not null && billing.Plan.Equals("Pro", StringComparison.OrdinalIgnoreCase) && billing.SubscriptionStatus is "active" or "trialing";
         var historyStart = entitled ? today.AddYears(-1).AddDays(1) : today.AddDays(-29);
         var effectiveStart = start < historyStart ? historyStart : start;
         var effectiveEnd = end;
@@ -70,6 +44,7 @@ public sealed class WorkspaceReportService(CosmosClient cosmos, IConfiguration c
 
         var projects = workspace.Projects.ToDictionary(x => x.Id, x => x.Name, StringComparer.Ordinal);
         var tasks = workspace.Tasks.ToDictionary(x => x.Id, x => x.Title, StringComparer.Ordinal);
+        
         var entries = workspace.Sessions.Where(s => s.FocusMinutes > 0 && s.EndedAt > s.StartedAt)
             .Select(s => (Session: s, Day: DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(s.StartedAt, zone).DateTime)))
             .Where(x => x.Day >= effectiveStart && x.Day <= effectiveEnd)
@@ -84,7 +59,7 @@ public sealed class WorkspaceReportService(CosmosClient cosmos, IConfiguration c
             .Concat(entries.Where(e => e.ProjectId is not null && !projects.ContainsKey(e.ProjectId)).GroupBy(e => e.ProjectId!).Select(g => new ReportProject(g.Key, "Deleted project", g.Sum(e => e.FocusMinutes), g.Count())))
             .ToArray();
 
-        return new(workspace.TimeZone, document.ETag ?? document.Resource.UpdatedAt.UtcTicks.ToString(), truncated, effectiveStart, effectiveEnd, historyStart, today, selected, start, end,
+        return new(workspace.TimeZone, source.Revision, truncated, effectiveStart, effectiveEnd, historyStart, today, selected, start, end,
             entries.Sum(e => e.FocusMinutes), days, projectTotals, entries);
     }
 
@@ -139,8 +114,6 @@ public sealed class WorkspaceReportService(CosmosClient cosmos, IConfiguration c
         }
     }
 
-    private sealed class WorkspaceEnvelope { public string Id { get; set; } = ""; public string UserId { get; set; } = ""; public string Payload { get; set; } = "{}"; public DateTimeOffset UpdatedAt { get; set; } public string? ETag { get; set; } }
-    private sealed class BillingEnvelope { public string Plan { get; set; } = "Free"; public string SubscriptionStatus { get; set; } = "none"; }
 }
 
 public sealed class ReportHistoryUnavailableException : Exception;

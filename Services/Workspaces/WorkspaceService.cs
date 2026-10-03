@@ -1,6 +1,4 @@
 using ChrisUsher.Core.Shared;
-using Microsoft.EntityFrameworkCore;
-using Services.Database;
 using Services.Repositories;
 using Shared.Contracts;
 using Shared.Models;
@@ -12,6 +10,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
     public async Task<WorkspaceResponse> GetAsync(string ownerId, CancellationToken cancellationToken = default)
     {
         var document = await repository.GetAsync(ownerId, cancellationToken);
+
         var snapshot = document is null ? new WorkspaceSnapshot() : Deserialize(document.Payload);
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
         snapshot.Plan = entitlement.Plan;
@@ -54,23 +53,25 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         try
         {
             var existingSessionIds = current.Sessions.Select(session => session.Id).ToHashSet(StringComparer.Ordinal);
+
             var newSessions = request.Workspace.Sessions.Where(session => !existingSessionIds.Contains(session.Id)).ToArray();
+
             await activityArchive.ArchiveAsync(ownerId, newSessions, cancellationToken);
+
             var saved = await repository.SaveAsync(ownerId, request.Workspace, request.Revision, cancellationToken);
 
             return saved is null
                 ? new(null, "revision_conflict", "This workspace changed on another device. Reload it and try again.")
                 : new(new(request.Workspace, saved.ETag ?? ""), null, null);
         }
-        catch (DbUpdateException)
+        catch (WorkspaceSaveConflictException)
         {
-
             return new(null, "revision_conflict", "This workspace changed on another device. Reload it and try again.");
         }
     }
 
     private static WorkspaceSnapshot Deserialize(string payload) =>
-        System.Text.Json.JsonSerializer.Deserialize<WorkspaceSnapshot>(payload, SharedCommon.JsonOptions) ?? new();
+        JsonSerializer.Deserialize<WorkspaceSnapshot>(payload, SharedCommon.JsonOptions) ?? new();
 
     private static bool SameTimer(TimerSnapshot left, TimerSnapshot right) =>
         left.Phase == right.Phase && left.EndsAt == right.EndsAt && left.StartedAt == right.StartedAt &&
