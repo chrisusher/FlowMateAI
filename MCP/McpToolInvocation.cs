@@ -17,7 +17,7 @@ public interface IMcpToolInvocation
     Task<IMcpToolResponse> InvokeAsync(ToolInvocationContext context, string? period = null, string? date = null, string? cursor = null, string? projectId = null, bool projectsOnly = false, CancellationToken cancellationToken = default);
 }
 
-public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiter limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger) : IMcpToolInvocation
+public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiterService limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger) : IMcpToolInvocation
 {
     private static readonly Meter Meter = new("FlowMateAI.MCP");
     private static readonly Histogram<double> ToolDuration = Meter.CreateHistogram<double>("flowmate.mcp.tool.duration", "ms");
@@ -102,10 +102,9 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
                     return new McpRateLimitErrorResponse(true, "rate_limited", admission.PerMinuteLimit, admission.PerDayLimit, admission.MinuteRemaining, admission.DayRemaining, admission.RetryAfterSeconds, admission.MinuteResetAt, admission.DayResetAt);
                 }
             }
-            catch (UsageAdmissionUnavailableException) { return Error("temporarily_unavailable", "Rate limit admission is temporarily unavailable. Retry shortly."); }
-            catch (CosmosException)
+            catch (UsageAdmissionUnavailableException)
             {
-                logger.LogWarning("MCP rate-limit storage dependency failed.");
+                logger.LogWarning("MCP rate-limit admission failed.");
 
                 return Error("temporarily_unavailable", "Rate limit admission is temporarily unavailable. Retry shortly.");
             }

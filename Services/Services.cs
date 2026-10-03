@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Services.Billing;
 using Services.Coach;
 using Services.Database;
@@ -137,6 +138,10 @@ public static class Services
 
     public static IServiceCollection AddMcpServices(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddDatabase(configuration);
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
+        services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();
         var global = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
         var settings = ResolveDatabaseSettings(configuration, global.Environment);
         var client = string.IsNullOrWhiteSpace(settings.AccountKey)
@@ -169,11 +174,21 @@ public static class Services
         ArgumentNullException.ThrowIfNull(configuration);
 
         var globalConfig = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
+
         var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+
         services.AddDbContext<DatabaseContext>(options =>
         {
             Console.WriteLine($"[FlowMate] Using Cosmos endpoint '{settings.AccountEndpoint}' and database '{settings.DatabaseName}'.");
-            options.UseCosmos(settings.AccountEndpoint, settings.AccountKey, settings.DatabaseName);
+
+            if (string.IsNullOrWhiteSpace(settings.AccountKey))
+            {
+                options.UseCosmos(settings.AccountEndpoint, new Identity::Azure.Identity.DefaultAzureCredential(), settings.DatabaseName);
+            }
+            else
+            {
+                options.UseCosmos(settings.AccountEndpoint, settings.AccountKey, settings.DatabaseName);
+            }
 
 #if DEBUG
             options.EnableDetailedErrors();

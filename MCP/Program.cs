@@ -12,10 +12,11 @@ using Services.Reporting;
 var builder = FunctionsApplication.CreateBuilder(args);
 builder.ConfigureFunctionsWebApplication();
 builder.Services.AddMcpServices(builder.Configuration);
-builder.Services.AddScoped<IFreeUsageLimiter, CosmosFreeUsageLimiter>();
 builder.Services.AddScoped<IMcpToolInvocation, McpToolInvocation>();
+
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(r => r.AddService("FlowMateAI.MCP"))
     .WithTracing(t => t.AddHttpClientInstrumentation().AddOtlpExporter())
     .WithMetrics(m => m.AddMeter("FlowMateAI.MCP").AddOtlpExporter());
+
 builder.Build().Run();

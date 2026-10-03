@@ -8,5 +8,6 @@
   <Project Path="ServiceDefaults/ServiceDefaults.csproj" />
   <Project Path="Services/Services.csproj" />
   <Project Path="Shared/Shared.csproj" />
+  <Project Path="Tests/Services.Tests/Services.Tests.csproj" />
   <Project Path="Web/Web.csproj" />
 </Solution>

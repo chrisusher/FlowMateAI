@@ -21,3 +21,6 @@ jobs:
 
       - name: Build solution
         run: dotnet build FlowMateAI.slnx --configuration Release
+
+      - name: Test services
+        run: dotnet test Tests/Services.Tests/Services.Tests.csproj --configuration Release --no-build
