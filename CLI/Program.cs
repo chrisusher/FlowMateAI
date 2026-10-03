@@ -34,6 +34,8 @@ public static class Program
 
         builder.AddServiceDefaults();
         builder.Services.AddDatabase(builder.Configuration);
+        var databaseSettings = Services.Services.ResolveDatabaseSettings(builder.Configuration);
+        builder.Services.AddSingleton(new Microsoft.Azure.Cosmos.CosmosClient(databaseSettings.AccountEndpoint, databaseSettings.AccountKey));
         builder.Services.AddHttpClient<Auth0ManagementClient>();
         builder.Services.AddScoped<IUserDataResetService>(services =>
         {
@@ -46,8 +48,10 @@ public static class Program
             }
 
             var database = services.GetRequiredService<DatabaseContext>();
+            var cosmos = services.GetRequiredService<Microsoft.Azure.Cosmos.CosmosClient>();
+            var settings = Services.Services.ResolveDatabaseSettings(configuration);
 
-            return new UserDataResetService(database, new Azure.Storage.Blobs.BlobServiceClient(storageConnection));
+            return new UserDataResetService(database, new Azure.Storage.Blobs.BlobServiceClient(storageConnection), cosmos, settings.DatabaseName);
         });
 
         return builder.Build();

@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="API/API.csproj" />
+  <Project Path="MCP/MCP.csproj" />
   <Project Path="AppHost/AppHost.csproj" />
   <Project Path="CLI/CLI.csproj" />
   <Project Path="Formatting/FlowMate.Formatting.csproj" />

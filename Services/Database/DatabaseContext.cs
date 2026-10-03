@@ -8,6 +8,7 @@ public class DatabaseContext : DbContext
     public DbSet<WorkspaceRecordDocument> WorkspaceRecords => Set<WorkspaceRecordDocument>();
     public DbSet<BillingEntitlementDocument> BillingEntitlements => Set<BillingEntitlementDocument>();
     public DbSet<StripeEventDocument> StripeEvents => Set<StripeEventDocument>();
+    public DbSet<McpKeyDocument> McpKeys => Set<McpKeyDocument>();
     public DatabaseContext()
     {
     }
@@ -44,6 +45,13 @@ public class DatabaseContext : DbContext
             entity.ToContainer("StripeEvents");
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.PartitionId);
+        });
+        modelBuilder.Entity<McpKeyDocument>(entity =>
+        {
+            entity.ToContainer("McpKeys");
+            entity.HasKey(x => x.Id);
+            entity.HasPartitionKey(x => x.UserId);
+            entity.Property(x => x.ETag).IsETagConcurrency();
         });
     }
 }

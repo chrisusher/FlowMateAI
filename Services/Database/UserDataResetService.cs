@@ -17,7 +17,7 @@ public interface IUserDataResetService
 /// Removes application-owned data for one Auth0 subject. This deliberately never creates
 /// the Cosmos database, containers, or the archive container.
 /// </summary>
-public sealed class UserDataResetService(DatabaseContext database, BlobServiceClient blobClient) : IUserDataResetService
+public sealed class UserDataResetService(DatabaseContext database, BlobServiceClient blobClient, CosmosClient? cosmos = null, string? databaseName = null) : IUserDataResetService
 {
     private const string ActivityContainerName = "flowmate-activity";
 
@@ -28,6 +28,8 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
         var workspaceRecords = 0;
         var billingEntitlements = 0;
         var archivedBlobs = 0;
+        var mcpKeys = 0;
+        var mcpUsageRecords = 0;
 
         async Task RunStageAsync(string stage, Func<Task> action)
         {
@@ -39,7 +41,11 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             catch (Exception exception) when (exception is not UserDataResetException and not OperationCanceledException)
             {
                 throw new UserDataResetException(stage,
-                    new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs),
+                    new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs)
+                    {
+                        McpKeys = mcpKeys,
+                        McpUsageRecords = mcpUsageRecords
+                    },
                     exception);
             }
         }
@@ -114,6 +120,28 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             }
         });
 
-        return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs);
+        if (cosmos is not null)
+        {
+            var db = cosmos.GetDatabase(databaseName ?? throw new InvalidOperationException("The Cosmos database name is required for MCP reset cleanup."));
+            await RunStageAsync("MCP keys", async () =>
+            {
+                var container = db.GetContainer("McpKeys");
+                using var iterator = container.GetItemQueryIterator<McpKeyDocument>(new QueryDefinition("SELECT * FROM c WHERE c.userId = @userId").WithParameter("@userId", userId), requestOptions: new QueryRequestOptions { PartitionKey = new PartitionKey(userId) });
+                while (iterator.HasMoreResults)
+                    foreach (var item in await iterator.ReadNextAsync(cancellationToken))
+                    {
+                        item.RevokedAt = DateTimeOffset.UtcNow;
+                        await container.ReplaceItemAsync(item, item.Id, new PartitionKey(userId), cancellationToken: cancellationToken);
+                        mcpKeys++;
+                    }
+            });
+            await RunStageAsync("MCP usage", async () =>
+            {
+                try { await db.GetContainer("McpUsage").DeleteItemAsync<object>("usage", new PartitionKey(userId), cancellationToken: cancellationToken); mcpUsageRecords = 1; }
+                catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound) { }
+            });
+        }
+
+        return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs) { McpKeys = mcpKeys, McpUsageRecords = mcpUsageRecords };
     }
 }

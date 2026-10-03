@@ -4,8 +4,10 @@
 @inject WorkspaceStore Store
 @inject Auth0Client Auth
 @inject BillingClient Billing
+@inject McpKeysClient McpKeys
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
+@inject IConfiguration Configuration
 
 <PageTitle>@Title &#8212; FlowMate</PageTitle>
 
@@ -45,6 +47,7 @@
             else if (CurrentView == "today")
             {
                 <div class="page-heading"><div><div class="eyebrow">@Greeting, @FirstName</div><h1>Make today count.</h1><p class="subheading">A little focus goes a long way. Here's your plan for today.</p></div><button class="quiet-button" @onclick='() => Go("tasks")'>+ Add a task</button></div>
+                <article class="panel mcp-home-card"><div><span class="eyebrow">MCP CONNECTOR</span><h3>Bring your focus data to your AI tools.</h3><p>The read-only FlowMate MCP server is available on every plan.</p></div><a class="quiet-button" href="settings#mcp">Set up MCP &rarr;</a></article>
                 <div class="today-grid">
                     <div class="left-column">
                         <article class="focus-card">
@@ -115,7 +118,7 @@
             else
             {
                 <div class="page-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h1>Settings</h1><p class="subheading">Your space, tuned to how you work.</p></div></div>
-                <div class="settings-layout"><div class="settings-nav"><a class="selected">Profile</a><a href="settings#preferences">Preferences</a><a href="settings#billing">Plan &amp; billing</a></div><div class="settings-content"><article class="panel settings-panel"><div class="settings-heading"><div><h3>Profile</h3><p>Personal details for your FlowMate account.</p></div></div><label class="field-label">Name<input class="field-input" @bind="Store.Data.DisplayName" /></label><label class="field-label">Email address<input class="field-input" value="@(Auth.Session.Email ?? "")" disabled /></label><label class="field-label">Time zone<select class="field-input" @bind="Store.Data.TimeZone"><option>Europe/London</option><option>America/New_York</option><option>America/Los_Angeles</option><option>Europe/Paris</option><option>Asia/Tokyo</option></select><small>Used to split focus time across calendar days.</small></label><div class="profile-actions"><button class="quiet-button" @onclick="Save">Save changes</button>@if (Auth.Session.SignedIn) { <button class="text-button" @onclick="Logout">Sign out</button> }</div></article><article class="panel settings-panel" id="preferences"><div class="settings-heading"><div><h3>Preferences</h3><p>Make FlowMate feel at home.</p></div></div><div class="setting-row"><div><strong>Appearance</strong><small>Follow system preference until you choose a theme.</small></div><button class="setting-control" @onclick="ToggleTheme">@(IsDark ? "Dark mode on" : "Light mode on")</button></div><div class="setting-row"><div><strong>Timer sounds</strong><small>A soft cue at the end of focus and break sessions.</small></div><button class="setting-control" @onclick="ToggleMute">@(Store.Data.Muted ? "Muted" : "On")</button></div><div class="setting-row"><div><strong>Focus length</strong><small>Short breaks are 5 minutes; long breaks are 15.</small></div><span class="setting-static">25 minutes</span></div></article><article class="panel settings-panel" id="billing"><div class="settings-heading"><div><h3>Plan &amp; billing</h3><p>You're currently on the @Store.Data.Plan plan.</p></div><button class="text-button" @onclick="OpenBillingPortal">Manage billing</button></div><div class="setting-row"><div><strong>@Store.Data.Plan plan</strong><small>Up to @(Store.Data.Plan == "Pro" ? 25 : 3) projects | @((Store.Data.Plan == "Pro") ? "100" : "10") coach prompts / month</small></div><span class="plan-status">Active</span></div></article></div></div>
+                <div class="settings-layout"><div class="settings-nav"><a class="selected">Profile</a><a href="settings#preferences">Preferences</a><a href="settings#mcp">MCP &amp; API keys</a><a href="settings#billing">Plan &amp; billing</a></div><div class="settings-content"><article class="panel settings-panel"><div class="settings-heading"><div><h3>Profile</h3><p>Personal details for your FlowMate account.</p></div></div><label class="field-label">Name<input class="field-input" @bind="Store.Data.DisplayName" /></label><label class="field-label">Email address<input class="field-input" value="@(Auth.Session.Email ?? "")" disabled /></label><label class="field-label">Time zone<select class="field-input" @bind="Store.Data.TimeZone"><option>Europe/London</option><option>America/New_York</option><option>America/Los_Angeles</option><option>Europe/Paris</option><option>Asia/Tokyo</option></select><small>Used to split focus time across calendar days.</small></label><div class="profile-actions"><button class="quiet-button" @onclick="Save">Save changes</button>@if (Auth.Session.SignedIn) { <button class="text-button" @onclick="Logout">Sign out</button> }</div></article><article class="panel settings-panel" id="preferences"><div class="settings-heading"><div><h3>Preferences</h3><p>Make FlowMate feel at home.</p></div></div><div class="setting-row"><div><strong>Appearance</strong><small>Follow system preference until you choose a theme.</small></div><button class="setting-control" @onclick="ToggleTheme">@(IsDark ? "Dark mode on" : "Light mode on")</button></div><div class="setting-row"><div><strong>Timer sounds</strong><small>A soft cue at the end of focus and break sessions.</small></div><button class="setting-control" @onclick="ToggleMute">@(Store.Data.Muted ? "Muted" : "On")</button></div><div class="setting-row"><div><strong>Focus length</strong><small>Short breaks are 5 minutes; long breaks are 15.</small></div><span class="setting-static">25 minutes</span></div></article><article class="panel settings-panel" id="mcp"><div class="settings-heading"><div><h3>FlowMate MCP server</h3><p>Available to Free and Pro accounts. Free accounts can make 10 tool calls per minute and 100 per UTC day. Pro accounts have no MCP call limit.</p></div></div><div class="mcp-instructions"><p><strong>Connect an MCP client</strong></p><ol><li>Create an API key below and copy it when it appears. It is shown only once.</li><li>Use the Streamable HTTP endpoint <code>@McpEndpoint</code>.</li><li>Configure a custom <code>X-Api-Key</code> header with your key in the client.</li><li>Discover <code>list_projects</code>, then call <code>get_timesheet</code> or <code>get_project_time</code>. Periods are <code>day</code>, <code>week</code>, or <code>month</code>; dates use <code>YYYY-MM-DD</code>.</li></ol><p>Free calls share one allowance across your keys and clients. When a call is throttled, wait for <code>retryAfterSeconds</code>. Replace a key by creating a new one, updating your client, then revoking the old key.</p></div>@if (!Auth.Session.SignedIn) { <p>Sign in to manage MCP API keys.</p> } else { <div class="mcp-key-form"><input class="field-input" @bind="McpKeyName" maxlength="80" placeholder="Key name, e.g. Work laptop" /><select class="field-input" @bind="McpKeyExpiry"><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select><button class="quiet-button" @onclick="CreateMcpKey" disabled="@string.IsNullOrWhiteSpace(McpKeyName)">Create key</button></div>@if (!string.IsNullOrEmpty(McpKeyMessage)) { <p class="mcp-message">@McpKeyMessage</p> }@if (NewMcpKey is not null) { <div class="created-key"><strong>Copy this key now. It won't be shown again.</strong><code>@NewMcpKey</code><button class="text-button" @onclick="ClearNewMcpKey">Done</button></div> }<div class="mcp-key-list">@foreach (var key in McpKeyList) { <div class="setting-row"><div><strong>@key.Name</strong><small>@key.Prefix… · expires @key.ExpiresAt.ToLocalTime().ToString("d MMM yyyy") @if (key.Revoked) { <span>· revoked</span> }</small></div>@if (!key.Revoked) { <button class="text-button" @onclick="() => RevokeMcpKey(key.Id)">Revoke</button> }</div> }</div> }</article><article class="panel settings-panel" id="billing"><div class="settings-heading"><div><h3>Plan &amp; billing</h3><p>You're currently on the @Store.Data.Plan plan.</p></div><button class="text-button" @onclick="OpenBillingPortal">Manage billing</button></div><div class="setting-row"><div><strong>@Store.Data.Plan plan</strong><small>Up to @(Store.Data.Plan == "Pro" ? 25 : 3) projects | @((Store.Data.Plan == "Pro") ? "100" : "10") coach prompts / month</small></div><span class="plan-status">Active</span></div></article></div></div>
             }
             @if (_taskDialogOpen)
             {
@@ -135,6 +138,11 @@
     private string? BillingMessage;
     private IReadOnlyList<BillingPrice> Prices = [];
     private BillingSummary? BillingState;
+    private List<McpKeyItem> McpKeyList = [];
+    private string McpKeyName = "";
+    private string? McpKeyMessage, NewMcpKey;
+    private int McpKeyExpiry = 90;
+    private string McpEndpoint => string.IsNullOrWhiteSpace(Configuration["McpEndpoint"]) ? "https://<your-mcp-function-app>/runtime/webhooks/mcp" : Configuration["McpEndpoint"]!;
     private IJSObjectReference? _workspaceModule;
     private TaskRecord _draftTask = new();
     private bool _taskDialogOpen, _editingTask, _projectDialogOpen;
@@ -198,6 +206,7 @@
         LoadChatMessages();
         try { Prices = await Billing.GetPricesAsync(); } catch (HttpRequestException) { }
         if (Auth.Session.SignedIn) { try { BillingState = await Billing.GetSummaryAsync(); } catch (HttpRequestException) { } }
+        if (Auth.Session.SignedIn) { try { McpKeyList = (await McpKeys.ListAsync()).ToList(); } catch (HttpRequestException) { } }
         var savedTheme = await JS.InvokeAsync<string?>("localStorage.getItem", "flowmate.theme");
         IsDark = savedTheme == "dark" || (savedTheme is null && await JS.InvokeAsync<bool>("eval", "window.matchMedia('(prefers-color-scheme: dark)').matches"));
         await JS.InvokeVoidAsync("eval", $"document.documentElement.dataset.theme='{(IsDark ? "dark" : "light")}'");
@@ -207,6 +216,25 @@
     }
 
     private void OnStoreChanged() { if (_ready) _ = InvokeAsync(StateHasChanged); }
+    private async Task CreateMcpKey()
+    {
+        McpKeyMessage = null;
+        try
+        {
+            var created = await McpKeys.CreateAsync(McpKeyName, McpKeyExpiry);
+            if (created is null) { McpKeyMessage = "The key could not be created. Please try again."; return; }
+            NewMcpKey = created.Key;
+            McpKeyName = "";
+            McpKeyList = (await McpKeys.ListAsync()).ToList();
+        }
+        catch (HttpRequestException) { McpKeyMessage = "The key service is temporarily unavailable."; }
+    }
+    private async Task RevokeMcpKey(string id)
+    {
+        try { if (await McpKeys.RevokeAsync(id)) McpKeyList = (await McpKeys.ListAsync()).ToList(); else McpKeyMessage = "The key could not be revoked."; }
+        catch (HttpRequestException) { McpKeyMessage = "The key service is temporarily unavailable."; }
+    }
+    private void ClearNewMcpKey() => NewMcpKey = null;
     private async Task RunClockAsync()
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));

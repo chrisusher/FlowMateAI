@@ -1,0 +1,11 @@
+{
+  "version": "2.0",
+  "extensions": {
+    "mcp": {
+      "serverName": "FlowMateAI",
+      "serverVersion": "1.0.0",
+      "instructions": "Read-only access to FlowMate focus timesheets and project totals. Supply an X-Api-Key header for data tools.",
+      "system": { "webhookAuthorizationLevel": "Anonymous" }
+    }
+  }
+}

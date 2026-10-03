@@ -1,4 +1,7 @@
+extern alias Identity;
 using Azure.Storage.Blobs;
+using Azure.Security.KeyVault.Secrets;
+using Microsoft.Azure.Cosmos;
 using ChrisUsher.Core.Services.Interfaces;
 using ChrisUsher.Core.Services.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +13,8 @@ using Services.Repositories;
 using Services.Workspaces;
 using Services.Billing;
 using Services.Coach;
+using Services.Reporting;
+using Services.Mcp;
 using Shared.Config;
 
 namespace Services;
@@ -74,6 +79,17 @@ public static class Services
             .Get<GlobalConfig>() ?? new GlobalConfig();
 
         services.AddDatabase(configuration);
+        services.AddSingleton(sp =>
+        {
+            var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+            return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
+        });
+        services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IMcpCredentialService, McpCredentialService>();
+        if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))
+        {
+            services.AddSingleton(new SecretClient(vaultUri, new Identity::Azure.Identity.DefaultAzureCredential()));
+        }
 
         services.AddTransient<IStorageService>(services =>
         {
@@ -109,6 +125,20 @@ public static class Services
         #region Clients
 
         #endregion
+
+        return services;
+    }
+
+    public static IServiceCollection AddMcpServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        var global = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
+        var settings = ResolveDatabaseSettings(configuration, global.Environment);
+        var client = string.IsNullOrWhiteSpace(settings.AccountKey)
+            ? new CosmosClient(settings.AccountEndpoint, new Identity::Azure.Identity.DefaultAzureCredential())
+            : new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
+        services.AddSingleton(client);
+        services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IMcpCredentialService, McpCredentialService>();
 
         return services;
     }

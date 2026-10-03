@@ -25,6 +25,9 @@ var storage = builder.AddAzureStorage("storage")
         azurite.WithEndpoint("table", endpoint => endpoint.IsProxied = false);
     });
 
+var mcpHostStorage = builder.AddAzureStorage("mcp-host-storage")
+    .RunAsEmulator(azurite => azurite.WithDataVolume("mcp-host-data"));
+
 var blobs = storage.AddBlobs("blobs");
 storage.AddQueues("queues");
 storage.AddTables("tables");
@@ -66,6 +69,18 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithReference(database)
     .WithReference(serviceBus)
     .WithReference(foundryProject)
+    .WithExternalHttpEndpoints();
+
+var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
+    .WaitFor(mcpHostStorage)
+    .WaitFor(database)
+    .WithHostStorage(mcpHostStorage)
+    .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
+    .WithEnvironment("Database__Key", cosmosDb.Resource.AccountKey!)
+    .WithEnvironment("Global__Environment", environment)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
+    .WithReference(database)
     .WithExternalHttpEndpoints();
 
 var cli = builder.AddProject<Projects.CLI>("cli")
@@ -321,7 +336,8 @@ cli.WithProcessCommand(
 
 var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithReference(api)
-    .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"));
+    .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"))
+    .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"));
 
 var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WaitFor(api)

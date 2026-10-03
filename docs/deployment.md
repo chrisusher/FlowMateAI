@@ -4,7 +4,7 @@ The browser app and Functions API deploy separately. The browser bundle targets 
 
 ## Local Aspire startup
 
-`aspire start` runs the local app and provisions the Azure-backed dependencies in `rg-flowmateai-dev`. The AppHost creates this dedicated group when it does not exist. Storage runs locally through Azurite.
+`aspire start` runs the local app, including the API, MCP Function host, and web app, and provisions the Azure-backed dependencies in `rg-flowmateai-dev`. The MCP endpoint is available with the rest of the Aspire stack. The MCP host has its own Azurite storage resource and waits for its host storage and Cosmos database before starting. The AppHost creates this dedicated group when it does not exist. Storage runs locally through Azurite.
 
 Set the Azure subscription and region once in the AppHost's local user secrets, then start from the repository root:
 
@@ -24,10 +24,13 @@ Configure these repository secrets:
 
 - `AZURE_STATIC_WEB_APPS_API_TOKEN`: deployment token for the Static Web App.
 - `AZURE_FUNCTIONAPP_PUBLISH_PROFILE`: publish profile for the Flex Consumption Function App.
+- `AZURE_MCP_FUNCTIONAPP_PUBLISH_PROFILE`: publish profile for the separate MCP Function App.
 
 Configure this repository variable:
 
 - `AZURE_FUNCTIONAPP_NAME`: existing Function App name.
+- `AZURE_MCP_FUNCTIONAPP_NAME`: separate Linux Flex Consumption Function App for MCP.
+- `MCP_ENDPOINT`: MCP endpoint URL including `/runtime/webhooks/mcp` for the Settings instructions.
 - `API_BASE_URL`: HTTPS origin of the Functions API.
 - `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`: browser-safe Auth0 SPA configuration. These values are public client settings, not secrets.
 
@@ -39,6 +42,6 @@ Set `Stripe__SecretKey`, `Stripe__WebhookSecret`, `Stripe__MonthlyPriceId`, `Str
 
 Set the web app's `ApiBaseUrl` to the HTTPS Functions API origin. Configure the Auth0 SPA client with the Static Web App origin and callback/logout URLs. Register separate Google, GitHub, Microsoft personal, and Microsoft work/school connections in Auth0. Keep Stripe, Foundry, Cosmos, and storage credentials in server-side app settings or Key Vault; do not add them to the Blazor app settings. `API/appsettings.example.json` lists the expected server-side keys.
 
-Cosmos stores the account workspace, billing entitlements, webhook idempotency keys, and a `WorkspaceRecords` container with user-partitioned, individually queryable projects, tasks, focus sessions, conversations, and timer state. Completed focus records are also written as immutable JSON blobs under the private `flowmate-activity` container; reports read the report-facing Cosmos/workspace records and do not scan the blob archive.
+Cosmos stores the account workspace, billing entitlements, webhook idempotency keys, and a `WorkspaceRecords` container with user-partitioned, individually queryable projects, tasks, focus sessions, conversations, and timer state. Completed focus records are also written as immutable JSON blobs under the private `flowmate-activity` container; reports read the report-facing Cosmos/workspace records and do not scan the blob archive. Before deploying MCP, run `infra/provision-mcp-containers.sh` to provision `McpKeys` and TTL-enabled `McpUsage`. See [MCP server setup](mcp-server.md) for Cosmos role scopes. The MCP Function App uses managed identity with read access to workspace, entitlement, and key containers, plus contributor access only to the usage container.
 
 The included workflow runs on `main` and on manual dispatch. It does not create Azure resources. Static Web Apps' Free plan does not provide a linked Functions `/api` backend, so the API remains a separately hosted app and browser CORS must list the exact site origin.
