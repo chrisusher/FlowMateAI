@@ -1,20 +1,20 @@
 extern alias Identity;
-using Azure.Storage.Blobs;
 using Azure.Security.KeyVault.Secrets;
-using Microsoft.Azure.Cosmos;
+using Azure.Storage.Blobs;
 using ChrisUsher.Core.Services.Interfaces;
 using ChrisUsher.Core.Services.Storage;
+using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Services.Database;
-using Services.Repositories;
-using Services.Workspaces;
 using Services.Billing;
 using Services.Coach;
-using Services.Reporting;
+using Services.Database;
 using Services.Mcp;
+using Services.Reporting;
+using Services.Repositories;
+using Services.Workspaces;
 using Shared.Config;
 
 namespace Services;
@@ -82,10 +82,12 @@ public static class Services
         services.AddSingleton(sp =>
         {
             var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+
             return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
         });
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
         services.AddScoped<IMcpCredentialService, McpCredentialService>();
+
         if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))
         {
             services.AddSingleton(new SecretClient(vaultUri, new Identity::Azure.Identity.DefaultAzureCredential()));

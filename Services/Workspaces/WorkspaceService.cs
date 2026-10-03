@@ -1,7 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using ChrisUsher.Core.Shared;
-using Services.Repositories;
+using Microsoft.EntityFrameworkCore;
 using Services.Database;
+using Services.Repositories;
 using Shared.Contracts;
 using Shared.Models;
 

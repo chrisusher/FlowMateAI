@@ -1,5 +1,5 @@
-using Microsoft.EntityFrameworkCore;
 using ChrisUsher.Core.Shared;
+using Microsoft.EntityFrameworkCore;
 using Services.Database;
 using Shared.Models;
 

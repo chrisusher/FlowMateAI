@@ -55,10 +55,11 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             List<WorkspaceDocument> matches;
 
             try
-            { matches = await database.Workspaces.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
+            {
+                matches = await database.Workspaces.Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+            }
             catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-
                 return;
             }
             database.Workspaces.RemoveRange(matches);
@@ -71,7 +72,9 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             List<WorkspaceRecordDocument> matches;
 
             try
-            { matches = await database.WorkspaceRecords.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
+            {
+                matches = await database.WorkspaceRecords.Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+            }
             catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
 
@@ -87,7 +90,9 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             List<BillingEntitlementDocument> matches;
 
             try
-            { matches = await database.BillingEntitlements.Where(item => item.UserId == userId).ToListAsync(cancellationToken); }
+            {
+                matches = await database.BillingEntitlements.Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+            }
             catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
 
@@ -126,22 +131,38 @@ public sealed class UserDataResetService(DatabaseContext database, BlobServiceCl
             await RunStageAsync("MCP keys", async () =>
             {
                 var container = db.GetContainer("McpKeys");
-                using var iterator = container.GetItemQueryIterator<McpKeyDocument>(new QueryDefinition("SELECT * FROM c WHERE c.userId = @userId").WithParameter("@userId", userId), requestOptions: new QueryRequestOptions { PartitionKey = new PartitionKey(userId) });
+
+                using var iterator = container.GetItemQueryIterator<McpKeyDocument>(new QueryDefinition("SELECT * FROM c WHERE c.userId = @userId").WithParameter("@userId", userId), requestOptions: new QueryRequestOptions
+                {
+                    PartitionKey = new PartitionKey(userId)
+                });
+
                 while (iterator.HasMoreResults)
+                {
                     foreach (var item in await iterator.ReadNextAsync(cancellationToken))
                     {
                         item.RevokedAt = DateTimeOffset.UtcNow;
                         await container.ReplaceItemAsync(item, item.Id, new PartitionKey(userId), cancellationToken: cancellationToken);
                         mcpKeys++;
                     }
+                }
             });
             await RunStageAsync("MCP usage", async () =>
             {
-                try { await db.GetContainer("McpUsage").DeleteItemAsync<object>("usage", new PartitionKey(userId), cancellationToken: cancellationToken); mcpUsageRecords = 1; }
-                catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound) { }
+                try
+                {
+                    await db.GetContainer("McpUsage").DeleteItemAsync<object>("usage", new PartitionKey(userId), cancellationToken: cancellationToken); mcpUsageRecords = 1;
+                }
+                catch (CosmosException exception) when (exception.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                }
             });
         }
 
-        return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs) { McpKeys = mcpKeys, McpUsageRecords = mcpUsageRecords };
+        return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs)
+        {
+            McpKeys = mcpKeys,
+            McpUsageRecords = mcpUsageRecords
+        };
     }
 }

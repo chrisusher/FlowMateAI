@@ -1,6 +1,3 @@
-using System.Net;
-using System.Text.Json;
-using API.Functions.V1;
 using API.Security;
 using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Functions.Worker;

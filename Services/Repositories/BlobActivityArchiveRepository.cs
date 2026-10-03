@@ -1,7 +1,7 @@
 using System.Text.Json;
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Azure;
 using ChrisUsher.Core.Shared;
 using Microsoft.Extensions.Azure;
 using Shared.Models;
@@ -28,8 +28,12 @@ public sealed class BlobActivityArchiveRepository(IAzureClientFactory<BlobServic
             await using var content = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(session, SharedCommon.JsonOptions));
 
             try
-            { await blob.UploadAsync(content, overwrite: false, cancellationToken); }
-            catch (RequestFailedException exception) when (exception.Status == 409) { }
+            {
+                await blob.UploadAsync(content, overwrite: false, cancellationToken);
+            }
+            catch (RequestFailedException exception) when (exception.Status == 409)
+            {
+            }
         }
     }
 }

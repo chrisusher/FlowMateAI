@@ -1,4 +1,3 @@
-using System.Net;
 using API.Security;
 using Microsoft.Azure.Functions.Worker.Http;
 using Shared.Contracts;
