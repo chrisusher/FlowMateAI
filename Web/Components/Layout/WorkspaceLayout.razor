@@ -1,0 +1,38 @@
+@layout MainLayout
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@inject WorkspaceStore Store
+@inject Auth0Client Auth
+@inject WorkspaceTimerManager Timer
+@inject WorkspaceBillingManager Billing
+@inject WorkspaceCoachManager Coach
+@inject WorkspaceAppearanceManager Appearance
+@inject NavigationManager Navigation
+
+<PageTitle>@Title &#8212; FlowMate</PageTitle>
+
+<div class="app-frame">
+    <WorkspaceSidebar View="@CurrentView" />
+    <main class="main-area">
+        <WorkspaceTopbar Title="@Title" />
+        <section class="content-area">
+            @if (!_ready)
+            {
+                <div class="workspace-loading" role="status" aria-live="polite">
+                    <span class="loading-spinner" aria-hidden="true"></span>
+                    Loading your workspace&#8230;
+                </div>
+            }
+            else if (Auth.IsConfigured && !Auth.Session.SignedIn)
+            {
+                <WorkspaceSignIn />
+            }
+            else
+            {
+                @Body
+            }
+            <TaskEditorDialog />
+            <ProjectEditorDialog />
+        </section>
+    </main>
+</div>

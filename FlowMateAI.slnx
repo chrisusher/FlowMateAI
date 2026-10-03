@@ -8,4 +8,7 @@
   <Project Path="Services/Services.csproj" />
   <Project Path="Shared/Shared.csproj" />
   <Project Path="Web/Web.csproj" />
+  <Folder Name="/Tests/">
+    <Project Path="Tests/Web.Tests/Web.Tests.csproj" />
+  </Folder>
 </Solution>

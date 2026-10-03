@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Monochrome FlowMate focus orbit</title>
+  <path d="M47 12A26 26 0 1 0 55 25" fill="none" stroke="#4240b7" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="49" cy="12" r="6" fill="#4240b7"/>
+  <path d="m28 22 4-5 4 5-4 5z" fill="#4240b7"/>
+</svg>

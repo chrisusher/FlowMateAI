@@ -1,0 +1,81 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceTimerManager Timer
+@inject WorkspaceTaskManager Tasks
+@inject WorkspaceAppearanceManager Appearance
+
+<article class="focus-card">
+    <div class="focus-card-top">
+        <div>
+            <span class="focus-kicker">
+                <i class="live-dot @(Timer.IsRunning ? "on" : "")"></i>
+                @Timer.TimerLabel
+            </span>
+            <h2>@(Timer.ActiveTask?.Title ?? "Ready when you are")</h2>
+            <p>@(Timer.ActiveProject?.Name ?? "Choose a task and settle in")</p>
+        </div>
+        <button class="sound-button" aria-label="@(Store.Data.Muted ? "Turn sounds on" : "Mute sounds")" @onclick="Appearance.ToggleMute">@(Store.Data.Muted ? "\u266A" : "\u266B")</button>
+    </div>
+    <div class="timer-face">
+        <svg class="timer-ring" viewBox="0 0 240 240" aria-hidden="true">
+            <circle class="ring-track" cx="120" cy="120" r="106" />
+            <circle class="ring-progress" cx="120" cy="120" r="106" style="stroke-dasharray: @(Timer.RingCircumference); stroke-dashoffset: @Timer.RingOffset" />
+        </svg>
+        <div class="timer-readout">
+            <span class="timer-digits">@Timer.TimeLeft</span>
+            <span class="timer-caption">@Timer.TimerCaption</span>
+        </div>
+    </div>
+    <div class="timer-controls">
+        @if (Store.Data.Timer.Phase == TimerPhase.Focus && Timer.CanControlTimer)
+        {
+            <button class="timer-primary" @onclick="Timer.PauseTimer">
+                &#10074;&#10074;
+                <span>Pause</span>
+            </button>
+        }
+        else if ((Store.Data.Timer.Phase is TimerPhase.ShortBreak or TimerPhase.LongBreak) && Timer.CanControlTimer)
+        {
+            <span class="timer-other-device">Break in progress</span>
+        }
+        else if (Timer.IsRunning)
+        {
+            <span class="timer-other-device">Timer active on another device</span>
+        }
+        else if (Store.Data.Timer.Phase == TimerPhase.Paused && Timer.CanControlTimer)
+        {
+            <button class="timer-primary" @onclick="Timer.ResumeTimer">
+                &#9654;
+                <span>Resume focus</span>
+            </button>
+        }
+        else if (Store.Data.Timer.Phase == TimerPhase.Paused)
+        {
+            <span class="timer-other-device">Timer paused on another device</span>
+        }
+        else
+        {
+            <button class="timer-primary" @onclick="Timer.StartFocus">
+                &#9654;
+                <span>Start focus</span>
+            </button>
+        }
+        @if (Timer.CanControlTimer && Store.Data.Timer.Phase is TimerPhase.ShortBreak or TimerPhase.LongBreak)
+        {
+            <button class="timer-secondary" @onclick="Timer.SkipBreak">Skip break</button>
+        }
+        else if (Timer.CanControlTimer && Store.Data.Timer.Phase is TimerPhase.Focus or TimerPhase.Paused)
+        {
+            <button class="timer-secondary" @onclick="Timer.EndFocus">Finish</button>
+        }
+    </div>
+    <div class="session-note">
+        <span class="session-dots">
+            @for (var i = 0; i < 4; i++)
+            {
+                <i class="@(i < Store.Data.Timer.CompletedPomodoros % 4 ? "filled" : "")"></i>
+            }
+        </span>
+        <span>@(4 - Store.Data.Timer.CompletedPomodoros % 4) until a long break</span>
+        <button @onclick="Tasks.CycleTask" title="Choose a different task">Change task &rarr;</button>
+    </div>
+</article>

@@ -1,0 +1,25 @@
+@page "/settings"
+@layout WorkspaceLayout
+@inherits WorkspaceComponentBase
+
+<PageTitle>Settings &#8212; FlowMate</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">MAKE IT YOURS</div>
+        <h1>Settings</h1>
+        <p class="subheading">Your space, tuned to how you work.</p>
+    </div>
+</div>
+<div class="settings-layout">
+    <div class="settings-nav">
+        <a class="selected">Profile</a>
+        <a href="settings#preferences">Preferences</a>
+        <a href="settings#billing">Plan &amp; billing</a>
+    </div>
+    <div class="settings-content">
+        <ProfileCard />
+        <PreferencesCard />
+        <BillingCard />
+    </div>
+</div>

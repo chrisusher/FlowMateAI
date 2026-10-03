@@ -1,0 +1,54 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceTaskManager Tasks
+
+@if (Tasks.DialogOpen)
+{
+    <div class="modal-shade" @onclick="Tasks.CloseTaskDialog">
+        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title" @onclick:stopPropagation="true">
+            <div class="dialog-heading">
+                <div>
+                    <span class="eyebrow">PLAN YOUR NEXT STEP</span>
+                    <h2 id="task-dialog-title">@(Tasks.Editing ? "Edit task" : "New task")</h2>
+                </div>
+                <button type="button" class="dialog-close" aria-label="Close task form" @onclick="Tasks.CloseTaskDialog">&#215;</button>
+            </div>
+            <EditForm Model="Tasks.Draft" OnSubmit="Tasks.SaveTask">
+                <label class="field-label">
+                    Task name
+                    <InputText class="field-input" @bind-Value="Tasks.Draft.Title" placeholder="What needs your attention?" />
+                </label>
+                <div class="dialog-fields">
+                    <label class="field-label">
+                        Project
+                        <InputSelect class="field-input" @bind-Value="Tasks.Draft.ProjectId">
+                            @foreach (var project in Store.Data.Projects)
+                            {
+                                <option value="@project.Id">@project.Name</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label class="field-label">
+                        Priority
+                        <InputSelect class="field-input" @bind-Value="Tasks.Draft.Priority">
+                            <option value="@TaskPriority.High">High</option>
+                            <option value="@TaskPriority.Medium">Medium</option>
+                            <option value="@TaskPriority.Low">Low</option>
+                        </InputSelect>
+                    </label>
+                </div>
+                <label class="field-label">
+                    Due date
+                    <InputDate TValue="DateOnly?" class="field-input" @bind-Value="Tasks.Draft.DueDate" />
+                </label>
+                <label class="dialog-checkbox">
+                    <InputCheckbox @bind-Value="Tasks.Draft.PlannedToday" />
+                    Add to today's plan
+                </label>
+                <div class="dialog-actions">
+                    <button type="button" class="text-button" @onclick="Tasks.CloseTaskDialog">Cancel</button>
+                    <button type="submit" class="timer-primary">Save task</button>
+                </div>
+            </EditForm>
+        </section>
+    </div>
+}

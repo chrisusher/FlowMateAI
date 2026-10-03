@@ -1,0 +1,33 @@
+@page "/reports"
+@layout WorkspaceLayout
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<PageTitle>Reports &#8212; FlowMate</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">YOUR PROGRESS</div>
+        <h1>Focus reports</h1>
+        <p class="subheading">Notice what moves forward when you give it your attention.</p>
+    </div>
+    <select class="period-select" @bind="Stats.Period">
+        <option value="Day">Today</option>
+        <option value="Week">This week</option>
+        <option value="Month">This month</option>
+    </select>
+</div>
+<div class="report-summary">
+    <FocusTimeCard />
+    <SessionCountCard />
+    <TopProjectCard />
+</div>
+<FocusChartCard />
+<ProjectBreakdownCard />
+@if (Store.Data.Plan == "Free")
+{
+    <div class="history-note">
+        Free reports include your last 30 days.
+        <a href="pricing">Unlock a year of history with Pro &rarr;</a>
+    </div>
+}

@@ -1,0 +1,18 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceCoachManager Coach
+
+<article class="panel conversation-list">
+    <div class="panel-heading">
+        <div>
+            <h3>Saved chats</h3>
+            <p>Your reflections, kept close.</p>
+        </div>
+    </div>
+    @foreach (var conversation in Store.Data.Conversations.OrderByDescending(c => c.UpdatedAt))
+    {
+        <button class="conversation-item @(conversation.Id == Coach.ActiveConversation.Id ? "selected" : "")" disabled="@Coach.Sending" @onclick="() => Coach.SelectConversation(conversation)">
+            <strong>@conversation.Title</strong>
+            <small>@conversation.UpdatedAt.ToLocalTime().ToString("d MMM, h:mm tt")</small>
+        </button>
+    }
+</article>

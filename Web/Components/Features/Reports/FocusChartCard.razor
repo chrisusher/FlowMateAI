@@ -1,0 +1,27 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<article class="panel chart-panel">
+    <div class="panel-heading">
+        <div>
+            <h3>Focus over time</h3>
+            <p>Minutes by day &#8212; your local time</p>
+        </div>
+        <div class="chart-legend">
+            <i></i>
+            Focus time
+        </div>
+    </div>
+    <div class="bar-chart">
+        @foreach (var day in Stats.ChartDays)
+        {
+            <div class="bar-column">
+                <span class="bar-value">@day.Minutes</span>
+                <div class="bar-track">
+                    <i style="height:@(Math.Max(4, day.Minutes * 100d / Math.Max(30, Stats.ChartDays.Max(d => d.Minutes))))%"></i>
+                </div>
+                <small>@day.Label</small>
+            </div>
+        }
+    </div>
+</article>

@@ -1,0 +1,27 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceProjectManager Projects
+
+@if (Projects.DialogOpen)
+{
+    <div class="modal-shade" @onclick="Projects.CloseProjectDialog">
+        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="project-dialog-title" @onclick:stopPropagation="true">
+            <div class="dialog-heading">
+                <div>
+                    <span class="eyebrow">YOUR WORK</span>
+                    <h2 id="project-dialog-title">New project</h2>
+                </div>
+                <button type="button" class="dialog-close" aria-label="Close project form" @onclick="Projects.CloseProjectDialog">&#215;</button>
+            </div>
+            <form @onsubmit="Projects.SaveProject" @onsubmit:preventDefault="true">
+                <label class="field-label">
+                    Project name
+                    <input class="field-input" @bind="Projects.DraftName" maxlength="80" placeholder="What are you working on?" />
+                </label>
+                <div class="dialog-actions">
+                    <button type="button" class="text-button" @onclick="Projects.CloseProjectDialog">Cancel</button>
+                    <button type="submit" class="timer-primary" disabled="@string.IsNullOrWhiteSpace(Projects.DraftName)">Create project</button>
+                </div>
+            </form>
+        </section>
+    </div>
+}
