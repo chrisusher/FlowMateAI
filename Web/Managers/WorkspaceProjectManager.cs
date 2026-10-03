@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Shared.Enums;
 using Web.Clients;
 
 namespace Web.Managers;
@@ -12,7 +13,7 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
 
     public Task AddProject()
     {
-        if (Store.Data.Projects.Count >= (Store.Data.Plan == "Pro" ? 25 : 3))
+        if (Store.Data.Projects.Count >= (Store.Data.Plan == BillingPlan.Pro ? 25 : 3))
         {
             navigation.NavigateTo("pricing");
 
@@ -40,7 +41,7 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             return;
         }
 
-        if (Store.Data.Projects.Count >= (Store.Data.Plan == "Pro" ? 25 : 3))
+        if (Store.Data.Projects.Count >= (Store.Data.Plan == BillingPlan.Pro ? 25 : 3))
         {
             DialogOpen = false;
             NotifyChanged();

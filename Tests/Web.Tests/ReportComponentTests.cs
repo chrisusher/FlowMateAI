@@ -1,3 +1,4 @@
+using Shared.Enums;
 using Web.Components.Features.Reports;
 
 namespace Web.Tests;

@@ -1,3 +1,4 @@
+using Shared.Enums;
 using Web.Components.Features.Pricing;
 using Web.Components.Features.Settings;
 
@@ -73,9 +74,9 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(cut.Markup, Does.Contain("25 minutes"));
     }
 
-    [TestCase("Free", "3", "10")]
-    [TestCase("Pro", "25", "100")]
-    public void BillingCardDisplaysPlanLimitsAndRequestsThePortal(string plan, string projects, string prompts)
+    [TestCase(BillingPlan.Free, "3", "10")]
+    [TestCase(BillingPlan.Pro, "25", "100")]
+    public void BillingCardDisplaysPlanLimitsAndRequestsThePortal(BillingPlan plan, string projects, string prompts)
     {
         Store.Data.Plan = plan;
         var cut = Render<BillingCard>();

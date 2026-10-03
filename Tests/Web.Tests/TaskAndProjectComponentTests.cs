@@ -1,3 +1,4 @@
+using Shared.Enums;
 using Web.Components.Features.Editors;
 using Web.Components.Features.Projects;
 using Web.Components.Features.Tasks;
@@ -112,9 +113,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(Projects.DialogOpen, Is.False);
     }
 
-    [TestCase("Free", 3)]
-    [TestCase("Pro", 25)]
-    public void ProjectEditorDialogRechecksThePlanLimitAtSave(string plan, int limit)
+    [TestCase(BillingPlan.Free, 3)]
+    [TestCase(BillingPlan.Pro, 25)]
+    public void ProjectEditorDialogRechecksThePlanLimitAtSave(BillingPlan plan, int limit)
     {
         Store.Data.Plan = plan;
         Projects.AddProject();

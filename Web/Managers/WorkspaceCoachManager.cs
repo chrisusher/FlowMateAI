@@ -1,5 +1,6 @@
 using Radzen.Blazor;
 using Shared.Contracts;
+using Shared.Enums;
 using Shared.Models;
 using Web.Clients;
 
@@ -29,7 +30,7 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
         }
     }
 
-    public int AiPromptsUsed => billing.BillingState?.PromptsUsed ?? Store.Data.Conversations.Sum(c => c.Messages.Count(m => m.Role == "user"));
+    public int AiPromptsUsed => billing.BillingState?.PromptsUsed ?? Store.Data.Conversations.Sum(c => c.Messages.Count(m => m.Role == ChatMessageRole.User));
 
     public ConversationRecord ActiveConversation => Store.Data.Conversations.FirstOrDefault() ?? new() { Title = "Today, with intention" };
 
@@ -57,7 +58,7 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
     private void LoadChatMessages() => ChatMessages = ActiveConversation.Messages.Select(message => new ChatMessage
     {
         Content = message.Text,
-        UserId = message.Role == "user" ? "user" : "coach",
+        UserId = message.Role == ChatMessageRole.User ? "user" : "coach",
         Timestamp = message.CreatedAt.LocalDateTime
     }).ToList();
 
@@ -109,13 +110,13 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
 
             conversation.Messages.Add(new()
             {
-                Role = "user",
+                Role = ChatMessageRole.User,
                 Text = text
             });
             conversation.UpdatedAt = DateTimeOffset.UtcNow;
             conversation.Messages.Add(new()
             {
-                Role = "assistant",
+                Role = ChatMessageRole.Assistant,
                 Text = auth.Session.SignedIn ? "I couldn't reach the focus coach just now. Please try again." : CoachReply(text)
             });
             await Store.SaveAsync();
