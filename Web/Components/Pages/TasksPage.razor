@@ -1,0 +1,16 @@
+@page "/tasks"
+@layout WorkspaceLayout
+@inherits WorkspaceComponentBase
+@inject WorkspaceTaskManager Tasks
+
+<PageTitle>Tasks &#8212; FlowMate</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">MAKE PROGRESS</div>
+        <h1>All tasks</h1>
+        <p class="subheading">Keep your next steps clear and manageable.</p>
+    </div>
+    <button class="quiet-button" @onclick="Tasks.AddQuickTask">+ New task</button>
+</div>
+<AllTasksCard />

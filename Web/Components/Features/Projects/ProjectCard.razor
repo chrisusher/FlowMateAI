@@ -1,0 +1,21 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<article class="panel project-card">
+    <div class="project-card-head">
+        <span class="project-square" style="background:@Project.Color">@Project.Name[..1]</span>
+        <span class="project-menu">&#8942;</span>
+    </div>
+    <h3>@Project.Name</h3>
+    <p>@ProjectTasks.Count(t => !t.IsComplete) active tasks</p>
+    <div class="project-progress">
+        <span>
+            <i style="width:@(ProjectTasks.Count == 0 ? 0 : ProjectTasks.Count(t => t.IsComplete) * 100d / ProjectTasks.Count)%"></i>
+        </span>
+        <small>@ProjectTasks.Count(t => t.IsComplete)/@ProjectTasks.Count</small>
+    </div>
+    <div class="project-card-foot">
+        <span>&#9679; @Stats.ProjectMinutes(Project.Id) min focused</span>
+        <span class="project-color-dot" style="background:@Project.Color"></span>
+    </div>
+</article>

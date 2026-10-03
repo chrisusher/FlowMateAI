@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "plugins/auth0/skills/auth0/SKILL.md",
       "computedHash": "6fe56485930dd79425f5c938f1964cc38bc989ef062144355fac6a7e14691d2f"
+    },
+    "blazor-expert": {
+      "source": "markpitt/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/blazor-expert/SKILL.md",
+      "computedHash": "00d1b81b5cd6eaa9f8694167cec3f0ac1b6026ff01f18103dbfaa486503f331c"
     }
   }
 }

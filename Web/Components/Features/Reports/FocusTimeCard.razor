@@ -1,0 +1,11 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<article class="panel report-number">
+    <span>FOCUS TIME</span>
+    <strong>
+        @Stats.PeriodMinutes
+        <small>min</small>
+    </strong>
+    <p>@Stats.PeriodLabel</p>
+</article>

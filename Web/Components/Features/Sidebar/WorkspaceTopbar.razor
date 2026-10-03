@@ -1,0 +1,24 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+@inject WorkspaceAppearanceManager Appearance
+@inject Auth0Client Auth
+
+<header class="topbar">
+    <div class="crumb">
+        <span>Workspace</span>
+        <b>/</b>
+        <strong>@Title</strong>
+    </div>
+    <div class="top-actions">
+        <span class="date-chip">@Stats.UserNow.ToString("ddd, d MMM")</span>
+        <button class="icon-button" aria-label="@(Appearance.IsDark ? "Switch to light mode" : "Switch to dark mode")" @onclick="Appearance.ToggleTheme">@(Appearance.IsDark ? "\u263C" : "\u263E")</button>
+        @if (Auth.IsConfigured && !Auth.Session.SignedIn)
+        {
+            <button class="quiet-button" @onclick='() => Go("settings")'>Sign in</button>
+        }
+        else
+        {
+            <button class="user-chip" aria-label="Account settings" @onclick='() => Go("settings")'>@Initials</button>
+        }
+    </div>
+</header>

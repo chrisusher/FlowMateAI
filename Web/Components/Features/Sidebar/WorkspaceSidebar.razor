@@ -1,0 +1,34 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<aside class="sidebar">
+    <a class="brand" href="">
+        <img class="brand-mark" src="/branding/flowmate-symbol.svg" alt="" />
+        <span>flowmate<span class="brand-ai">.ai</span></span>
+    </a>
+    <div class="workspace-label">WORKSPACE</div>
+    <nav class="side-nav">
+        @foreach (var item in NavItems)
+        {
+            <a class="side-link @(View == item.Key ? "active" : "")" href="@(item.Key == "today" ? "" : item.Key)" aria-label="@item.Label" aria-current="@(View == item.Key ? "page" : null)">
+                <span class="nav-icon" aria-hidden="true">@((MarkupString)item.Icon)</span>
+                <span>@item.Label</span>
+                @if (item.Key == "today" && Stats.PlannedTasks.Any())
+                {
+                    <span class="nav-count">@Stats.PlannedTasks.Count()</span>
+                }
+            </a>
+        }
+    </nav>
+    <div class="sidebar-bottom">
+        <UpgradeCard />
+        <a class="profile-link" href="settings" aria-label="Account settings for @Store.Data.DisplayName">
+            <span class="avatar" aria-hidden="true">AM</span>
+            <span class="profile-copy">
+                <strong>@Store.Data.DisplayName</strong>
+                <small>@Store.Data.Plan plan</small>
+            </span>
+            <span class="more-icon" aria-hidden="true">&#8942;</span>
+        </a>
+    </div>
+</aside>

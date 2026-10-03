@@ -1,0 +1,41 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<article class="panel stats-panel">
+    <div class="panel-heading">
+        <div>
+            <h3>Your focus</h3>
+            <p>@Stats.UserNow.ToString("dddd, d MMMM")</p>
+        </div>
+        <span class="stat-icon">&#10024;</span>
+    </div>
+    <div class="focus-total">
+        <strong>@Stats.TodayMinutes<span>m</span></strong>
+        <span>of focused time</span>
+    </div>
+    <div class="stat-meter">
+        <i style="width:@Math.Min(100, Stats.TodayMinutes / 180d * 100)%"></i>
+    </div>
+    <div class="stat-foot">
+        <span>Daily goal</span>
+        <strong>3h</strong>
+    </div>
+    <div class="stats-divider"></div>
+    <div class="mini-stat-row">
+        <div>
+            <small>Sessions</small>
+            <strong>@Stats.TodaySessions</strong>
+        </div>
+        <div>
+            <small>Tasks done</small>
+            <strong>@Stats.DoneTasks.Count()</strong>
+        </div>
+        <div>
+            <small>Streak</small>
+            <strong>
+                @Stats.FocusStreak days
+                <span>&#128293;</span>
+            </strong>
+        </div>
+    </div>
+</article>

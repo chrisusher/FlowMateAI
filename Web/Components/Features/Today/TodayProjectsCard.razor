@@ -1,0 +1,24 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<article class="panel project-today">
+    <div class="panel-heading">
+        <div>
+            <h3>By project</h3>
+            <p>Focus time today</p>
+        </div>
+        <button class="text-button" @onclick='() => Go("reports")'>Report &rarr;</button>
+    </div>
+    @foreach (var project in Store.Data.Projects.Take(3))
+    {
+        var mins = Stats.ProjectTodayMinutes(project.Id);
+        <div class="project-meter-row">
+            <span class="project-color" style="background:@project.Color"></span>
+            <span class="project-meter-name">@project.Name</span>
+            <strong>@mins<span>m</span></strong>
+        </div>
+        <div class="project-meter">
+            <i style="width:@(Stats.TodayMinutes == 0 ? 0 : Math.Min(100, mins * 100d / Stats.TodayMinutes))%;background:@project.Color"></i>
+        </div>
+    }
+</article>

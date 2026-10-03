@@ -1,0 +1,8 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceStatistics Stats
+
+<article class="panel report-number">
+    <span>TOP PROJECT</span>
+    <strong class="top-project-name">@Stats.TopProjectName</strong>
+    <p>@Stats.TopProjectMinutes minutes focused</p>
+</article>

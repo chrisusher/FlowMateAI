@@ -1,0 +1,22 @@
+@page "/projects"
+@layout WorkspaceLayout
+@inherits WorkspaceComponentBase
+@inject WorkspaceProjectManager Projects
+
+<PageTitle>Projects &#8212; FlowMate</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">YOUR WORK</div>
+        <h1>Projects</h1>
+        <p class="subheading">A home for the things you're moving forward.</p>
+    </div>
+    <button class="quiet-button" @onclick="Projects.AddProject">+ New project</button>
+</div>
+<div class="project-grid">
+    @foreach (var project in Store.Data.Projects)
+    {
+        <ProjectCard @key="project.Id" Project="project" />
+    }
+</div>
+<ProjectTipCard />

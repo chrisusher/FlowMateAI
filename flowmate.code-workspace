@@ -26,6 +26,8 @@
         "azureFunctions.projectRuntime": "~4",
         "azureFunctions.projectLanguage": "C#",
         "dotnet.defaultSolution": "FlowMateAI.slnx",
-        "explorer.fileNesting.enabled": true
+        "editor.wordWrap": "on",
+        "explorer.fileNesting.enabled": true,
+        "workbench.editor.wrapTabs": true,
     }
 }
