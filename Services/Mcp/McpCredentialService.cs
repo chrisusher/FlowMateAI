@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Azure;
 using Azure.Security.KeyVault.Secrets;
 using Services.Database;
 using Services.Repositories;
@@ -125,7 +126,15 @@ public sealed class McpCredentialService(IMcpCredentialRepository repository, Se
 
         foreach (var document in documents)
         {
-            await secrets!.StartDeleteSecretAsync(document.VaultSecretName, cancellationToken);
+            try
+            {
+                await secrets!.StartDeleteSecretAsync(document.VaultSecretName, cancellationToken);
+            }
+            catch (RequestFailedException exception) when (exception.Status == 404)
+            {
+                // A revoked key's secret may already be soft-deleted. Its absence is a completed cleanup step.
+            }
+
             await repository.DeleteAsync(userId, document.Id, cancellationToken);
         }
 

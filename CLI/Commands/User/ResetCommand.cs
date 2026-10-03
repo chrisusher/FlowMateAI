@@ -69,6 +69,11 @@ internal static class ResetCommand
                 throw new InvalidOperationException("ConnectionStrings:Storage is required for user reset.");
             }
 
+            if (string.IsNullOrWhiteSpace(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"]))
+            {
+                throw new InvalidOperationException("KeyVault:VaultUri is required for user reset so MCP credentials can be deleted before other user data.");
+            }
+
             var auth0 = host.Services.GetRequiredService<Auth0ManagementClient>();
             var userId = await Auth0AccountResolver.ResolveUserIdAsync(auth0, email!, requestedUserId, configuration, operationCancellation.Token);
 

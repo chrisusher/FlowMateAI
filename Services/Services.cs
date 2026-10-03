@@ -58,16 +58,18 @@ public static class Services
 
         #region Azure Services
 
-        services.AddAzureClients(config =>
+        var storageConnectionString = configuration.GetConnectionString("Storage");
+
+        if (!string.IsNullOrWhiteSpace(storageConnectionString))
         {
-            var storageConnectionString = configuration.GetConnectionString("Storage")
-                ?? throw new InvalidOperationException("ConnectionStrings:Storage is not set in configuration");
+            services.AddAzureClients(config =>
+            {
+                config.AddBlobServiceClient(storageConnectionString)
+                    .WithName("FlowMate");
 
-            config.AddBlobServiceClient(storageConnectionString)
-                .WithName("FlowMate");
-
-            // Application secrets are supplied through server-side app settings or the host secret store.
-        });
+                // Application secrets are supplied through server-side app settings or the host secret store.
+            });
+        }
 
         #endregion
 

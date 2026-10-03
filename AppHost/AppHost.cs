@@ -105,9 +105,11 @@ var auth0ClientSecret = builder.Configuration["Auth0:ManagementClientSecret"];
 IReadOnlyDictionary<string, string> BuildCliEnvironment(
     string? cosmosConnection,
     string? storageConnection,
+    string? keyVaultUri,
     string? runtimeEnvironment,
     bool includeStorageSettings,
-    bool includeAuth0Settings)
+    bool includeAuth0Settings,
+    bool includeKeyVaultSettings)
 {
     var environmentVariables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -120,6 +122,11 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
     if (includeStorageSettings && !string.IsNullOrWhiteSpace(storageConnection))
     {
         environmentVariables["ConnectionStrings__Storage"] = storageConnection;
+    }
+
+    if (includeKeyVaultSettings && !string.IsNullOrWhiteSpace(keyVaultUri))
+    {
+        environmentVariables["KeyVault__VaultUri"] = keyVaultUri;
     }
 
     if (includeAuth0Settings)
@@ -146,7 +153,8 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
 async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
     CancellationToken cancellationToken,
     bool includeStorageSettings,
-    bool includeAuth0Settings)
+    bool includeAuth0Settings,
+    bool includeKeyVaultSettings = false)
 {
     var cosmosConnection = await database.Resource.ConnectionStringExpression.GetValueAsync(cancellationToken);
 
@@ -154,9 +162,13 @@ async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
         ? await blobs.Resource.ConnectionStringExpression.GetValueAsync(cancellationToken)
         : null;
 
+    var keyVaultUri = includeKeyVaultSettings
+        ? await keyVault.Resource.UriExpression.GetValueAsync(cancellationToken)
+        : null;
+
     var configuredEnvironment = await environment.Resource.GetValueAsync(cancellationToken);
 
-    return BuildCliEnvironment(cosmosConnection, storageConnection, configuredEnvironment, includeStorageSettings, includeAuth0Settings);
+    return BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, configuredEnvironment, includeStorageSettings, includeAuth0Settings, includeKeyVaultSettings);
 }
 
 cli.WithProcessCommand(
@@ -275,7 +287,7 @@ cli.WithProcessCommand(
             throw new InvalidOperationException("Approval is required before the reset process can start. Set approve to true.");
         }
 
-        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: true, includeAuth0Settings: true);
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: true, includeAuth0Settings: true, includeKeyVaultSettings: true);
 
         var arguments = new List<string>
         {
