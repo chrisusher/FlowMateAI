@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
+using Shared.Enums;
 
 namespace FlowMate.Formatting;
 
@@ -14,8 +15,6 @@ public sealed class BlankLineBeforeReturnAnalyzer : DiagnosticAnalyzer
     public const string BlankLineBeforeControlStatementDiagnosticId = "FM0002";
 
     public const string ActionProperty = "Action";
-    public const string InsertAction = "Insert";
-    public const string RemoveAction = "Remove";
 
     private static readonly DiagnosticDescriptor Rule = new(
         DiagnosticId,
@@ -71,7 +70,7 @@ public sealed class BlankLineBeforeReturnAnalyzer : DiagnosticAnalyzer
             context.ReportDiagnostic(Diagnostic.Create(
                 BlankLineBeforeControlStatementRule,
                 keyword.GetLocation(),
-                ImmutableDictionary<string, string?>.Empty.Add(ActionProperty, InsertAction),
+                ImmutableDictionary<string, string?>.Empty.Add(ActionProperty, BlankLineAction.Insert.ToString()),
                 "Add a blank line before this control statement."));
         }
     }
@@ -94,13 +93,13 @@ public sealed class BlankLineBeforeReturnAnalyzer : DiagnosticAnalyzer
 
         if (isInsideSwitchSection && hasBlankLineBefore)
         {
-            Report(context, statement, RemoveAction, "Remove the blank line before this return in a switch statement.");
+            Report(context, statement, BlankLineAction.Remove, "Remove the blank line before this return in a switch statement.");
             return;
         }
 
         if (!isInsideSwitchSection && !hasBlankLineBefore && HasPreviousStatement(statement))
         {
-            Report(context, statement, InsertAction, "Add a blank line before this return.");
+            Report(context, statement, BlankLineAction.Insert, "Add a blank line before this return.");
         }
     }
 
@@ -151,9 +150,9 @@ public sealed class BlankLineBeforeReturnAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    private static void Report(SyntaxNodeAnalysisContext context, ReturnStatementSyntax statement, string action, string message)
+    private static void Report(SyntaxNodeAnalysisContext context, ReturnStatementSyntax statement, BlankLineAction action, string message)
     {
-        var properties = ImmutableDictionary<string, string?>.Empty.Add(ActionProperty, action);
+        var properties = ImmutableDictionary<string, string?>.Empty.Add(ActionProperty, action.ToString());
         context.ReportDiagnostic(Diagnostic.Create(Rule, statement.ReturnKeyword.GetLocation(), properties, message));
     }
 }

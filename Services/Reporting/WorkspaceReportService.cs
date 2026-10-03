@@ -1,5 +1,6 @@
 using System.Text;
 using Services.Repositories;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Services.Reporting;
@@ -12,8 +13,8 @@ public sealed record ReportPage(WorkspaceReport Summary, IReadOnlyList<ReportEnt
 
 public interface IWorkspaceReportService
 {
-    Task<WorkspaceReport> GetAsync(string userId, string period, DateOnly? date, CancellationToken cancellationToken = default);
-    Task<ReportPage> GetPageAsync(string userId, string period, DateOnly? date, string? cursor, CancellationToken cancellationToken = default);
+    Task<WorkspaceReport> GetAsync(string userId, ReportPeriod period, DateOnly? date, CancellationToken cancellationToken = default);
+    Task<ReportPage> GetPageAsync(string userId, ReportPeriod period, DateOnly? date, string? cursor, CancellationToken cancellationToken = default);
     Task<string> GetRevisionAsync(string userId, CancellationToken cancellationToken = default);
 }
 
@@ -22,7 +23,7 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
     public Task<string> GetRevisionAsync(string userId, CancellationToken cancellationToken = default) =>
         repository.GetRevisionAsync(userId, cancellationToken);
 
-    public async Task<WorkspaceReport> GetAsync(string userId, string period, DateOnly? date, CancellationToken cancellationToken = default)
+    public async Task<WorkspaceReport> GetAsync(string userId, ReportPeriod period, DateOnly? date, CancellationToken cancellationToken = default)
     {
         var source = await repository.GetWorkspaceAsync(userId, cancellationToken);
         var workspace = source.Workspace;
@@ -31,7 +32,7 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
         var selected = date ?? today;
         var (start, end) = Period(period, selected);
         var billing = await repository.GetBillingAccessAsync(userId, cancellationToken);
-        var entitled = billing is not null && billing.Plan.Equals("Pro", StringComparison.OrdinalIgnoreCase) && billing.SubscriptionStatus is "active" or "trialing";
+        var entitled = billing is { Plan: BillingPlan.Pro, Entitlement: SubscriptionEntitlement.Entitled };
         var historyStart = entitled ? today.AddYears(-1).AddDays(1) : today.AddDays(-29);
         var effectiveStart = start < historyStart ? historyStart : start;
         var effectiveEnd = end;
@@ -63,7 +64,7 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
             entries.Sum(e => e.FocusMinutes), days, projectTotals, entries);
     }
 
-    public async Task<ReportPage> GetPageAsync(string userId, string period, DateOnly? date, string? cursor, CancellationToken cancellationToken = default)
+    public async Task<ReportPage> GetPageAsync(string userId, ReportPeriod period, DateOnly? date, string? cursor, CancellationToken cancellationToken = default)
     {
         var report = await GetAsync(userId, period, date, cancellationToken);
         var offset = 0;
@@ -73,7 +74,7 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
             var decoded = Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
             var pieces = decoded.Split('|');
 
-            if (pieces.Length != 5 || pieces[0] != userId || pieces[1] != period || pieces[2] != report.QueryDate.ToString("yyyy-MM-dd"))
+            if (pieces.Length != 5 || pieces[0] != userId || pieces[1] != period.ToWireValue() || pieces[2] != report.QueryDate.ToString("yyyy-MM-dd"))
             {
                 throw new InvalidReportCursorException();
             }
@@ -89,17 +90,17 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
             }
         }
         var page = report.Entries.Skip(offset).Take(100).ToArray();
-        var next = offset + page.Length < report.Entries.Count ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{userId}|{period}|{report.QueryDate:yyyy-MM-dd}|{offset + page.Length}|{report.Revision}")) : null;
+        var next = offset + page.Length < report.Entries.Count ? Convert.ToBase64String(Encoding.UTF8.GetBytes($"{userId}|{period.ToWireValue()}|{report.QueryDate:yyyy-MM-dd}|{offset + page.Length}|{report.Revision}")) : null;
 
         return new(report, page, next);
     }
 
-    private static (DateOnly Start, DateOnly End) Period(string period, DateOnly date) => period.ToLowerInvariant() switch
+    private static (DateOnly Start, DateOnly End) Period(ReportPeriod period, DateOnly date) => period switch
     {
-        "day" => (date, date),
-        "week" => (date.AddDays(-(((int)date.DayOfWeek + 6) % 7)), date.AddDays(6 - (((int)date.DayOfWeek + 6) % 7))),
-        "month" => (new(date.Year, date.Month, 1), new(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month))),
-        _ => throw new ArgumentException("period must be day, week, or month.")
+        ReportPeriod.Day => (date, date),
+        ReportPeriod.Week => (date.AddDays(-(((int)date.DayOfWeek + 6) % 7)), date.AddDays(6 - (((int)date.DayOfWeek + 6) % 7))),
+        ReportPeriod.Month => (new(date.Year, date.Month, 1), new(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month))),
+        _ => throw new ArgumentOutOfRangeException(nameof(period), period, null)
     };
 
     private static TimeZoneInfo ResolveZone(string id)

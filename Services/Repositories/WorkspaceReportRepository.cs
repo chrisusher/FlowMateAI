@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Extensions.Configuration;
 using Shared.Models;
+using Shared.Enums;
 
 namespace Services.Repositories;
 
@@ -40,7 +41,9 @@ public sealed class WorkspaceReportRepository(CosmosClient cosmos, IConfiguratio
         {
             var response = await BillingContainer.ReadItemAsync<BillingEnvelope>("billing", new PartitionKey(userId), cancellationToken: cancellationToken);
             
-            return new(response.Resource.Plan, response.Resource.SubscriptionStatus);
+            return new(
+                BillingPlanExtensions.ParseOrFree(response.Resource.Plan),
+                SubscriptionEntitlementExtensions.FromProviderStatus(response.Resource.SubscriptionStatus));
         }
         catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
         {
@@ -56,7 +59,7 @@ public sealed class WorkspaceReportRepository(CosmosClient cosmos, IConfiguratio
 
     private sealed class BillingEnvelope
     {
-        public string Plan { get; set; } = "Free";
+        public string Plan { get; set; } = BillingPlan.Free.ToString();
         public string SubscriptionStatus { get; set; } = "none";
     }
 }

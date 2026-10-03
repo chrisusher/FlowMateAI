@@ -1,6 +1,7 @@
 using ChrisUsher.Core.Shared;
 using Services.Repositories;
 using Shared.Contracts;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Services.Workspaces;
@@ -13,7 +14,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
 
         var snapshot = document is null ? new WorkspaceSnapshot() : Deserialize(document.Payload);
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
-        snapshot.Plan = entitlement.Plan;
+        snapshot.Plan = BillingPlanExtensions.ParseOrFree(entitlement.Plan);
 
         return new(snapshot, document?.ETag ?? "");
     }
@@ -24,20 +25,20 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
 
         if (existing is not null && !string.IsNullOrEmpty(request.Revision) && existing.ETag != request.Revision)
         {
-            return new(null, "revision_conflict", "This workspace changed on another device. Reload it and try again.");
+            return new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.");
         }
 
         var current = existing is null ? new WorkspaceSnapshot() : Deserialize(existing.Payload);
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
-        var plan = entitlement.Plan == "Pro" ? "Pro" : "Free";
-        var projectLimit = plan == "Pro" ? 25 : 3;
+        var plan = BillingPlanExtensions.ParseOrFree(entitlement.Plan);
+        var projectLimit = plan == BillingPlan.Pro ? 25 : 3;
         var existingProjectIds = current.Projects.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
         var newProjects = request.Workspace.Projects.Count(p => !existingProjectIds.Contains(p.Id));
         var availableSlots = Math.Max(0, projectLimit - current.Projects.Count);
 
         if (newProjects > availableSlots)
         {
-            return new(null, "project_limit", $"The {plan} plan includes up to {projectLimit} projects. Existing projects are kept when your plan changes.");
+            return new(null, WorkspaceSaveErrorCode.ProjectLimit, $"The {plan} plan includes up to {projectLimit} projects. Existing projects are kept when your plan changes.");
         }
 
         var timerActive = current.Timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused;
@@ -45,7 +46,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
 
         if (timerActive && !timerExpired && current.Timer.OwnerClientId != request.Workspace.ClientId && !SameTimer(current.Timer, request.Workspace.Timer))
         {
-            return new(null, "timer_conflict", "A timer is already active on another device.");
+            return new(null, WorkspaceSaveErrorCode.TimerConflict, "A timer is already active on another device.");
         }
 
         request.Workspace.Plan = plan;
@@ -61,12 +62,12 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
             var saved = await repository.SaveAsync(ownerId, request.Workspace, request.Revision, cancellationToken);
 
             return saved is null
-                ? new(null, "revision_conflict", "This workspace changed on another device. Reload it and try again.")
+                ? new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.")
                 : new(new(request.Workspace, saved.ETag ?? ""), null, null);
         }
         catch (WorkspaceSaveConflictException)
         {
-            return new(null, "revision_conflict", "This workspace changed on another device. Reload it and try again.");
+            return new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.");
         }
     }
 

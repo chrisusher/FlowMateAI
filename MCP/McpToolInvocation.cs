@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using Services.Mcp;
 using Services.Reporting;
 using Shared.Contracts;
+using Shared.Enums;
+using Shared.Models;
 
 namespace MCP;
 
@@ -64,9 +66,9 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
 
             return Error("temporarily_unavailable", "Account credentials are temporarily unavailable.");
         }
-        var normalizedPeriod = period ?? "day";
+        var periodValue = period ?? ReportPeriod.Day.ToWireValue();
 
-        if (normalizedPeriod is not ("day" or "week" or "month"))
+        if (!ReportPeriodExtensions.TryParseWireValue(periodValue, out var reportPeriod))
         {
             return Error("invalid_arguments", "period must be day, week, or month.");
         }
@@ -112,7 +114,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
 
         try
         {
-            var report = await reports.GetAsync(validated.UserId, normalizedPeriod, selectedDate, cancellationToken);
+            var report = await reports.GetAsync(validated.UserId, reportPeriod, selectedDate, cancellationToken);
 
             if (projectsOnly)
             {
@@ -146,12 +148,12 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
 
             if (cursor is not null)
             {
-                var page = await reports.GetPageAsync(validated.UserId, normalizedPeriod, selectedDate, cursor, cancellationToken);
+                var page = await reports.GetPageAsync(validated.UserId, reportPeriod, selectedDate, cursor, cancellationToken);
 
                 return ToTimesheetResponse(page.Summary, page.Entries, page.NextCursor);
             }
 
-            var nextCursor = report.Entries.Count > 100 ? CreateFirstCursor(validated.UserId, normalizedPeriod, report) : null;
+            var nextCursor = report.Entries.Count > 100 ? CreateFirstCursor(validated.UserId, reportPeriod, report) : null;
 
             return ToTimesheetResponse(report, report.Entries.Take(100), nextCursor);
         }
@@ -189,7 +191,8 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         {
             var item = await cosmos.GetContainer(database, "BillingEntitlements").ReadItemAsync<Entitlement>("billing", new PartitionKey(userId), cancellationToken: token);
 
-            return item.Resource.Plan.Equals("Pro", StringComparison.OrdinalIgnoreCase) && item.Resource.SubscriptionStatus is "active" or "trialing";
+            return BillingPlanExtensions.ParseOrFree(item.Resource.Plan) == BillingPlan.Pro &&
+                SubscriptionEntitlementExtensions.FromProviderStatus(item.Resource.SubscriptionStatus) == SubscriptionEntitlement.Entitled;
         }
         catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
         {
@@ -209,6 +212,9 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         entries.Select(entry => new McpTimesheetEntry(entry.SessionId, entry.ProjectId, entry.ProjectName, entry.TaskId, entry.TaskName, entry.StartedAt, entry.EndedAt, entry.FocusMinutes, entry.LocalDate)).ToArray(),
         nextCursor);
 
-    private static string CreateFirstCursor(string userId, string period, WorkspaceReport report) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{userId}|{period}|{report.QueryDate:yyyy-MM-dd}|100|{report.Revision}"));
-    private sealed class Entitlement { public string Plan { get; set; } = "Free"; public string SubscriptionStatus { get; set; } = "none"; }
+    private static string CreateFirstCursor(string userId, ReportPeriod period, WorkspaceReport report) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{userId}|{period.ToWireValue()}|{report.QueryDate:yyyy-MM-dd}|100|{report.Revision}"));
+
+    private sealed class Entitlement { public string Plan { get; set; } = BillingPlan.Free.ToString(); 
+    
+    public string SubscriptionStatus { get; set; } = "none"; }
 }

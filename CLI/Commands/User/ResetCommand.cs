@@ -100,7 +100,7 @@ internal static class ResetCommand
             catch (UserDataResetException exception)
             {
                 var completed = exception.Completed;
-                Console.Error.WriteLine($"Reset failed during {exception.Stage} cleanup. Completed before failure: {completed.WorkspaceDocuments} workspace documents, {completed.WorkspaceRecords} workspace records, {completed.BillingEntitlements} billing entitlements, and {completed.ArchivedBlobs} archived blobs. Rerun reset to finish cleanup.");
+                Console.Error.WriteLine($"Reset failed during {exception.StageLabel} cleanup. Completed before failure: {completed.WorkspaceDocuments} workspace documents, {completed.WorkspaceRecords} workspace records, {completed.BillingEntitlements} billing entitlements, and {completed.ArchivedBlobs} archived blobs. Rerun reset to finish cleanup.");
 
                 return 1;
             }

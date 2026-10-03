@@ -3,6 +3,7 @@ using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Microsoft.JSInterop;
 using Shared.Contracts;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Web.Clients;

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Services.Billing;
 using Services.Workspaces;
+using Shared.Enums;
 using Shared.Exceptions;
 
 namespace Services.Coach;
@@ -74,9 +75,9 @@ public sealed class FoundryFocusCoachService(
                 content = "You are FlowMate, a thoughtful, practical focus coach. Use only the user's supplied projects, tasks and focus totals. You may suggest priorities and reflect on day/week/month results, but you must never claim to edit or change data. Keep replies warm, concise, and grounded in the supplied context. If the context lacks information, say so. The last user message contains the current workspace context."
             }
         };
-        messages.AddRange(history.TakeLast(10).Where(m => m.Role is "user" or "assistant").Select(m => (object)new
+        messages.AddRange(history.TakeLast(10).Where(m => m.Role is ChatMessageRole.User or ChatMessageRole.Assistant).Select(m => (object)new
         {
-            role = m.Role,
+            role = m.Role.ToWireValue(),
             content = m.Text
         }));
         messages.Add(new
@@ -108,7 +109,6 @@ public sealed class FoundryFocusCoachService(
     {
         try
         {
-
             return TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(timeZone)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
         catch

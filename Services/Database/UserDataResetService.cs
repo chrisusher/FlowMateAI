@@ -3,6 +3,7 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Services.Repositories;
 using Shared.Exceptions;
+using Shared.Enums;
 using Shared.Models;
 
 namespace Services.Database;
@@ -30,7 +31,7 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
         var mcpKeys = 0;
         var mcpUsageRecords = 0;
 
-        async Task RunStageAsync(string stage, Func<Task> action)
+        async Task RunStageAsync(UserDataResetStage stage, Func<Task> action)
         {
 
             try
@@ -49,22 +50,22 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
             }
         }
 
-        await RunStageAsync("workspace document", async () =>
+        await RunStageAsync(UserDataResetStage.WorkspaceDocument, async () =>
         {
             workspaceDocuments = await repository.DeleteWorkspaceDocumentsAsync(userId, cancellationToken);
         });
 
-        await RunStageAsync("workspace record", async () =>
+        await RunStageAsync(UserDataResetStage.WorkspaceRecord, async () =>
         {
             workspaceRecords = await repository.DeleteWorkspaceRecordsAsync(userId, cancellationToken);
         });
 
-        await RunStageAsync("billing entitlement", async () =>
+        await RunStageAsync(UserDataResetStage.BillingEntitlement, async () =>
         {
             billingEntitlements = await repository.DeleteBillingEntitlementsAsync(userId, cancellationToken);
         });
 
-        await RunStageAsync("archived blob", async () =>
+        await RunStageAsync(UserDataResetStage.ArchivedBlob, async () =>
         {
             var container = blobClient.GetBlobContainerClient(ActivityContainerName);
 
@@ -86,9 +87,9 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
             }
         });
 
-        await RunStageAsync("MCP keys", async () => mcpKeys = await repository.RevokeMcpKeysAsync(userId, cancellationToken));
+        await RunStageAsync(UserDataResetStage.McpKeys, async () => mcpKeys = await repository.RevokeMcpKeysAsync(userId, cancellationToken));
         
-        await RunStageAsync("MCP usage", async () => mcpUsageRecords = await repository.DeleteMcpUsageAsync(userId, cancellationToken));
+        await RunStageAsync(UserDataResetStage.McpUsage, async () => mcpUsageRecords = await repository.DeleteMcpUsageAsync(userId, cancellationToken));
 
         return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs)
         {

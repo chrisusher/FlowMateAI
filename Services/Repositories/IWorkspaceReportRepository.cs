@@ -1,9 +1,10 @@
 using Shared.Models;
+using Shared.Enums;
 
 namespace Services.Repositories;
 
 public sealed record WorkspaceReportSource(WorkspaceSnapshot Workspace, string Revision);
-public sealed record BillingAccess(string Plan, string SubscriptionStatus);
+public sealed record BillingAccess(BillingPlan Plan, SubscriptionEntitlement Entitlement);
 
 public interface IWorkspaceReportRepository
 {

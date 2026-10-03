@@ -1,10 +1,13 @@
+using Shared.Enums;
+
 namespace Shared.Models;
 
 public sealed class WorkspaceSnapshot
 {
     public string DisplayName { get; set; } = "Alex Morgan";
     public string TimeZone { get; set; } = "Europe/London";
-    public string Plan { get; set; } = "Free";
+    [JsonConverter(typeof(JsonStringEnumConverter<BillingPlan>))]
+    public BillingPlan Plan { get; set; } = BillingPlan.Free;
     public string ClientId { get; set; } = "";
     public bool Muted { get; set; }
     public List<ProjectRecord> Projects { get; set; } = [];
