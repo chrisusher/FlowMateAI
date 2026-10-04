@@ -1,15 +1,22 @@
+extern alias Identity;
+using Azure.Security.KeyVault.Secrets;
 using Azure.Storage.Blobs;
 using ChrisUsher.Core.Services.Interfaces;
 using ChrisUsher.Core.Services.Storage;
+using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Services.Database;
-using Services.Repositories;
-using Services.Workspaces;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Services.Billing;
 using Services.Coach;
+using Services.Database;
+using Services.Mcp;
+using Services.Reporting;
+using Services.Repositories;
+using Services.Users;
+using Services.Workspaces;
 using Shared.Config;
 
 namespace Services;
@@ -52,16 +59,18 @@ public static class Services
 
         #region Azure Services
 
-        services.AddAzureClients(config =>
+        var storageConnectionString = configuration.GetConnectionString("Storage");
+
+        if (!string.IsNullOrWhiteSpace(storageConnectionString))
         {
-            var storageConnectionString = configuration.GetConnectionString("Storage")
-                ?? throw new InvalidOperationException("ConnectionStrings:Storage is not set in configuration");
+            services.AddAzureClients(config =>
+            {
+                config.AddBlobServiceClient(storageConnectionString)
+                    .WithName("FlowMate");
 
-            config.AddBlobServiceClient(storageConnectionString)
-                .WithName("FlowMate");
-
-            // Application secrets are supplied through server-side app settings or the host secret store.
-        });
+                // Application secrets are supplied through server-side app settings or the host secret store.
+            });
+        }
 
         #endregion
 
@@ -74,6 +83,23 @@ public static class Services
             .Get<GlobalConfig>() ?? new GlobalConfig();
 
         services.AddDatabase(configuration);
+        services.AddSingleton(sp =>
+        {
+            var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+
+            return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
+        });
+        services.AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
+        services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
+        services.AddScoped<IMcpCredentialService, McpCredentialService>();
+        services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
+        services.AddScoped<IUserDataResetService, UserDataResetService>();
+
+        if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))
+        {
+            services.AddSingleton(new SecretClient(vaultUri, new Identity::Azure.Identity.DefaultAzureCredential()));
+        }
 
         services.AddTransient<IStorageService>(services =>
         {
@@ -113,6 +139,26 @@ public static class Services
         return services;
     }
 
+    public static IServiceCollection AddMcpServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddDatabase(configuration);
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
+        services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();
+        var global = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
+        var settings = ResolveDatabaseSettings(configuration, global.Environment);
+        var client = string.IsNullOrWhiteSpace(settings.AccountKey)
+            ? new CosmosClient(settings.AccountEndpoint, new Identity::Azure.Identity.DefaultAzureCredential())
+            : new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
+        services.AddSingleton(client);
+        services.AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
+        services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
+        services.AddScoped<IMcpCredentialService, McpCredentialService>();
+
+        return services;
+    }
+
     internal static string ResolveCosmosDatabaseName(IConfiguration configuration, string environment)
     {
         var configuredDatabaseName = configuration["Database:DatabaseName"] ?? configuration["Database__DatabaseName"];
@@ -131,11 +177,21 @@ public static class Services
         ArgumentNullException.ThrowIfNull(configuration);
 
         var globalConfig = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
+
         var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+
         services.AddDbContext<DatabaseContext>(options =>
         {
             Console.WriteLine($"[FlowMate] Using Cosmos endpoint '{settings.AccountEndpoint}' and database '{settings.DatabaseName}'.");
-            options.UseCosmos(settings.AccountEndpoint, settings.AccountKey, settings.DatabaseName);
+
+            if (string.IsNullOrWhiteSpace(settings.AccountKey))
+            {
+                options.UseCosmos(settings.AccountEndpoint, new Identity::Azure.Identity.DefaultAzureCredential(), settings.DatabaseName);
+            }
+            else
+            {
+                options.UseCosmos(settings.AccountEndpoint, settings.AccountKey, settings.DatabaseName);
+            }
 
 #if DEBUG
             options.EnableDetailedErrors();

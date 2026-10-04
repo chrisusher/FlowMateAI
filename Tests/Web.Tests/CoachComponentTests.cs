@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Radzen.Blazor;
 using Shared.Contracts;
+using Shared.Enums;
 using Web.Components.Features.Coach;
 
 namespace Web.Tests;
@@ -54,7 +55,7 @@ public sealed class CoachComponentTests : WorkspaceComponentTest
         {
             Id = conversation.Id,
             Title = conversation.Title,
-            Messages = [new() { Role = "assistant", Text = "Saved coach response" }]
+            Messages = [new() { Role = ChatMessageRole.Assistant, Text = "Saved coach response" }]
         };
         response.SetResult(new(HttpStatusCode.OK)
         {

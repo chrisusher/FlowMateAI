@@ -1,5 +1,3 @@
-using System.Net;
-using API.Functions.V1;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;

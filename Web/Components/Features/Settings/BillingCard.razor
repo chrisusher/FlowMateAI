@@ -12,7 +12,7 @@
     <div class="setting-row">
         <div>
             <strong>@Store.Data.Plan plan</strong>
-            <small>Up to @(Store.Data.Plan == "Pro" ? 25 : 3) projects | @((Store.Data.Plan == "Pro") ? "100" : "10") coach prompts / month</small>
+            <small>Up to @(Store.Data.Plan == BillingPlan.Pro ? 25 : 3) projects | @((Store.Data.Plan == BillingPlan.Pro) ? "100" : "10") coach prompts / month</small>
         </div>
         <span class="plan-status">Active</span>
     </div>

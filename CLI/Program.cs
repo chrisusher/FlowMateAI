@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Services;
-using Services.Database;
 
 namespace CLI;
 
@@ -33,22 +32,8 @@ public static class Program
             .AddEnvironmentVariables();
 
         builder.AddServiceDefaults();
-        builder.Services.AddDatabase(builder.Configuration);
+        builder.Services.AddServices(builder.Configuration);
         builder.Services.AddHttpClient<Auth0ManagementClient>();
-        builder.Services.AddScoped<IUserDataResetService>(services =>
-        {
-            var configuration = services.GetRequiredService<IConfiguration>();
-            var storageConnection = configuration.GetConnectionString("Storage");
-
-            if (string.IsNullOrWhiteSpace(storageConnection))
-            {
-                throw new InvalidOperationException("ConnectionStrings:Storage is required for user reset.");
-            }
-
-            var database = services.GetRequiredService<DatabaseContext>();
-
-            return new UserDataResetService(database, new Azure.Storage.Blobs.BlobServiceClient(storageConnection));
-        });
 
         return builder.Build();
     }

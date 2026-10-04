@@ -19,6 +19,7 @@ jobs:
       - name: Configure browser-safe runtime settings
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
+          MCP_ENDPOINT: ${{ vars.MCP_ENDPOINT }}
           AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
           AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
           AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
@@ -29,6 +30,7 @@ jobs:
           with open(path, encoding="utf-8") as source:
               settings = json.load(source)
           settings["ApiBaseUrl"] = os.environ["API_BASE_URL"]
+          settings["McpEndpoint"] = os.environ["MCP_ENDPOINT"]
           settings["Auth0"]["Domain"] = os.environ["AUTH0_DOMAIN"]
           settings["Auth0"]["ClientId"] = os.environ["AUTH0_CLIENT_ID"]
           settings["Auth0"]["Audience"] = os.environ["AUTH0_AUDIENCE"]
@@ -46,6 +48,10 @@ jobs:
         run: |
           dotnet restore API/API.csproj --configfile NuGet.config
           dotnet publish API/API.csproj -c Release --no-restore -o artifacts/api
+      - name: Publish Azure Functions MCP server
+        run: |
+          dotnet restore MCP/MCP.csproj --configfile NuGet.config
+          dotnet publish MCP/MCP.csproj -c Release --no-restore -o artifacts/mcp
       - uses: actions/upload-artifact@v4
         with:
           name: web
@@ -54,6 +60,10 @@ jobs:
         with:
           name: functions-api
           path: artifacts/api
+      - uses: actions/upload-artifact@v4
+        with:
+          name: functions-mcp
+          path: artifacts/mcp
 
   deploy-web:
     needs: build
@@ -83,3 +93,17 @@ jobs:
           app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
           package: artifacts/api
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+
+  deploy-mcp:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: functions-mcp
+          path: artifacts/mcp
+      - uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_MCP_FUNCTIONAPP_NAME }}
+          package: artifacts/mcp
+          publish-profile: ${{ secrets.AZURE_MCP_FUNCTIONAPP_PUBLISH_PROFILE }}

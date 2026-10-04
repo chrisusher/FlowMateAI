@@ -25,6 +25,9 @@ var storage = builder.AddAzureStorage("storage")
         azurite.WithEndpoint("table", endpoint => endpoint.IsProxied = false);
     });
 
+var mcpHostStorage = builder.AddAzureStorage("mcp-host-storage")
+    .RunAsEmulator(azurite => azurite.WithDataVolume("mcp-host-data"));
+
 var blobs = storage.AddBlobs("blobs");
 storage.AddQueues("queues");
 storage.AddTables("tables");
@@ -68,6 +71,18 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithReference(foundryProject)
     .WithExternalHttpEndpoints();
 
+var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
+    .WaitFor(mcpHostStorage)
+    .WaitFor(database)
+    .WithHostStorage(mcpHostStorage)
+    .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
+    .WithEnvironment("Database__Key", cosmosDb.Resource.AccountKey!)
+    .WithEnvironment("Global__Environment", environment)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
+    .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
+    .WithReference(database)
+    .WithExternalHttpEndpoints();
+
 var cli = builder.AddProject<Projects.CLI>("cli")
     .WithArgs("--help")
     .WithReference(database)
@@ -90,9 +105,11 @@ var auth0ClientSecret = builder.Configuration["Auth0:ManagementClientSecret"];
 IReadOnlyDictionary<string, string> BuildCliEnvironment(
     string? cosmosConnection,
     string? storageConnection,
+    string? keyVaultUri,
     string? runtimeEnvironment,
     bool includeStorageSettings,
-    bool includeAuth0Settings)
+    bool includeAuth0Settings,
+    bool includeKeyVaultSettings)
 {
     var environmentVariables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -105,6 +122,11 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
     if (includeStorageSettings && !string.IsNullOrWhiteSpace(storageConnection))
     {
         environmentVariables["ConnectionStrings__Storage"] = storageConnection;
+    }
+
+    if (includeKeyVaultSettings && !string.IsNullOrWhiteSpace(keyVaultUri))
+    {
+        environmentVariables["KeyVault__VaultUri"] = keyVaultUri;
     }
 
     if (includeAuth0Settings)
@@ -131,7 +153,8 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
 async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
     CancellationToken cancellationToken,
     bool includeStorageSettings,
-    bool includeAuth0Settings)
+    bool includeAuth0Settings,
+    bool includeKeyVaultSettings = false)
 {
     var cosmosConnection = await database.Resource.ConnectionStringExpression.GetValueAsync(cancellationToken);
 
@@ -139,9 +162,13 @@ async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
         ? await blobs.Resource.ConnectionStringExpression.GetValueAsync(cancellationToken)
         : null;
 
+    var keyVaultUri = includeKeyVaultSettings
+        ? await keyVault.Resource.UriExpression.GetValueAsync(cancellationToken)
+        : null;
+
     var configuredEnvironment = await environment.Resource.GetValueAsync(cancellationToken);
 
-    return BuildCliEnvironment(cosmosConnection, storageConnection, configuredEnvironment, includeStorageSettings, includeAuth0Settings);
+    return BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, configuredEnvironment, includeStorageSettings, includeAuth0Settings, includeKeyVaultSettings);
 }
 
 cli.WithProcessCommand(
@@ -260,7 +287,7 @@ cli.WithProcessCommand(
             throw new InvalidOperationException("Approval is required before the reset process can start. Set approve to true.");
         }
 
-        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: true, includeAuth0Settings: true);
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: true, includeAuth0Settings: true, includeKeyVaultSettings: true);
 
         var arguments = new List<string>
         {
@@ -321,7 +348,8 @@ cli.WithProcessCommand(
 
 var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithReference(api)
-    .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"));
+    .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"))
+    .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"));
 
 var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WaitFor(api)

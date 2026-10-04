@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Configuration;
 using Radzen;
 using Shared.Contracts;
+using Shared.Enums;
 using Web.Clients;
 using Web.Managers;
 

@@ -2,10 +2,13 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using ChrisUsher.Core.Shared.Currency;
+using ChrisUsher.Core.Shared.Enums;
 using Microsoft.Extensions.Configuration;
 using Services.Database;
 using Services.Repositories;
 using Shared.Contracts;
+using Shared.Enums;
 
 namespace Services.Billing;
 
@@ -29,7 +32,7 @@ public sealed class StripeBillingService(
         }
 
         return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt,
-            entitlement.PromptCount, entitlement.Plan == "Pro" ? 100 : 10);
+            entitlement.PromptCount, BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10);
     }
 
     public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, CancellationToken cancellationToken = default)
@@ -42,7 +45,7 @@ public sealed class StripeBillingService(
             entitlement.PromptMonth = month;
             entitlement.PromptCount = 0;
         }
-        var limit = entitlement.Plan == "Pro" ? 100 : 10;
+        var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
 
         if (entitlement.PromptCount >= limit)
         {
@@ -79,7 +82,11 @@ public sealed class StripeBillingService(
             var currency = root.GetProperty("currency").GetString() ?? "gbp";
             var amount = root.GetProperty("unit_amount").GetInt64();
             var actualInterval = root.GetProperty("recurring").GetProperty("interval").GetString() ?? interval;
-            prices.Add(new(actualInterval, currency, amount, FormatPrice(currency, amount, actualInterval)));
+            var currencyCode = Enum.TryParse<CurrencyCode>(currency, true, out var parsedCurrency)
+                ? parsedCurrency
+                : CurrencyCode.Unknown;
+            var display = CurrencyLogic.FormatPrice(amount / 100m, currencyCode);
+            prices.Add(new(actualInterval, currency, amount, $"{display} / {(actualInterval == "year" ? "year" : "month")}"));
         }
 
         return prices;
@@ -91,18 +98,19 @@ public sealed class StripeBillingService(
 
         if (string.IsNullOrWhiteSpace(priceId))
         {
-            return Failure("billing_unavailable", "Pro pricing is not configured yet.");
+            return Failure(BillingActionCode.BillingUnavailable, "Pro pricing is not configured yet.");
         }
         var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
 
         if (entitlement.TrialUsed)
         {
-            return Failure("trial_used", "Your 14-day trial has already been used.");
+            return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
         }
 
         try
         {
             var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
+
             var form = new Dictionary<string, string>
             {
                 ["customer"] = customer,
@@ -116,22 +124,22 @@ public sealed class StripeBillingService(
 
             if (!response.IsSuccessStatusCode)
             {
-                return Failure("stripe_error", StripeError(body));
+                return Failure(BillingActionCode.StripeError, StripeError(body));
             }
             using var subscription = JsonDocument.Parse(body);
             entitlement.StripeSubscriptionId = subscription.RootElement.GetProperty("id").GetString() ?? "";
             entitlement.SubscriptionStatus = subscription.RootElement.GetProperty("status").GetString() ?? "trialing";
-            entitlement.Plan = IsEntitled(entitlement.SubscriptionStatus) ? "Pro" : "Free";
+            entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
             entitlement.TrialUsed = true;
             entitlement.PeriodEndsAt = UnixTime(subscription.RootElement, "current_period_end");
+
             await repository.SaveEntitlementAsync(entitlement, cancellationToken);
 
             return new(true, null, null, "Your 14-day Pro trial has started.");
         }
         catch (HttpRequestException)
         {
-
-            return Failure("stripe_unavailable", "Stripe could not be reached. Try again in a moment.");
+            return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. Try again in a moment.");
         }
     }
 
@@ -142,13 +150,14 @@ public sealed class StripeBillingService(
 
         if (string.IsNullOrWhiteSpace(priceId) || string.IsNullOrWhiteSpace(origin))
         {
-            return Failure("billing_unavailable", "Checkout is not configured yet.");
+            return Failure(BillingActionCode.BillingUnavailable, "Checkout is not configured yet.");
         }
 
         try
         {
             var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
             var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
+
             var form = new Dictionary<string, string>
             {
                 ["mode"] = "subscription",
@@ -159,12 +168,13 @@ public sealed class StripeBillingService(
                 ["cancel_url"] = origin + "/pricing?checkout=cancelled",
                 ["subscription_data[metadata][user_id]"] = userId
             };
+
             using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, $"flowmate-checkout-{userId}-{(annual ? "annual" : "monthly")}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}", cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
-                return Failure("stripe_error", StripeError(body));
+                return Failure(BillingActionCode.StripeError, StripeError(body));
             }
             using var session = JsonDocument.Parse(body);
 
@@ -172,8 +182,7 @@ public sealed class StripeBillingService(
         }
         catch (HttpRequestException)
         {
-
-            return Failure("stripe_unavailable", "Stripe could not be reached. Try again in a moment.");
+            return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. Try again in a moment.");
         }
     }
 
@@ -183,13 +192,13 @@ public sealed class StripeBillingService(
 
         if (string.IsNullOrWhiteSpace(origin))
         {
-            return Failure("billing_unavailable", "Billing is not configured yet.");
+            return Failure(BillingActionCode.BillingUnavailable, "Billing is not configured yet.");
         }
         var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(entitlement.StripeCustomerId))
         {
-            return Failure("customer_missing", "No billing account is linked yet.");
+            return Failure(BillingActionCode.CustomerMissing, "No billing account is linked yet.");
         }
 
         try
@@ -199,11 +208,12 @@ public sealed class StripeBillingService(
                 ["customer"] = entitlement.StripeCustomerId,
                 ["return_url"] = origin + "/settings"
             }, null, cancellationToken);
+
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
-                return Failure("stripe_error", StripeError(body));
+                return Failure(BillingActionCode.StripeError, StripeError(body));
             }
             using var session = JsonDocument.Parse(body);
 
@@ -211,8 +221,7 @@ public sealed class StripeBillingService(
         }
         catch (HttpRequestException)
         {
-
-            return Failure("stripe_unavailable", "Stripe could not be reached. Try again in a moment.");
+            return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. Try again in a moment.");
         }
     }
 
@@ -222,6 +231,7 @@ public sealed class StripeBillingService(
         {
             return false;
         }
+
         using var eventDoc = JsonDocument.Parse(payload);
         var root = eventDoc.RootElement;
         var eventId = root.GetProperty("id").GetString();
@@ -243,7 +253,7 @@ public sealed class StripeBillingService(
                 entitlement.StripeSubscriptionId = subscription.GetProperty("id").GetString() ?? "";
                 entitlement.StripeCustomerId = subscription.GetProperty("customer").GetString() ?? entitlement.StripeCustomerId;
                 entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "canceled";
-                entitlement.Plan = IsEntitled(entitlement.SubscriptionStatus) ? "Pro" : "Free";
+                entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
                 entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out _);
                 entitlement.PeriodEndsAt = UnixTime(subscription, "current_period_end");
                 await repository.SaveEntitlementAsync(entitlement, cancellationToken);
@@ -260,7 +270,10 @@ public sealed class StripeBillingService(
         {
             return entitlement.StripeCustomerId;
         }
-        var fields = new Dictionary<string, string> { ["metadata[user_id]"] = userId };
+        var fields = new Dictionary<string, string>
+        {
+            ["metadata[user_id]"] = userId
+        };
 
         if (!string.IsNullOrWhiteSpace(email))
         {
@@ -323,28 +336,23 @@ public sealed class StripeBillingService(
         foreach (var signature in values.Where(part => part[0] == "v1").Select(part => part[1]))
         {
             try
+            {
+                if (CryptographicOperations.FixedTimeEquals(digest, Convert.FromHexString(signature)))
                 {
-                    if (CryptographicOperations.FixedTimeEquals(digest, Convert.FromHexString(signature)))
-                    {
 
-                        return true;
-                    }
+                    return true;
                 }
+            }
             catch (FormatException) { }
         }
 
         return false;
     }
 
-    private static bool IsEntitled(string status) => status is "active" or "trialing";
-    private static DateTimeOffset? UnixTime(JsonElement root, string field) => root.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Number ? DateTimeOffset.FromUnixTimeSeconds(value.GetInt64()) : null;
-    private static string FormatPrice(string currency, long amount, string interval)
-    {
-        var formatted = (amount / 100m).ToString("0.##", CultureInfo.InvariantCulture);
-        var symbol = currency.ToLowerInvariant() switch { "gbp" => "£", "usd" => "$", "eur" => "€", _ => currency.ToUpperInvariant() + " " };
+    private static bool IsEntitled(string status) => SubscriptionEntitlementExtensions.FromProviderStatus(status) == SubscriptionEntitlement.Entitled;
 
-        return interval == "year" ? $"{symbol}{formatted} / year" : $"{symbol}{formatted} / month";
-    }
+    private static DateTimeOffset? UnixTime(JsonElement root, string field) => root.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Number ? DateTimeOffset.FromUnixTimeSeconds(value.GetInt64()) : null;
+
 
     private static string StripeError(string body)
     {
@@ -360,5 +368,5 @@ public sealed class StripeBillingService(
             return "Stripe rejected the request.";
         }
     }
-    private static BillingActionResponse Failure(string code, string message) => new(false, null, code, message);
+    private static BillingActionResponse Failure(BillingActionCode code, string message) => new(false, null, code, message);
 }

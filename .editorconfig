@@ -57,7 +57,8 @@ csharp_space_between_square_brackets = false
 
 # Wrapping preferences
 csharp_preserve_single_line_statements = false
-csharp_preserve_single_line_blocks = true
+# Do not preserve compressed one-line brace blocks or initializers.
+csharp_preserve_single_line_blocks = false
 
 # Code style rules
 csharp_prefer_braces = true:warning

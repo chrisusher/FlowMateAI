@@ -1,3 +1,5 @@
+using Shared.Enums;
+
 namespace Services.Database;
 
 public sealed class BillingEntitlementDocument
@@ -6,7 +8,7 @@ public sealed class BillingEntitlementDocument
     public string UserId { get; set; } = "";
     public string StripeCustomerId { get; set; } = "";
     public string StripeSubscriptionId { get; set; } = "";
-    public string Plan { get; set; } = "Free";
+    public string Plan { get; set; } = BillingPlan.Free.ToString();
     public string SubscriptionStatus { get; set; } = "none";
     public bool TrialUsed { get; set; }
     public DateTimeOffset? PeriodEndsAt { get; set; }

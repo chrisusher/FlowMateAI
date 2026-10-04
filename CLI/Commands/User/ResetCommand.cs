@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Services.Database;
+using Services.Users;
 using Shared.Exceptions;
 
 namespace CLI.Commands.User;
@@ -69,6 +70,11 @@ internal static class ResetCommand
                 throw new InvalidOperationException("ConnectionStrings:Storage is required for user reset.");
             }
 
+            if (string.IsNullOrWhiteSpace(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"]))
+            {
+                throw new InvalidOperationException("KeyVault:VaultUri is required for user reset so MCP credentials can be deleted before other user data.");
+            }
+
             var auth0 = host.Services.GetRequiredService<Auth0ManagementClient>();
             var userId = await Auth0AccountResolver.ResolveUserIdAsync(auth0, email!, requestedUserId, configuration, operationCancellation.Token);
 
@@ -77,7 +83,7 @@ internal static class ResetCommand
             Console.WriteLine($"Cosmos database: {settings.DatabaseName}");
             Console.WriteLine($"Email: {email}");
             Console.WriteLine($"Auth0 user ID: {userId}");
-            Console.WriteLine("Scope: all matching workspace documents, workspace records, billing entitlements, and archived blobs under this user's exact prefix.");
+            Console.WriteLine("Scope: this user's workspace documents, workspace records, billing entitlements, MCP credentials and usage data, and archived blobs.");
             Console.WriteLine("Auth0 identities, Stripe customers/subscriptions, and shared Stripe event records are preserved.");
 
             if (!approved && !ResetApproval.TryApprove(Console.In, Console.Out, Console.IsInputRedirected))
@@ -93,14 +99,14 @@ internal static class ResetCommand
             try
             {
                 var result = await resetService.ResetAsync(userId, operationCancellation.Token);
-                Console.WriteLine($"Deleted {result.WorkspaceDocuments} workspace documents, {result.WorkspaceRecords} workspace records, {result.BillingEntitlements} billing entitlements, and {result.ArchivedBlobs} archived blobs.");
+                Console.WriteLine($"Deleted {result.WorkspaceDocuments} workspace documents, {result.WorkspaceRecords} workspace records, {result.BillingEntitlements} billing entitlements, {result.McpKeys} MCP credentials, {result.McpUsageRecords} MCP usage records, and {result.ArchivedBlobs} archived blobs.");
 
                 return 0;
             }
             catch (UserDataResetException exception)
             {
                 var completed = exception.Completed;
-                Console.Error.WriteLine($"Reset failed during {exception.Stage} cleanup. Completed before failure: {completed.WorkspaceDocuments} workspace documents, {completed.WorkspaceRecords} workspace records, {completed.BillingEntitlements} billing entitlements, and {completed.ArchivedBlobs} archived blobs. Rerun reset to finish cleanup.");
+                Console.Error.WriteLine($"Reset failed during {exception.StageLabel} cleanup. Completed before failure: {completed.WorkspaceDocuments} workspace documents, {completed.WorkspaceRecords} workspace records, {completed.BillingEntitlements} billing entitlements, {completed.McpKeys} MCP credentials, {completed.McpUsageRecords} MCP usage records, and {completed.ArchivedBlobs} archived blobs. Rerun reset to finish cleanup.");
 
                 return 1;
             }
