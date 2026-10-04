@@ -60,7 +60,7 @@ var host = new HostBuilder()
         });
 
         services.AddOpenTelemetry()
-            .ConfigureResource(resource => resource.AddService("Backend"))
+            .ConfigureResource(resource => resource.AddService("FlowMateAI.MCP"))
             .WithTracing(tracing =>
             {
                 tracing
