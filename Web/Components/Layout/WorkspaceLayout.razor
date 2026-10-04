@@ -29,6 +29,23 @@
             }
             else
             {
+                @if (Store.SyncState != WorkspaceSyncState.Saved)
+                {
+                    <div class="workspace-sync-notice" role="status" aria-live="polite">
+                        <span>@Store.SyncMessage</span>
+                        @if (Store.HasConflict)
+                        {
+                            <div class="workspace-sync-actions">
+                                <button class="quiet-button" @onclick="Store.UseServerVersionAsync">Use server version</button>
+                                <button class="workspace-sync-keep" @onclick="Store.KeepLocalVersionAsync">Keep my draft</button>
+                            </div>
+                        }
+                        else if (Store.SyncState is WorkspaceSyncState.Offline or WorkspaceSyncState.Conflict or WorkspaceSyncState.Rejected or WorkspaceSyncState.Failed)
+                        {
+                            <button class="quiet-button" @onclick="Store.SaveAsync">Retry save</button>
+                        }
+                    </div>
+                }
                 @Body
             }
             <TaskEditorDialog />

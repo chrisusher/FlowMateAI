@@ -29,6 +29,7 @@ public partial class WorkspaceLayout
     protected override async Task OnInitializedAsync()
     {
         Navigation.LocationChanged += OnLocationChanged;
+        Store.Changed += OnWorkspaceChanged;
         await Auth.InitialiseAsync();
         await Store.InitialiseAsync();
         Coach.Initialize();
@@ -42,6 +43,14 @@ public partial class WorkspaceLayout
 
         _ready = true;
         Timer.StartClock();
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        if (!_disposed)
+        {
+            _ = InvokeAsync(StateHasChanged);
+        }
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
@@ -62,6 +71,7 @@ public partial class WorkspaceLayout
     {
         _disposed = true;
         Navigation.LocationChanged -= OnLocationChanged;
+        Store.Changed -= OnWorkspaceChanged;
         await Timer.StopClockAsync();
         GC.SuppressFinalize(this);
     }

@@ -56,7 +56,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task FocusStatsCardUsesTheLatestSnapshotAfterASaveConflict()
+    public async Task SaveConflictPreservesTheLocalDraftUntilTheUserChoosesTheServerVersion()
     {
         await SignInAsync();
         var cut = Render<FocusStatsCard>();
@@ -69,14 +69,68 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         };
         Api.Respond = (request, _) => Task.FromResult(request.Method == HttpMethod.Put
             ? new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = JsonContent.Create(new ApiError("revision_conflict", "The workspace changed."), options: SharedCommon.JsonOptions)
+            }
             : new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = JsonContent.Create(new WorkspaceResponse(latest, "latest-revision"), options: SharedCommon.JsonOptions)
             });
         await cut.InvokeAsync(Store.SaveAsync);
+        cut.WaitForState(() => Store.HasConflict);
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Alex Morgan"));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Conflict));
+        Assert.That(Store.SyncMessage, Does.Contain("local draft is safe"));
+        await cut.InvokeAsync(Store.UseServerVersionAsync);
         cut.WaitForState(() => cut.FindAll(".focus-total strong").Any(element => Content(element) == "60m"));
         Assert.That(Content(cut.Find(".focus-total strong")), Is.EqualTo("60m"));
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Latest workspace"));
+    }
+
+    [Test]
+    public async Task KeepingTheLocalDraftRetriesAgainstTheLatestServerRevision()
+    {
+        await SignInAsync();
+        var remote = new WorkspaceSnapshot { DisplayName = "Remote edit", Projects = [Project] };
+        WorkspaceSaveRequest? retry = null;
+        var puts = 0;
+        Api.Respond = async (request, _) =>
+        {
+            if (request.Method == HttpMethod.Put)
+            {
+                puts++;
+
+                if (puts == 1)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Conflict)
+                    {
+                        Content = JsonContent.Create(new ApiError("revision_conflict", "The workspace changed."), options: SharedCommon.JsonOptions)
+                    };
+                }
+
+                retry = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(retry!.Workspace, "accepted-revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(remote, "latest-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.SaveAsync();
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Alex Morgan"));
+        await Store.KeepLocalVersionAsync();
+
+        Assert.That(puts, Is.EqualTo(2));
+        Assert.That(retry!.Revision, Is.EqualTo("latest-revision"));
+        Assert.That(retry.Workspace.DisplayName, Is.EqualTo("Alex Morgan"));
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Alex Morgan"));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
     }
 
     [Test]

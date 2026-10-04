@@ -2366,3 +2366,40 @@ h6,
         padding-bottom: 28px
     }
 }
+
+.workspace-sync-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 0 0 20px;
+    padding: 12px 15px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+}
+
+.workspace-sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.workspace-sync-keep {
+    border: 1px solid var(--accent);
+    border-radius: 9px;
+    padding: 9px 14px;
+    background: var(--accent);
+    color: var(--surface);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+@media (max-width: 640px) {
+    .workspace-sync-notice {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}

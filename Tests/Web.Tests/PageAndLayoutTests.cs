@@ -155,7 +155,8 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
         initialization.SetResult(new());
         cut.WaitForState(() => cut.Markup.Contains("Loaded body"));
         Assert.That(cut.Markup, Does.Contain("Loaded body"));
-        Assert.That(cut.FindAll("[role=status]"), Is.Empty);
+        Assert.That(cut.FindAll("[role=status]"), Has.Exactly(1).Items);
+        Assert.That(cut.Markup, Does.Contain("Saved on this device. Sign in to sync this workspace."));
     }
 
     [Test]
