@@ -211,17 +211,16 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     [Test]
     public void ExpiredSessionKeepsTheCurrentPageMountedAndOffersReauthentication()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "test-client";
-        Configuration["Auth0:Audience"] = "test-api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "test-client";
+        Configuration["Keycloak:Realm"] = "test-api";
         AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new()
         {
             Configured = true,
             SignedIn = true,
-            Sub = "test-user",
-            AccessToken = "expired-token",
-            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds()
+            Sub = "test-user"
         });
+        AuthModule.Setup<string?>("getAccessToken", _ => true).SetResult(null);
         var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Draft editor stays mounted"))));
 
         cut.WaitForState(() => cut.Markup.Contains("Draft editor stays mounted"));
@@ -233,23 +232,22 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void IdleExpiryShowsReauthenticationAndKeepsTheCurrentPageMounted()
+    public void KeycloakRefreshFailureShowsReauthenticationAndKeepsTheCurrentPageMounted()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "test-client";
-        Configuration["Auth0:Audience"] = "test-api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "test-client";
+        Configuration["Keycloak:Realm"] = "test-api";
         AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new()
         {
             Configured = true,
             SignedIn = true,
-            Sub = "test-user",
-            AccessToken = "short-lived-token",
-            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds()
+            Sub = "test-user"
         });
+        AuthModule.Setup<string?>("getAccessToken", _ => true).SetResult(null);
         var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Idle draft remains visible"))));
         cut.WaitForState(() => cut.Markup.Contains("Idle draft remains visible"));
 
-        cut.WaitForState(() => Auth.IsSessionExpired, TimeSpan.FromSeconds(8));
+        cut.WaitForState(() => Auth.IsSessionExpired);
 
         Assert.That(cut.Markup, Does.Contain("Your session expired."));
         Assert.That(cut.Markup, Does.Contain("Idle draft remains visible"));

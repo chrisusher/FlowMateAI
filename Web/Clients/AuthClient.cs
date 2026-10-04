@@ -1,6 +1,6 @@
-using System.Net.Http.Headers;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using Microsoft.JSInterop;
 using Shared.Contracts;
 using Shared.Enums;
@@ -106,6 +106,7 @@ public sealed class AuthClient(IJSRuntime js, IConfiguration configuration) : IA
         }
 
         var response = await http.SendAsync(request, cancellationToken);
+
         if (response.StatusCode == HttpStatusCode.Unauthorized &&
             (requiresAuthentication || request.Headers.Authorization is not null))
         {
