@@ -24,3 +24,6 @@ jobs:
 
       - name: Test services
         run: dotnet test Tests/Services.Tests/Services.Tests.csproj --configuration Release --no-build
+
+      - name: Test web
+        run: dotnet test Tests/Web.Tests/Web.Tests.csproj --configuration Release --no-build

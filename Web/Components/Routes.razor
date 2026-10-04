@@ -1,6 +1,27 @@
-﻿<Router AppAssembly="typeof(Program).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
-    </Found>
-</Router>
+@using Microsoft.AspNetCore.Components.Authorization
+@using Web.Clients
+@using Web.Components.Features.Account
+@inject Auth0Client Auth
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    @if (!Auth.IsConfigured)
+                    {
+                        <main class="auth-screen" role="alert">
+                            <h1>Sign-in is unavailable</h1>
+                            <p>FlowMate sign-in has not been configured. Please try again later.</p>
+                        </main>
+                    }
+                    else
+                    {
+                        <WorkspaceSignIn />
+                    }
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+    </Router>
+</CascadingAuthenticationState>
