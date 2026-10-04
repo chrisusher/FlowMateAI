@@ -18,5 +18,8 @@ public enum WorkspaceSyncState
     Rejected = 4,
     
     [JsonStringEnumMemberName("failed")]
-    Failed = 5
+    Failed = 5,
+
+    [JsonStringEnumMemberName("authentication-expired")]
+    AuthenticationExpired = 6
 }

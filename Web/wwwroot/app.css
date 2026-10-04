@@ -2381,6 +2381,20 @@ h6,
     font-size: 12px;
 }
 
+.workspace-session-expired {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 0 0 20px;
+    padding: 13px 15px;
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--text);
+    font-size: 12px;
+}
+
 .workspace-sync-actions {
     display: flex;
     flex-wrap: wrap;
@@ -2399,6 +2413,11 @@ h6,
 
 @media (max-width: 640px) {
     .workspace-sync-notice {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .workspace-session-expired {
         align-items: flex-start;
         flex-direction: column;
     }

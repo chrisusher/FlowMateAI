@@ -13,9 +13,12 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private const string StoragePrefix = "flowmate.workspace.v1.";
     private IJSObjectReference? _module;
     private string StorageKey => StoragePrefix + Uri.EscapeDataString(auth.Session.Sub ?? "local");
+    private string PendingStorageKey => StorageKey + ".pending";
+    private string RevisionStorageKey => StorageKey + ".revision";
     private string? _revision;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
     private WorkspaceResponse? _remoteConflict;
+    private bool _pendingSync;
     public WorkspaceSnapshot Data { get; private set; } = new();
     public string ClientId { get; private set; } = "";
     public WorkspaceSyncState SyncState { get; private set; } = WorkspaceSyncState.Saved;
@@ -28,19 +31,23 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         var module = await ModuleAsync();
         ClientId = await module.InvokeAsync<string>("getClientId");
         var json = await module.InvokeAsync<string?>("read", StorageKey);
+        var pending = await module.InvokeAsync<string?>("read", PendingStorageKey);
+        var revision = await module.InvokeAsync<string?>("read", RevisionStorageKey);
+        _pendingSync = string.Equals(pending, "true", StringComparison.Ordinal);
+        _revision = string.IsNullOrWhiteSpace(revision) ? null : revision;
 
         if (!string.IsNullOrWhiteSpace(json))
         {
             Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, SharedCommon.JsonOptions) ?? new();
         }
 
-        if (auth.Session.SignedIn && !string.IsNullOrWhiteSpace(auth.Session.AccessToken))
+        if (auth.Session.SignedIn && !string.IsNullOrWhiteSpace(auth.Session.AccessToken) && !_pendingSync)
         {
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
-                using var response = await http.SendAsync(request);
+                using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
                 response.EnsureSuccessStatusCode();
                 var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
@@ -48,6 +55,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 {
                     Data = remote.Workspace;
                     _revision = remote.Revision;
+                    await PersistRevisionAsync();
 
                     if (Data.Projects.Count == 0)
                     {
@@ -58,7 +66,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             catch (HttpRequestException) { /* Keep the user's local workspace available during an API outage. */ }
         }
 
-        if (Data.Projects.Count == 0)
+        if (Data.Projects.Count == 0 && !auth.IsSessionExpired)
         {
             Data.Projects =
             [
@@ -95,21 +103,23 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public async Task SaveAsync()
     {
         Data.ClientId = ClientId;
-
-        if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
-        {
-            await PersistLocalAsync();
-            SetSyncState(WorkspaceSyncState.Offline, "Saved on this device. Sign in to sync this workspace.");
-            Changed?.Invoke();
-
-            return;
-        }
-
         await _saveGate.WaitAsync();
 
         try
         {
             await PersistLocalAsync();
+            await SetPendingSyncAsync(true);
+
+            if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
+            {
+                SetSyncState(auth.IsSessionExpired ? WorkspaceSyncState.AuthenticationExpired : WorkspaceSyncState.Offline,
+                    auth.IsSessionExpired
+                        ? "Your session expired. Your local draft and timer are saved on this device; sign in again to sync."
+                        : "Saved on this device. Sign in to sync this workspace.");
+                Changed?.Invoke();
+
+                return;
+            }
 
             if (_remoteConflict is not null)
             {
@@ -127,9 +137,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 Content = JsonContent.Create(new WorkspaceSaveRequest(sentWorkspace, _revision), options: SharedCommon.JsonOptions)
             };
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
-            using var response = await http.SendAsync(request);
+            using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
 
-            if (response.IsSuccessStatusCode)
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
+            {
+                SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
+            }
+            else if (response.IsSuccessStatusCode)
             {
                 var saved = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
@@ -143,6 +157,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                         Data = saved.Workspace;
                         Data.ClientId = ClientId;
                         await PersistLocalAsync();
+                        await SetPendingSyncAsync(false);
+                    }
+                    else
+                    {
+                        await PersistRevisionAsync();
                     }
                     SetSyncState(WorkspaceSyncState.Saved, "Workspace saved.");
                 }
@@ -178,6 +197,25 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         Changed?.Invoke();
     }
 
+    public async Task PreserveForReauthenticationAsync()
+    {
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            Data.ClientId = ClientId;
+            await PersistLocalAsync();
+            await SetPendingSyncAsync(true);
+            SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+
+        Changed?.Invoke();
+    }
+
     public async Task UseServerVersionAsync()
     {
         if (_remoteConflict is null)
@@ -191,6 +229,8 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         _remoteConflict = null;
         SetSyncState(WorkspaceSyncState.Saved, "Using the latest server version.");
         await PersistLocalAsync();
+        await PersistRevisionAsync();
+        await SetPendingSyncAsync(false);
         Changed?.Invoke();
     }
 
@@ -203,6 +243,8 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         _revision = _remoteConflict.Revision;
         _remoteConflict = null;
+        await PersistRevisionAsync();
+        await SetPendingSyncAsync(true);
         SetSyncState(WorkspaceSyncState.Saving, "Retrying your local draft against the latest revision.");
         await SaveAsync();
     }
@@ -211,7 +253,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     {
         using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
         refresh.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
-        using var latest = await http.SendAsync(refresh);
+        using var latest = await auth.SendAsync(http, refresh, requiresAuthentication: true);
+
+        if (latest.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
+        {
+            SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
+
+            return;
+        }
 
         if (latest.IsSuccessStatusCode)
         {
@@ -230,6 +279,16 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     {
         var json = JsonSerializer.Serialize(Data, SharedCommon.JsonOptions);
         await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
+    }
+
+    private async Task PersistRevisionAsync() =>
+        await (await ModuleAsync()).InvokeVoidAsync("write", RevisionStorageKey, _revision ?? "");
+
+    private async Task SetPendingSyncAsync(bool pending)
+    {
+        _pendingSync = pending;
+        await (await ModuleAsync()).InvokeVoidAsync("write", PendingStorageKey, pending ? "true" : "false");
+        await PersistRevisionAsync();
     }
 
     private void SetSyncState(WorkspaceSyncState state, string message)
@@ -252,7 +311,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: SharedCommon.JsonOptions)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
-        using var response = await http.SendAsync(request, cancellationToken);
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {

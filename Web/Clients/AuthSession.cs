@@ -8,4 +8,6 @@ public sealed class AuthSession
     public string? Name { get; set; }
     public string? Email { get; set; }
     public string? AccessToken { get; set; }
+    public long? ExpiresAt { get; set; }
+    public bool SessionExpired { get; set; }
 }

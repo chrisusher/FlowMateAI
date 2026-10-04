@@ -1,6 +1,7 @@
 const sessionKey = "flowmate.auth.session";
 const stateKey = "flowmate.auth.state";
 const verifierKey = "flowmate.auth.verifier";
+const returnUrlKey = "flowmate.auth.return-url";
 
 function toBase64Url(bytes) {
   let binary = "";
@@ -28,7 +29,9 @@ export async function initialize(config) {
     const expectedState = sessionStorage.getItem(stateKey);
     const verifier = sessionStorage.getItem(verifierKey);
     sessionStorage.removeItem(stateKey); sessionStorage.removeItem(verifierKey);
-    history.replaceState({}, document.title, redirectUri());
+    const returnUrl = sessionStorage.getItem(returnUrlKey);
+    sessionStorage.removeItem(returnUrlKey);
+    history.replaceState({}, document.title, safeReturnUrl(returnUrl));
     if (!returnedState || returnedState !== expectedState || !verifier) throw new Error("The sign-in response could not be verified. Please try again.");
     const response = await fetch(`${authority(config.domain)}/oauth/token`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -45,11 +48,25 @@ export async function initialize(config) {
   const raw = sessionStorage.getItem(sessionKey);
   if (!raw) return { configured: true, signedIn: false };
   const session = JSON.parse(raw);
-  if (session.expiresAt <= Date.now()) { sessionStorage.removeItem(sessionKey); return { configured: true, signedIn: false }; }
-  return { configured: true, signedIn: true, sub: session.sub, name: session.name, email: session.email, accessToken: session.accessToken };
+  if (session.expiresAt <= Date.now()) {
+    sessionStorage.removeItem(sessionKey);
+    return { configured: true, signedIn: false, sessionExpired: true, sub: session.sub, name: session.name, email: session.email };
+  }
+  return { configured: true, signedIn: true, sub: session.sub, name: session.name, email: session.email, accessToken: session.accessToken, expiresAt: session.expiresAt };
+}
+
+function safeReturnUrl(value) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return redirectUri();
+  try {
+    const url = new URL(value, location.origin);
+    return url.origin === location.origin ? `${url.pathname}${url.search}${url.hash}` : redirectUri();
+  } catch {
+    return redirectUri();
+  }
 }
 
 export async function login(config, connection) {
+  sessionStorage.setItem(returnUrlKey, `${location.pathname}${location.search}${location.hash}`);
   const state = randomString();
   const verifier = randomString(64);
   sessionStorage.setItem(stateKey, state);

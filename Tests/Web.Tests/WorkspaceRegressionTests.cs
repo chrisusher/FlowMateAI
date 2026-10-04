@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Shared.Contracts;
 using Shared.Enums;
+using Web.Clients;
 using Web.Components;
 using Web.Components.Features.Reports;
 using Web.Components.Features.Today;
@@ -131,6 +133,130 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(retry.Workspace.DisplayName, Is.EqualTo("Alex Morgan"));
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Alex Morgan"));
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
+    }
+
+    [Test]
+    public async Task UnauthorizedWorkspaceSaveExpiresTheSessionAndKeepsTheLocalDraft()
+    {
+        await SignInAsync();
+        Store.Data.DisplayName = "Draft kept through reauthentication";
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = JsonContent.Create(new ApiError("unauthorized", "The access token expired."), options: SharedCommon.JsonOptions)
+        });
+
+        await Store.SaveAsync();
+
+        Assert.That(Auth.IsSessionExpired, Is.True);
+        Assert.That(Auth.Session.Sub, Is.EqualTo("test-user"));
+        Assert.That(Auth.Session.AccessToken, Is.Null);
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Draft kept through reauthentication"));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.AuthenticationExpired));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(JSInterop.Invocations.Any(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") && Equals(call.Arguments[1], "true")), Is.True);
+    }
+
+    [Test]
+    public async Task AlreadyExpiredAccessTokenIsRejectedBeforeAnAuthenticatedRequestIsSent()
+    {
+        Configuration["Auth0:Domain"] = "auth.example.test";
+        Configuration["Auth0:ClientId"] = "test-client";
+        Configuration["Auth0:Audience"] = "test-api";
+        AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new()
+        {
+            Configured = true,
+            SignedIn = true,
+            SessionExpired = false,
+            Sub = "test-user",
+            AccessToken = "expired-token",
+            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds()
+        });
+        await Auth.InitialiseAsync();
+
+        await Store.SaveAsync();
+
+        Assert.That(Auth.IsSessionExpired, Is.True);
+        Assert.That(Api.Paths, Is.Empty);
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.AuthenticationExpired));
+    }
+
+    [Test]
+    public async Task ReauthenticationRestoresPendingWorkspaceUsingItsSavedRevision()
+    {
+        await SignInAsync();
+        const string workspaceKey = "flowmate.workspace.v1.test-user";
+        var draft = new WorkspaceSnapshot
+        {
+            DisplayName = "Restored after reauthentication",
+            Projects = [new() { Id = "saved-project", Name = "Saved project" }],
+            Tasks = [new() { Id = "saved-task", Title = "Saved task", ProjectId = "saved-project" }],
+            Timer = new()
+            {
+                Phase = TimerPhase.Paused,
+                OwnerClientId = "test-device",
+                RemainingSeconds = 120
+            }
+        };
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey))
+            .SetResult(JsonSerializer.Serialize(draft, SharedCommon.JsonOptions));
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey + ".pending"))
+            .SetResult("true");
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey + ".revision"))
+            .SetResult("saved-revision");
+        WorkspaceSaveRequest? restored = null;
+        Api.Respond = async (request, _) =>
+        {
+            restored = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(restored!.Workspace, "accepted-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.InitialiseAsync();
+
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(restored!.Revision, Is.EqualTo("saved-revision"));
+        Assert.That(restored.Workspace.DisplayName, Is.EqualTo("Restored after reauthentication"));
+        Assert.That(restored.Workspace.Timer.Phase, Is.EqualTo(TimerPhase.Paused));
+        Assert.That(Store.Data.Tasks.Single().Title, Is.EqualTo("Saved task"));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
+    }
+
+    [Test]
+    public async Task ExpiredCoachRequestIsSavedLocallyWithoutShowingTheSignedOutDemoReply()
+    {
+        await SignInAsync();
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = JsonContent.Create(new ApiError("unauthorized", "The access token expired."), options: SharedCommon.JsonOptions)
+        });
+
+        await Coach.SendMessage(new() { Content = "What should I focus on?", UserId = "user" });
+
+        Assert.That(Auth.IsSessionExpired, Is.True);
+        Assert.That(Store.Data.Conversations[0].Messages.Last().Text, Does.Contain("Your session expired"));
+        Assert.That(Store.Data.Conversations[0].Messages.Last().Text, Does.Not.Contain("feels like a useful next step"));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.AuthenticationExpired));
+    }
+
+    [Test]
+    public async Task ExpiredCheckoutRequiresReauthenticationWithoutLeavingTheCurrentPage()
+    {
+        await SignInAsync();
+        var currentUrl = Navigation.Uri;
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = JsonContent.Create(new ApiError("unauthorized", "The access token expired."), options: SharedCommon.JsonOptions)
+        });
+
+        await Billing.BuyPro();
+
+        Assert.That(Auth.IsSessionExpired, Is.True);
+        Assert.That(Billing.BillingMessage, Does.Contain("session expired"));
+        Assert.That(Navigation.Uri, Is.EqualTo(currentUrl));
     }
 
     [Test]

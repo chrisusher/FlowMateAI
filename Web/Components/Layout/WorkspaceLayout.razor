@@ -23,13 +23,20 @@
                     Loading your workspace&#8230;
                 </div>
             }
-            else if (Auth.IsConfigured && !Auth.Session.SignedIn)
+            else if (Auth.IsConfigured && !Auth.Session.SignedIn && !Auth.IsSessionExpired)
             {
                 <WorkspaceSignIn />
             }
             else
             {
-                @if (Store.SyncState != WorkspaceSyncState.Saved)
+                @if (Auth.IsConfigured && Auth.IsSessionExpired)
+                {
+                    <div class="workspace-session-expired" role="alert">
+                        <span>Your session expired. Your local work, current timer, and place in FlowMate are saved. Sign in again to continue syncing; you'll return to this page.</span>
+                        <button class="workspace-sync-keep" @onclick='() => Auth.LoginAsync()'>Sign in again</button>
+                    </div>
+                }
+                @if (Store.SyncState is not (WorkspaceSyncState.Saved or WorkspaceSyncState.AuthenticationExpired))
                 {
                     <div class="workspace-sync-notice" role="status" aria-live="polite">
                         <span>@Store.SyncMessage</span>

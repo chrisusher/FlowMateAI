@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Shared.Enums;
+using Web.Clients;
 using Web.Components;
 using Web.Components.Layout;
 using Web.Components.Pages;
@@ -157,6 +158,53 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
         Assert.That(cut.Markup, Does.Contain("Loaded body"));
         Assert.That(cut.FindAll("[role=status]"), Has.Exactly(1).Items);
         Assert.That(cut.Markup, Does.Contain("Saved on this device. Sign in to sync this workspace."));
+    }
+
+    [Test]
+    public void ExpiredSessionKeepsTheCurrentPageMountedAndOffersReauthentication()
+    {
+        Configuration["Auth0:Domain"] = "auth.example.test";
+        Configuration["Auth0:ClientId"] = "test-client";
+        Configuration["Auth0:Audience"] = "test-api";
+        AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new()
+        {
+            Configured = true,
+            SignedIn = true,
+            Sub = "test-user",
+            AccessToken = "expired-token",
+            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds()
+        });
+        var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Draft editor stays mounted"))));
+
+        cut.WaitForState(() => cut.Markup.Contains("Draft editor stays mounted"));
+
+        Assert.That(Auth.IsSessionExpired, Is.True);
+        Assert.That(cut.Markup, Does.Contain("Your session expired."));
+        Assert.That(cut.Markup, Does.Contain("Draft editor stays mounted"));
+        Assert.That(cut.FindAll(".workspace-session-expired button"), Has.Exactly(1).Items);
+    }
+
+    [Test]
+    public void IdleExpiryShowsReauthenticationAndKeepsTheCurrentPageMounted()
+    {
+        Configuration["Auth0:Domain"] = "auth.example.test";
+        Configuration["Auth0:ClientId"] = "test-client";
+        Configuration["Auth0:Audience"] = "test-api";
+        AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new()
+        {
+            Configured = true,
+            SignedIn = true,
+            Sub = "test-user",
+            AccessToken = "short-lived-token",
+            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(2).ToUnixTimeMilliseconds()
+        });
+        var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Idle draft remains visible"))));
+        cut.WaitForState(() => cut.Markup.Contains("Idle draft remains visible"));
+
+        cut.WaitForState(() => Auth.IsSessionExpired, TimeSpan.FromSeconds(8));
+
+        Assert.That(cut.Markup, Does.Contain("Your session expired."));
+        Assert.That(cut.Markup, Does.Contain("Idle draft remains visible"));
     }
 
     [Test]
