@@ -72,8 +72,6 @@ var host = new HostBuilder()
             });
 
         var configuration = context.Configuration;
-        services.AddServices(configuration);
-
         services.AddMcpServices(configuration);
         services.AddScoped<IMcpToolInvocation, McpToolInvocation>();
     })

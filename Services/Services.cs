@@ -209,7 +209,8 @@ public static class Services
     public static CosmosDatabaseSettings ResolveDatabaseSettings(IConfiguration configuration, string? environment = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        var cosmosConnection = configuration.GetConnectionString("database");
+        var cosmosConnection = configuration.GetConnectionString("database")
+            ?? configuration["DATABASE_CONNECTIONSTRING"];
 
         var globalEnvironment = environment
             ?? configuration["Global:Environment"]

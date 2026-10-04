@@ -36,6 +36,8 @@ storage.AddTables("tables");
 var cosmosDb = builder.AddAzureCosmosDB("cosmosDb")
 .WithAccessKeyAuthentication();
 
+var cosmosAccountEndpoint = builder.Configuration["Database:AccountEndpoint"];
+
 var database = cosmosDb.AddCosmosDatabase("database", "flowmate");
 
 // Key Vault
@@ -58,7 +60,6 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithHostStorage(storage)
     .WithEnvironment("ConnectionStrings__Storage", blobs.Resource.ConnectionStringExpression)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
-    .WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression)
     .WithEnvironment("Database__Key", cosmosDb.Resource.AccountKey!)
     .WithEnvironment("Global__Environment", environment)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
@@ -77,7 +78,6 @@ var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
     .WaitFor(database)
     .WithHostStorage(mcpHostStorage)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
-    .WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression)
     .WithEnvironment("Database__Key", cosmosDb.Resource.AccountKey!)
     .WithEnvironment("Global__Environment", environment)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
@@ -85,6 +85,17 @@ var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
     .WithReference(database)
     .WithHttpHealthCheck("/api/health")
     .WithExternalHttpEndpoints();
+
+if (string.IsNullOrWhiteSpace(cosmosAccountEndpoint))
+{
+    api.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression);
+    mcp.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression);
+}
+else
+{
+    api.WithEnvironment("Database__AccountEndpoint", cosmosAccountEndpoint);
+    mcp.WithEnvironment("Database__AccountEndpoint", cosmosAccountEndpoint);
+}
 
 var cli = builder.AddProject<Projects.CLI>("cli")
     .WithArgs("--help")
