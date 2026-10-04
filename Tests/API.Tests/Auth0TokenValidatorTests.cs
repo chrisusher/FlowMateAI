@@ -22,11 +22,13 @@ public sealed class Auth0TokenValidatorTests
             .Where(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
                 .Any(method => method.GetCustomAttribute<FunctionAttribute>() is not null))
             .ToArray();
+
         var allowedPublicFunctions = new HashSet<string>(StringComparer.Ordinal)
         {
             "HealthCheck",
             "StripeWebhook"
         };
+
         var unprotectedFunctions = functionTypes
             .Where(type => !allowedPublicFunctions.Contains(type.Name))
             .Where(type => !type.GetConstructors().Any(constructor => constructor.GetParameters()
