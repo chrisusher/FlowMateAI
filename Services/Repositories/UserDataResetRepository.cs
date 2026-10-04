@@ -24,6 +24,7 @@ public sealed class UserDataResetRepository(DatabaseContext database, IConfigura
         var matches = await ReadOrEmptyAsync(() => database.WorkspaceRecords.Where(item => item.UserId == userId).ToListAsync(cancellationToken));
         database.WorkspaceRecords.RemoveRange(matches);
         await database.SaveChangesAsync(cancellationToken);
+
         return matches.Count;
     }
 
@@ -46,6 +47,7 @@ public sealed class UserDataResetRepository(DatabaseContext database, IConfigura
         try
         {
             await cosmos.GetContainer(DatabaseName, UsageContainerName).DeleteItemAsync<object>("usage", new PartitionKey(userId), cancellationToken: cancellationToken);
+
             return 1;
         }
         catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)

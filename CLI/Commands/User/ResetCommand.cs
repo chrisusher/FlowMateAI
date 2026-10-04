@@ -2,6 +2,7 @@ using System.CommandLine;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Services.Database;
+using Services.Users;
 using Shared.Exceptions;
 
 namespace CLI.Commands.User;

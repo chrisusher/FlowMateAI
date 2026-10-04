@@ -7,7 +7,7 @@ using Shared.Exceptions;
 using Shared.Enums;
 using Shared.Models;
 
-namespace Services.Database;
+namespace Services.Users;
 
 public interface IUserDataResetService
 {

@@ -46,6 +46,7 @@ public sealed class McpCredentialRepository(CosmosClient cosmos, IConfiguration 
         {
             var response = await Keys.ReadItemAsync<McpKeyDocument>(id, new PartitionKey(userId), cancellationToken: cancellationToken);
             response.Resource.ETag = response.ETag;
+
             return response.Resource;
         }
         catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
@@ -79,6 +80,7 @@ public sealed class McpCredentialRepository(CosmosClient cosmos, IConfiguration 
             {
                 IfMatchEtag = etag
             }, cancellationToken);
+
             return true;
         }
         catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)

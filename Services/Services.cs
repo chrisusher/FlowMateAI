@@ -15,6 +15,7 @@ using Services.Database;
 using Services.Mcp;
 using Services.Reporting;
 using Services.Repositories;
+using Services.Users;
 using Services.Workspaces;
 using Shared.Config;
 
