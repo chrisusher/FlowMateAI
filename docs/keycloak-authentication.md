@@ -1,12 +1,12 @@
 # Keycloak authentication and operations
 
-FlowMate uses a separate Keycloak realm and PostgreSQL database for each environment. The browser uses the public `flowmate-web` client with authorization code and PKCE S256. The API accepts RS256 access tokens from the exact `Authentication:Authority` realm issuer and requires audience `flowmate-api`. The browser adapter is vendored at `Web/wwwroot/js/vendor/keycloak.js` from the pinned `keycloak-js` 26.2.4 npm package; its Apache 2.0 license is alongside the file.
+Deployed FlowMate environments use a separate Keycloak realm and PostgreSQL database. The browser uses the public `flowmate-web` client with authorization code and PKCE S256. The API accepts RS256 access tokens from the exact `Authentication:Authority` realm issuer and requires audience `flowmate-api`. The browser adapter is vendored at `Web/wwwroot/js/vendor/keycloak.js` from the pinned `keycloak-js` 26.2.4 npm package; its Apache 2.0 license is alongside the file.
 
 ## Local development
 
-The Aspire AppHost starts Keycloak with a persistent PostgreSQL data volume and imports the baseline realm from `infra/keycloak/realm-import/flowmate-realm.json`. Aspire exposes a stable Keycloak port and gives the API its server-side issuer. The gateway injects browser-safe endpoint and client settings. The imported realm defaults enable email registration, verification and recovery, brute-force protection, the 15-character password policy, PKCE, and the API audience mapper.
+The Aspire AppHost starts Keycloak with its embedded `dev-file` database and a persistent Docker data volume, then imports the baseline realm from `infra/keycloak/realm-import/flowmate-realm.json`. This keeps local development self-contained. The Azure deployment uses PostgreSQL separately for production-like environments. Aspire exposes a stable Keycloak port and gives the API its server-side issuer. The gateway injects browser-safe endpoint and client settings. The imported realm defaults enable email registration, verification and recovery, brute-force protection, the 15-character password policy, PKCE, and the API audience mapper.
 
-Run `infra/keycloak/provision_realm.py` after starting Keycloak to set exact browser callback/origin allow-lists and any configured provider or SMTP credentials. It uses only Python's standard library. Re-running it updates realm settings and clients in place; it does not import over or delete users, credentials, or realm signing keys.
+Run `infra/keycloak/provision-realm.ps1` after starting Keycloak to set exact browser callback/origin allow-lists and any configured provider or SMTP credentials. Re-running it updates realm settings and clients in place; it does not import over or delete users, credentials, or realm signing keys.
 
 Set these variables in the shell used to run the provisioning script:
 

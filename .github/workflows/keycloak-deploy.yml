@@ -147,16 +147,18 @@ jobs:
               location="$LOCATION" keycloakImage="${{ inputs.environment == 'Production' && steps.image-promote.outputs.image || steps.image-build.outputs.image }}" \
               postgresAdminPassword="$PG_PASSWORD" keycloakBootstrapPassword="$BOOTSTRAP_PASSWORD" deployKeycloak=true
       - name: Wait for OIDC discovery
+        shell: pwsh
         run: |
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error "$KEYCLOAK_URL/realms/flowmate/.well-known/openid-configuration" -o /tmp/flowmate-oidc.json; then
-              python -c 'import json, os; d=json.load(open("/tmp/flowmate-oidc.json")); assert d["issuer"] == os.environ["KEYCLOAK_URL"].rstrip("/") + "/realms/flowmate"'
-              exit 0
-            fi
-            sleep 10
-          done
-          echo 'Keycloak discovery did not become ready.' >&2
-          exit 1
+          $expectedIssuer = "$($env:KEYCLOAK_URL.TrimEnd('/'))/realms/flowmate"
+          for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            try {
+              $discovery = Invoke-RestMethod -Uri "$expectedIssuer/.well-known/openid-configuration" -TimeoutSec 15
+              if ($discovery.issuer -eq $expectedIssuer) { exit 0 }
+            } catch {
+            }
+            Start-Sleep -Seconds 10
+          }
+          throw 'Keycloak discovery did not become ready.'
       - name: Reconcile realm and verify discovery
         env:
           KEYCLOAK_REALM: flowmate
@@ -165,4 +167,5 @@ jobs:
           KEYCLOAK_CLI_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLI_CLIENT_SECRET }}
           FLOWMATE_FRONTEND_ORIGINS: ${{ vars.FLOWMATE_FRONTEND_ORIGINS }}
           FLOWMATE_FRONTEND_REDIRECT_URIS: ${{ vars.FLOWMATE_FRONTEND_REDIRECT_URIS }}
-        run: python infra/keycloak/provision_realm.py
+        shell: pwsh
+        run: ./infra/keycloak/provision-realm.ps1

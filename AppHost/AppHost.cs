@@ -46,13 +46,10 @@ var keyVault = builder.AddAzureKeyVault("flowmate-secrets");
 // Service Bus
 var serviceBus = builder.AddAzureServiceBus("flowmate-service-bus");
 
-var keycloakPostgres = builder.AddPostgres("keycloak-postgres")
-    .WithDataVolume("keycloak-postgres-data");
-var keycloakDatabase = keycloakPostgres.AddDatabase("keycloakdb");
 var keycloak = builder.AddKeycloak("keycloak", 8080)
     .WithDataVolume("keycloak-data")
-    .WithPostgres(keycloakDatabase)
     .WithRealmImport("../infra/keycloak/realm-import");
+    
 var keycloakBaseUrl = keycloak.GetEndpoint("http");
 var keycloakAuthority = keycloakBaseUrl + "/realms/flowmate";
 
