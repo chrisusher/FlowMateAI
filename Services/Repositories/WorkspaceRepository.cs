@@ -16,7 +16,7 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
     {
         var document = await database.Workspaces.FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
 
-        if (document is not null && !string.IsNullOrEmpty(expectedRevision) && document.ETag != expectedRevision)
+        if (document is not null && (string.IsNullOrEmpty(expectedRevision) || !string.Equals(document.ETag, expectedRevision, StringComparison.Ordinal)))
         {
             return null;
         }
