@@ -112,7 +112,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
             if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
             {
-                SetSyncState(auth.IsSessionExpired ? WorkspaceSyncState.AuthenticationExpired : WorkspaceSyncState.Offline,
+                SetSyncState(auth.IsSessionExpired ? WorkspaceSyncState.AuthenticationExpired : WorkspaceSyncState.Pending,
                     auth.IsSessionExpired
                         ? "Your session expired. Your local draft and timer are saved on this device; sign in again to sync."
                         : "Saved on this device. Sign in to sync this workspace.");

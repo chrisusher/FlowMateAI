@@ -36,7 +36,7 @@
                         <button class="workspace-sync-keep" @onclick='() => Auth.LoginAsync()'>Sign in again</button>
                     </div>
                 }
-                @if (Store.SyncState is not (WorkspaceSyncState.Saved or WorkspaceSyncState.AuthenticationExpired))
+                @if (Store.SyncState != WorkspaceSyncState.AuthenticationExpired)
                 {
                     <div class="workspace-sync-notice" role="status" aria-live="polite">
                         <span>@Store.SyncMessage</span>

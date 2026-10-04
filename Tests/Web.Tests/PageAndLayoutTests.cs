@@ -1,4 +1,8 @@
+using System.Net;
+using System.Net.Http.Json;
+using ChrisUsher.Core.Shared;
 using Microsoft.AspNetCore.Components;
+using Shared.Contracts;
 using Shared.Enums;
 using Web.Clients;
 using Web.Components;
@@ -158,6 +162,50 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
         Assert.That(cut.Markup, Does.Contain("Loaded body"));
         Assert.That(cut.FindAll("[role=status]"), Has.Exactly(1).Items);
         Assert.That(cut.Markup, Does.Contain("Saved on this device. Sign in to sync this workspace."));
+    }
+
+    [Test]
+    public async Task WorkspaceLayoutShowsSuccessfulCloudSaveFeedback()
+    {
+        await SignInAsync();
+        Api.Respond = async (request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/v1/billing/prices")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new[] { new BillingPrice("month", "gbp", 1000, "£10 / month"), new BillingPrice("year", "gbp", 9600, "£96 / year") })
+                };
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/api/v1/billing")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 2, 10))
+                };
+            }
+
+            if (request.Method == HttpMethod.Put)
+            {
+                var saved = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(saved!.Workspace, "saved-revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(Store.Data, "initial-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Workspace content"))));
+        cut.WaitForState(() => cut.Markup.Contains("Workspace saved."));
+
+        Assert.That(Content(cut.Find(".workspace-sync-notice")), Does.Contain("Workspace saved."));
     }
 
     [Test]

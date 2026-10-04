@@ -158,6 +158,47 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task WorkspaceOutageKeepsLocalDraftPendingUntilAnExplicitRetrySucceeds()
+    {
+        await SignInAsync();
+        Store.Data.DisplayName = "Offline draft";
+        Api.Respond = (_, _) => throw new HttpRequestException("Network unavailable");
+
+        await Store.SaveAsync();
+
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Offline));
+        Assert.That(JSInterop.Invocations.Any(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") && Equals(call.Arguments[1], "true")), Is.True);
+
+        Api.Respond = async (request, _) =>
+        {
+            var body = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(body!.Workspace, "reconnected-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.SaveAsync();
+
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Offline draft"));
+        Assert.That(JSInterop.Invocations.Any(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") && Equals(call.Arguments[1], "false")), Is.True);
+    }
+
+    [Test]
+    public async Task SignedOutWorkspaceIsReportedAsPendingRatherThanOffline()
+    {
+        await Store.SaveAsync();
+
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Pending));
+        Assert.That(Store.SyncMessage, Does.Contain("Saved on this device"));
+        Assert.That(Api.Paths, Is.Empty);
+    }
+
+    [Test]
     public async Task AlreadyExpiredAccessTokenIsRejectedBeforeAnAuthenticatedRequestIsSent()
     {
         Configuration["Auth0:Domain"] = "auth.example.test";
