@@ -1,26 +1,28 @@
 @inherits WorkspaceComponentBase
-@inject Auth0Client Auth
+@inject AuthClient Auth
 
 <div class="auth-screen">
-    <img class="auth-mark" src="/branding/flowmate-symbol.svg" alt="FlowMate" />
+    <img class="auth-mark" src="branding/flowmate-symbol.svg" alt="FlowMate" />
     <div class="eyebrow">A QUIETER WAY TO GET THINGS DONE</div>
     <h1>Your focus, in good company.</h1>
     <p>Sign in to keep your projects, plans, and focus history private to your account.</p>
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.GoogleConnection)'>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.Google)'>
         <span>G</span>
         Continue with Google
     </button>
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.GitHubConnection)'>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.GitHub)'>
         <span>GH</span>
         Continue with GitHub
     </button>
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.MicrosoftPersonalConnection)'>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.MicrosoftPersonal)'>
         <span>M</span>
         Microsoft personal account
     </button>
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.MicrosoftWorkSchoolConnection)'>
+    <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.MicrosoftWorkSchool)'>
         <span>M</span>
         Microsoft work or school
     </button>
-    <small>Accounts from different providers stay separate unless you link them in Auth0.</small>
+    <button class="auth-email quiet-button" @onclick="() => Auth.LoginAsync()">Sign in with email</button>
+    <button class="auth-register quiet-button" @onclick="Auth.RegisterAsync">Create an account</button>
+    <small>Accounts from different providers stay separate unless you link them in Keycloak.</small>
 </div>

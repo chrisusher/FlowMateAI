@@ -161,9 +161,9 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     [Test]
     public void WorkspaceLayoutGatesItsBodyWhenSignInIsRequired()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "client";
-        Configuration["Auth0:Audience"] = "api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "client";
+        Configuration["Keycloak:Realm"] = "api";
         var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Private body"))));
         cut.WaitForElement(".auth-screen");
         Assert.That(cut.Markup, Does.Not.Contain("Private body"));

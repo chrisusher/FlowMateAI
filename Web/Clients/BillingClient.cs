@@ -5,11 +5,11 @@ using Shared.Enums;
 
 namespace Web.Clients;
 
-public sealed class BillingClient(HttpClient http, Auth0Client auth)
+public sealed class BillingClient(HttpClient http, AuthClient auth)
 {
     public async Task<IReadOnlyList<BillingPrice>> GetPricesAsync(CancellationToken cancellationToken = default)
     {
-        using var request = Authorized(HttpMethod.Get, "api/v1/billing/prices");
+        using var request = await auth.AuthorizedRequestAsync(HttpMethod.Get, "api/v1/billing/prices", cancellationToken);
         using var response = await http.SendAsync(request, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
@@ -22,7 +22,7 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
 
     public async Task<BillingSummary?> GetSummaryAsync(CancellationToken cancellationToken = default)
     {
-        using var request = Authorized(HttpMethod.Get, "api/v1/billing");
+        using var request = await auth.AuthorizedRequestAsync(HttpMethod.Get, "api/v1/billing", cancellationToken);
         using var response = await http.SendAsync(request, cancellationToken);
 
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<BillingSummary>(cancellationToken: cancellationToken) : null;
@@ -39,7 +39,7 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
 
     private async Task<BillingActionResponse> PostAsync(string path, object? body, CancellationToken cancellationToken)
     {
-        using var request = Authorized(HttpMethod.Post, path);
+        using var request = await auth.AuthorizedRequestAsync(HttpMethod.Post, path, cancellationToken);
 
         if (body is not null)
         {
@@ -51,15 +51,4 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
             ?? new(false, null, BillingActionCode.RequestFailed, "The billing request could not be completed.");
     }
 
-    private HttpRequestMessage Authorized(HttpMethod method, string path)
-    {
-        var request = new HttpRequestMessage(method, path);
-
-        if (!string.IsNullOrWhiteSpace(auth.Session.AccessToken))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
-        }
-
-        return request;
-    }
 }

@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: FlowMate API
   version: 0.1.0
-  description: HTTP API for FlowMate workspaces, coaching, billing, and health. The static app shell can load publicly; protected UI routes and API operations require an Auth0 access token. Only health and the Stripe signature-verified webhook are public.
+  description: HTTP API for FlowMate workspaces, coaching, billing, and health. The static app shell can load publicly; protected UI routes and API operations require a Keycloak access token. Only health and the Stripe signature-verified webhook are public.
 servers:
   - url: /api
     description: Azure Functions HTTP route prefix

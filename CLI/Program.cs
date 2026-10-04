@@ -33,7 +33,7 @@ public static class Program
 
         builder.AddServiceDefaults();
         builder.Services.AddServices(builder.Configuration);
-        builder.Services.AddHttpClient<Auth0ManagementClient>();
+        builder.Services.AddHttpClient<KeycloakManagementClient>();
 
         return builder.Build();
     }

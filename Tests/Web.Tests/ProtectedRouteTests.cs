@@ -25,9 +25,9 @@ public sealed class ProtectedRouteTests : WorkspaceComponentTest
     [Test]
     public void ConfiguredAnonymousUserSeesSignInInsteadOfProtectedPage()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "test-client";
-        Configuration["Auth0:Audience"] = "test-api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "test-client";
+        Configuration["Keycloak:Realm"] = "test-api";
         Authorization.SetNotAuthorized();
         Navigation.NavigateTo("/settings");
 

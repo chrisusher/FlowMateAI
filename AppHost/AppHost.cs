@@ -44,6 +44,16 @@ var keyVault = builder.AddAzureKeyVault("flowmate-secrets");
 // Service Bus
 var serviceBus = builder.AddAzureServiceBus("flowmate-service-bus");
 
+var keycloakPostgres = builder.AddPostgres("keycloak-postgres")
+    .WithDataVolume("keycloak-postgres-data");
+var keycloakDatabase = keycloakPostgres.AddDatabase("keycloakdb");
+var keycloak = builder.AddKeycloak("keycloak", 8080)
+    .WithDataVolume("keycloak-data")
+    .WithPostgres(keycloakDatabase)
+    .WithRealmImport("../infra/keycloak/realm-import");
+var keycloakBaseUrl = keycloak.GetEndpoint("http");
+var keycloakAuthority = keycloakBaseUrl + "/realms/flowmate";
+
 var dashboardOtlpEndpoint = builder.Configuration["ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL"];
 var otlpProtocol = string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_PROTOCOL"]) ? "grpc" : builder.Configuration["OTEL_EXPORTER_OTLP_PROTOCOL"];
 
@@ -53,6 +63,7 @@ var foundryProject = foundry.AddProject("flowmate-ai-project");
 var luna = foundry.AddDeployment("gpt56-luna", FoundryModel.OpenAI.Gpt56Luna);
 
 var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
+    .WaitFor(keycloak)
     .WaitFor(storage)
     .WaitFor(blobs)
     .WithHostStorage(storage)
@@ -60,6 +71,8 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
     .WithEnvironment("Database__Key", cosmosDb.Resource.AccountKey!)
     .WithEnvironment("Global__Environment", environment)
+    .WithEnvironment("Authentication__Authority", keycloakAuthority)
+    .WithEnvironment("Authentication__Audience", "flowmate-api")
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
     .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
     .WithHttpHealthCheck("/api/health")
@@ -89,6 +102,9 @@ var cli = builder.AddProject<Projects.CLI>("cli")
     .WithReference(blobs)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
     .WithEnvironment("Global__Environment", environment)
+    .WithEnvironment("Keycloak__Url", keycloakBaseUrl)
+    .WithEnvironment("Keycloak__Realm", "flowmate")
+    .WithEnvironment("Keycloak__ManagementClientId", "flowmate-cli")
     .WithExplicitStart()
     .ExcludeFromManifest();
 
@@ -97,9 +113,9 @@ var cliAssemblyPath = Path.GetFullPath(Path.Combine(
     AppContext.BaseDirectory, "..", "..", "..", "..", "CLI", "bin", buildConfiguration, "net10.0", "CLI.dll"));
 
 var cliWorkingDirectory = Path.GetDirectoryName(cliAssemblyPath)!;
-var auth0Authority = builder.Configuration["Auth0:Authority"];
-var auth0ClientId = builder.Configuration["Auth0:ManagementClientId"];
-var auth0ClientSecret = builder.Configuration["Auth0:ManagementClientSecret"];
+var keycloakUrl = builder.Configuration["Keycloak:Url"];
+var keycloakClientId = builder.Configuration["Keycloak:ManagementClientId"];
+var keycloakClientSecret = builder.Configuration["Keycloak:ManagementClientSecret"];
 
 #pragma warning disable ASPIREPROCESSCOMMAND001
 IReadOnlyDictionary<string, string> BuildCliEnvironment(
@@ -107,8 +123,9 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
     string? storageConnection,
     string? keyVaultUri,
     string? runtimeEnvironment,
+    string? configuredKeycloakUrl,
     bool includeStorageSettings,
-    bool includeAuth0Settings,
+    bool includeKeycloakSettings,
     bool includeKeyVaultSettings)
 {
     var environmentVariables = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -129,22 +146,24 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
         environmentVariables["KeyVault__VaultUri"] = keyVaultUri;
     }
 
-    if (includeAuth0Settings)
+    if (includeKeycloakSettings)
     {
-        if (!string.IsNullOrWhiteSpace(auth0Authority))
+        if (!string.IsNullOrWhiteSpace(configuredKeycloakUrl))
         {
-            environmentVariables["Auth0__Authority"] = auth0Authority;
+            environmentVariables["Keycloak__Url"] = configuredKeycloakUrl;
         }
 
-        if (!string.IsNullOrWhiteSpace(auth0ClientId))
+        if (!string.IsNullOrWhiteSpace(keycloakClientId))
         {
-            environmentVariables["Auth0__ManagementClientId"] = auth0ClientId;
+            environmentVariables["Keycloak__ManagementClientId"] = keycloakClientId;
         }
 
-        if (!string.IsNullOrWhiteSpace(auth0ClientSecret))
+        if (!string.IsNullOrWhiteSpace(keycloakClientSecret))
         {
-            environmentVariables["Auth0__ManagementClientSecret"] = auth0ClientSecret;
+            environmentVariables["Keycloak__ManagementClientSecret"] = keycloakClientSecret;
         }
+
+        environmentVariables["Keycloak__Realm"] = "flowmate";
     }
 
     return environmentVariables;
@@ -153,7 +172,7 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
 async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
     CancellationToken cancellationToken,
     bool includeStorageSettings,
-    bool includeAuth0Settings,
+    bool includeKeycloakSettings,
     bool includeKeyVaultSettings = false)
 {
     var cosmosConnection = await database.Resource.ConnectionStringExpression.GetValueAsync(cancellationToken);
@@ -167,8 +186,11 @@ async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
         : null;
 
     var configuredEnvironment = await environment.Resource.GetValueAsync(cancellationToken);
+    var configuredKeycloakUrl = includeKeycloakSettings
+        ? keycloakUrl ?? await keycloak.GetEndpoint("http").GetValueAsync(cancellationToken)
+        : null;
 
-    return BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, configuredEnvironment, includeStorageSettings, includeAuth0Settings, includeKeyVaultSettings);
+    return BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, configuredEnvironment, configuredKeycloakUrl, includeStorageSettings, includeKeycloakSettings, includeKeyVaultSettings);
 }
 
 cli.WithProcessCommand(
@@ -181,7 +203,7 @@ cli.WithProcessCommand(
             throw new FileNotFoundException("Build the CLI project before invoking its Aspire command.", cliAssemblyPath);
         }
 
-        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: false, includeAuth0Settings: false);
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: false, includeKeycloakSettings: false);
 
         var spec = new ProcessCommandSpec("dotnet")
         {
@@ -215,7 +237,7 @@ cli.WithProcessCommand(
             throw new InvalidOperationException("An email address is required.");
         }
 
-        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: false, includeAuth0Settings: true);
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: false, includeKeycloakSettings: true);
 
         var arguments = new List<string>
         {
@@ -259,7 +281,7 @@ cli.WithProcessCommand(
             new InteractionInput
             {
                 Name = "user-id",
-                Label = "Auth0 user ID (when needed)",
+                Label = "Keycloak user ID (when needed)",
                 InputType = InputType.Text
             }
         ]
@@ -287,7 +309,7 @@ cli.WithProcessCommand(
             throw new InvalidOperationException("Approval is required before the reset process can start. Set approve to true.");
         }
 
-        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: true, includeAuth0Settings: true, includeKeyVaultSettings: true);
+        var variables = await BuildCliEnvironmentAsync(context.CancellationToken, includeStorageSettings: true, includeKeycloakSettings: true, includeKeyVaultSettings: true);
 
         var arguments = new List<string>
         {
@@ -332,7 +354,7 @@ cli.WithProcessCommand(
             new InteractionInput
             {
                 Name = "user-id",
-                Label = "Auth0 user ID (when needed)",
+                Label = "Keycloak user ID (when needed)",
                 InputType = InputType.Text
             },
             new InteractionInput
@@ -349,7 +371,10 @@ cli.WithProcessCommand(
 var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithReference(api)
     .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"))
-    .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"));
+    .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"))
+    .WithEnvironment("Keycloak__Url", keycloakBaseUrl)
+    .WithEnvironment("Keycloak__Realm", "flowmate")
+    .WithEnvironment("Keycloak__ClientId", "flowmate-web");
 
 var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WaitFor(api)

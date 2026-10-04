@@ -27,7 +27,7 @@ public abstract class WorkspaceComponentTest : BunitContext
     protected WorkspaceTimerManager Timer => Services.GetRequiredService<WorkspaceTimerManager>();
     protected WorkspaceCoachManager Coach => Services.GetRequiredService<WorkspaceCoachManager>();
     protected WorkspaceBillingManager Billing => Services.GetRequiredService<WorkspaceBillingManager>();
-    protected Auth0Client Auth => Services.GetRequiredService<Auth0Client>();
+    protected AuthClient Auth => Services.GetRequiredService<AuthClient>();
     protected NavigationManager Navigation => Services.GetRequiredService<NavigationManager>();
     protected ProjectRecord Project => Store.Data.Projects[0];
     protected TaskRecord PlannedTask => Store.Data.Tasks[0];
@@ -43,12 +43,12 @@ public abstract class WorkspaceComponentTest : BunitContext
         WorkspaceModule = JSInterop.SetupModule("./js/workspace.js");
         WorkspaceModule.Setup<string>("getClientId").SetResult("test-device");
         WorkspaceModule.Setup<string?>("read", _ => true).SetResult(null);
-        AuthModule = JSInterop.SetupModule("./js/auth0.js");
+        AuthModule = JSInterop.SetupModule("./js/auth.js");
         AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new());
         Configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
         Services.AddSingleton<IConfiguration>(Configuration);
         Services.AddSingleton(new HttpClient(Api) { BaseAddress = new Uri("http://localhost/") });
-        Services.AddScoped<Auth0Client>();
+        Services.AddScoped<AuthClient>();
         Services.AddScoped<BillingClient>();
         Services.AddScoped<WorkspaceStore>();
         Services.AddScoped<WorkspaceStatistics>();
@@ -72,18 +72,18 @@ public abstract class WorkspaceComponentTest : BunitContext
 
     protected async Task SignInAsync()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "test-client";
-        Configuration["Auth0:Audience"] = "test-api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "test-client";
+        Configuration["Keycloak:Realm"] = "test-api";
         AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new()
         {
             Configured = true,
             SignedIn = true,
             Sub = "test-user",
             Name = "Alex Morgan",
-            Email = "alex@example.test",
-            AccessToken = "test-token"
+            Email = "alex@example.test"
         });
+        AuthModule.Setup<string?>("getAccessToken", _ => true).SetResult("test-token");
         await Auth.InitialiseAsync();
     }
 

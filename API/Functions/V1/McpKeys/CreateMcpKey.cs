@@ -6,7 +6,7 @@ using Shared.Contracts;
 
 namespace API.Functions.V1.McpKeys;
 
-public sealed class CreateMcpKey(Auth0TokenValidator tokens, IMcpCredentialService credentials)
+public sealed class CreateMcpKey(OidcTokenValidator tokens, IMcpCredentialService credentials)
 {
     [Function(nameof(CreateMcpKey))]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/mcp-keys")] HttpRequestData request, CancellationToken cancellationToken)

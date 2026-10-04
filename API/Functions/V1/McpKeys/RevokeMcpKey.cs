@@ -5,7 +5,7 @@ using Services.Mcp;
 
 namespace API.Functions.V1.McpKeys;
 
-public sealed class RevokeMcpKey(Auth0TokenValidator tokens, IMcpCredentialService credentials)
+public sealed class RevokeMcpKey(OidcTokenValidator tokens, IMcpCredentialService credentials)
 {
     [Function(nameof(RevokeMcpKey))]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "v1/mcp-keys/{keyId}")] HttpRequestData request, string keyId, CancellationToken cancellationToken)

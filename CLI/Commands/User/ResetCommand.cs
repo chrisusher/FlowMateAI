@@ -15,12 +15,12 @@ internal static class ResetCommand
 
         var emailOption = new Option<string>("--email")
         {
-            Description = "Email address to resolve in Auth0.",
+            Description = "Email address to resolve in Keycloak.",
             Required = true
         };
         var userIdOption = new Option<string?>("--user-id")
         {
-            Description = "Auth0 user ID, required when the email resolves to multiple accounts."
+            Description = "Keycloak user ID, required when the email resolves to multiple accounts."
         };
         var approveOption = new Option<bool>("--approve")
         {
@@ -75,16 +75,16 @@ internal static class ResetCommand
                 throw new InvalidOperationException("KeyVault:VaultUri is required for user reset so MCP credentials can be deleted before other user data.");
             }
 
-            var auth0 = host.Services.GetRequiredService<Auth0ManagementClient>();
-            var userId = await Auth0AccountResolver.ResolveUserIdAsync(auth0, email!, requestedUserId, configuration, operationCancellation.Token);
+            var keycloak = host.Services.GetRequiredService<KeycloakManagementClient>();
+            var userId = await KeycloakAccountResolver.ResolveUserIdAsync(keycloak, email!, requestedUserId, configuration, operationCancellation.Token);
 
             Console.WriteLine("FlowMate user data reset");
             Console.WriteLine($"Cosmos endpoint: {settings.AccountEndpoint}");
             Console.WriteLine($"Cosmos database: {settings.DatabaseName}");
             Console.WriteLine($"Email: {email}");
-            Console.WriteLine($"Auth0 user ID: {userId}");
+            Console.WriteLine($"Keycloak user ID: {userId}");
             Console.WriteLine("Scope: this user's workspace documents, workspace records, billing entitlements, MCP credentials and usage data, and archived blobs.");
-            Console.WriteLine("Auth0 identities, Stripe customers/subscriptions, and shared Stripe event records are preserved.");
+            Console.WriteLine("Keycloak identities, Stripe customers/subscriptions, and shared Stripe event records are preserved.");
 
             if (!approved && !ResetApproval.TryApprove(Console.In, Console.Out, Console.IsInputRedirected))
             {

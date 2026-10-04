@@ -7,7 +7,7 @@ using Shared.Contracts;
 
 namespace API.Functions.V1.Billing;
 
-public sealed class BillingCheckout(Auth0TokenValidator tokens, IBillingService billing)
+public sealed class BillingCheckout(OidcTokenValidator tokens, IBillingService billing)
 {
 
     [Function("BillingCheckout")]

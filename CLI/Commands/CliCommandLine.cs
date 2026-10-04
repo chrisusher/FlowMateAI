@@ -21,7 +21,7 @@ internal static class CliError
 {
     public static string SafeError(Exception exception) => exception switch
     {
-        Auth0ManagementException auth0 => auth0.Message,
+        KeycloakManagementException keycloak => keycloak.Message,
         InvalidOperationException invalid when invalid.Message is "ConnectionStrings:Storage is required for user reset."
             or "Database:AccountEndpoint and Database:Key (or ConnectionStrings:database) are required for user reset."
             or "Database:AccountEndpoint and Database:Key (or ConnectionStrings:database) are required for granting Pro access." => invalid.Message,

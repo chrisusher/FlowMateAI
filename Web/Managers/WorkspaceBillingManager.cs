@@ -5,7 +5,7 @@ using Web.Clients;
 
 namespace Web.Managers;
 
-public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient client, Auth0Client auth, NavigationManager navigation) : WorkspaceManager
+public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient client, AuthClient auth, NavigationManager navigation) : WorkspaceManager
 {
     private WorkspaceStore Store => store;
 

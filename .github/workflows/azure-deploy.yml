@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Target GitHub environment; Production is a manual release.
+        type: choice
+        required: true
+        options: [Test, Production]
 
 permissions:
   contents: read
@@ -11,18 +17,36 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'Test' }}
+    env:
+      KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
+      KEYCLOAK_REALM: ${{ vars.KEYCLOAK_REALM || 'flowmate' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Verify Keycloak realm before publishing the application
+        run: |
+          test -n "$KEYCLOAK_URL" || { echo 'KEYCLOAK_URL must point to the deployed Keycloak environment.' >&2; exit 1; }
+          python - <<'PY'
+          import json, os, urllib.request
+          url = os.environ["KEYCLOAK_URL"].rstrip("/")
+          realm = os.environ["KEYCLOAK_REALM"]
+          with urllib.request.urlopen(f"{url}/realms/{realm}/.well-known/openid-configuration", timeout=20) as response:
+              metadata = json.load(response)
+          expected = f"{url}/realms/{realm}"
+          if metadata.get("issuer") != expected:
+              raise SystemExit(f"Keycloak issuer mismatch: expected {expected!r}, received {metadata.get('issuer')!r}")
+          PY
       - name: Configure browser-safe runtime settings
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           MCP_ENDPOINT: ${{ vars.MCP_ENDPOINT }}
-          AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
-          AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
-          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          KEYCLOAK_URL: ${{ vars.KEYCLOAK_URL }}
+          KEYCLOAK_REALM: ${{ vars.KEYCLOAK_REALM }}
+          KEYCLOAK_CLIENT_ID: ${{ vars.KEYCLOAK_CLIENT_ID }}
         run: |
           python - <<'PY'
           import json, os
@@ -31,9 +55,9 @@ jobs:
               settings = json.load(source)
           settings["ApiBaseUrl"] = os.environ["API_BASE_URL"]
           settings["McpEndpoint"] = os.environ["MCP_ENDPOINT"]
-          settings["Auth0"]["Domain"] = os.environ["AUTH0_DOMAIN"]
-          settings["Auth0"]["ClientId"] = os.environ["AUTH0_CLIENT_ID"]
-          settings["Auth0"]["Audience"] = os.environ["AUTH0_AUDIENCE"]
+          settings["Keycloak"]["Url"] = os.environ["KEYCLOAK_URL"]
+          settings["Keycloak"]["Realm"] = os.environ.get("KEYCLOAK_REALM", "flowmate")
+          settings["Keycloak"]["ClientId"] = os.environ.get("KEYCLOAK_CLIENT_ID", "flowmate-web")
           with open(path, "w", encoding="utf-8") as destination:
               json.dump(settings, destination, indent=2)
           PY
@@ -68,6 +92,8 @@ jobs:
   deploy-web:
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'Test' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -83,6 +109,8 @@ jobs:
   deploy-api:
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'Test' }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -93,10 +121,16 @@ jobs:
           app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
           package: artifacts/api
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          app-settings: >-
+            Authentication__Authority=${{ vars.KEYCLOAK_URL }}/realms/${{ vars.KEYCLOAK_REALM || 'flowmate' }}
+            Authentication__Audience=flowmate-api
+            Cors__AllowedOrigins__0=${{ vars.FLOWMATE_FRONTEND_ORIGIN }}
 
   deploy-mcp:
     needs: build
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'Test' }}
     steps:
       - uses: actions/download-artifact@v4
         with:

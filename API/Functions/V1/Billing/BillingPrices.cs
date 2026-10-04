@@ -5,7 +5,7 @@ using Services.Billing;
 
 namespace API.Functions.V1.Billing;
 
-public sealed class BillingPrices(Auth0TokenValidator tokens, IBillingService billing)
+public sealed class BillingPrices(OidcTokenValidator tokens, IBillingService billing)
 {
     [Function("BillingPrices")]
     public async Task<HttpResponseData> Run(

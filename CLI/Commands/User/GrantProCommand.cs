@@ -13,8 +13,8 @@ internal static class GrantProCommand
     public static Command Create()
     {
         var command = new Command("grant-pro", "Grant an existing FlowMate account Pro access for preview.");
-        var emailOption = new Option<string>("--email") { Description = "Email address of the existing Auth0 account.", Required = true };
-        var userIdOption = new Option<string?>("--user-id") { Description = "Auth0 user ID, required when the email resolves to multiple accounts." };
+        var emailOption = new Option<string>("--email") { Description = "Email address of the existing Keycloak account.", Required = true };
+        var userIdOption = new Option<string?>("--user-id") { Description = "Keycloak user ID, required when the email resolves to multiple accounts." };
         emailOption.Validators.Add(result =>
         {
             if (string.IsNullOrWhiteSpace(result.GetValueOrDefault<string>()))
@@ -45,8 +45,8 @@ internal static class GrantProCommand
                 throw new InvalidOperationException("Database:AccountEndpoint and Database:Key (or ConnectionStrings:database) are required for granting Pro access.");
             }
 
-            var auth0 = host.Services.GetRequiredService<Auth0ManagementClient>();
-            var userId = await Auth0AccountResolver.ResolveUserIdAsync(auth0, email!, requestedUserId, configuration, operationCancellation.Token);
+            var keycloak = host.Services.GetRequiredService<KeycloakManagementClient>();
+            var userId = await KeycloakAccountResolver.ResolveUserIdAsync(keycloak, email!, requestedUserId, configuration, operationCancellation.Token);
 
             await using var scope = host.Services.CreateAsyncScope();
             var database = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
@@ -58,7 +58,7 @@ internal static class GrantProCommand
 
             Console.WriteLine("Pro access granted.");
             Console.WriteLine($"Email: {email}");
-            Console.WriteLine($"Auth0 user ID: {userId}");
+            Console.WriteLine($"Keycloak user ID: {userId}");
             Console.WriteLine($"Cosmos database: {settings.DatabaseName}");
             Console.WriteLine("This is a manual preview grant; no Stripe subscription or payment was created.");
 

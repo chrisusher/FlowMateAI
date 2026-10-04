@@ -44,9 +44,9 @@ public class Program
         });
 
         // API clients
-        builder.Services.AddScoped<Auth0Client>();
+        builder.Services.AddScoped<AuthClient>();
         builder.Services.AddAuthorizationCore();
-        builder.Services.AddScoped<AuthenticationStateProvider, Auth0AuthenticationStateProvider>();
+        builder.Services.AddScoped<AuthenticationStateProvider, OidcAuthenticationStateProvider>();
         builder.Services.AddScoped<BillingClient>();
         builder.Services.AddScoped<McpKeysClient>();
         builder.Services.AddScoped<WorkspaceStore>();

@@ -1,0 +1,168 @@
+name: Deploy Keycloak environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target GitHub environment
+        type: choice
+        required: true
+        options: [Test, Production]
+      releaseTag:
+        description: Optional image tag to promote (use the same tested tag for Production)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      LOCATION: ${{ vars.AZURE_LOCATION }}
+      ACR_NAME: ${{ vars.KEYCLOAK_ACR_NAME }}
+      PG_SERVER_NAME: ${{ vars.KEYCLOAK_POSTGRES_SERVER_NAME }}
+      KEY_VAULT_NAME: ${{ vars.KEYCLOAK_KEY_VAULT_NAME }}
+      FRONTEND_ORIGINS: ${{ vars.FLOWMATE_FRONTEND_ORIGINS }}
+      FRONTEND_REDIRECT_URIS: ${{ vars.FLOWMATE_FRONTEND_REDIRECT_URIS }}
+      RELEASE_TAG: ${{ inputs.releaseTag || github.sha }}
+      PG_PASSWORD: ${{ secrets.KEYCLOAK_POSTGRES_ADMIN_PASSWORD }}
+      BOOTSTRAP_PASSWORD: ${{ secrets.KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD }}
+      CLI_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLI_CLIENT_SECRET }}
+      IDP_GOOGLE_CLIENT_ID: ${{ secrets.IDP_GOOGLE_CLIENT_ID }}
+      IDP_GOOGLE_CLIENT_SECRET: ${{ secrets.IDP_GOOGLE_CLIENT_SECRET }}
+      IDP_GITHUB_CLIENT_ID: ${{ secrets.IDP_GITHUB_CLIENT_ID }}
+      IDP_GITHUB_CLIENT_SECRET: ${{ secrets.IDP_GITHUB_CLIENT_SECRET }}
+      IDP_MICROSOFT_PERSONAL_CLIENT_ID: ${{ secrets.IDP_MICROSOFT_PERSONAL_CLIENT_ID }}
+      IDP_MICROSOFT_PERSONAL_CLIENT_SECRET: ${{ secrets.IDP_MICROSOFT_PERSONAL_CLIENT_SECRET }}
+      IDP_MICROSOFT_WORK_SCHOOL_CLIENT_ID: ${{ secrets.IDP_MICROSOFT_WORK_SCHOOL_CLIENT_ID }}
+      IDP_MICROSOFT_WORK_SCHOOL_CLIENT_SECRET: ${{ secrets.IDP_MICROSOFT_WORK_SCHOOL_CLIENT_SECRET }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_FROM: ${{ secrets.SMTP_FROM }}
+      SMTP_FROM_DISPLAY_NAME: ${{ secrets.SMTP_FROM_DISPLAY_NAME }}
+      SMTP_REPLY_TO: ${{ secrets.SMTP_REPLY_TO }}
+      SMTP_AUTH: ${{ secrets.SMTP_AUTH }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_SSL: ${{ secrets.SMTP_SSL }}
+      SMTP_STARTTLS: ${{ secrets.SMTP_STARTTLS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Create environment resource group
+        run: az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
+      - name: Require a tested image for Production
+        if: ${{ inputs.environment == 'Production' }}
+        run: |
+          test -n "${{ inputs.releaseTag }}" || { echo 'Production requires the tested Test image tag in releaseTag.' >&2; exit 1; }
+      - name: Create base Azure resources
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/keycloak/main.bicep \
+            --parameters @infra/keycloak/${{ inputs.environment == 'Production' && 'production' || 'test' }}.parameters.json \
+              location="$LOCATION" keycloakImage="$ACR_NAME.azurecr.io/keycloak:bootstrap" \
+              postgresAdminPassword="$PG_PASSWORD" keycloakBootstrapPassword="$BOOTSTRAP_PASSWORD" deployKeycloak=false
+      - name: Store identity provider and mail credentials in Key Vault
+        env:
+          CLI_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLI_CLIENT_SECRET }}
+        run: |
+          test -n "$CLI_CLIENT_SECRET" || { echo 'KEYCLOAK_CLI_CLIENT_SECRET is required.' >&2; exit 1; }
+          test -n "$IDP_GOOGLE_CLIENT_ID" && test -n "$IDP_GOOGLE_CLIENT_SECRET" || { echo 'Google provider credentials are required.' >&2; exit 1; }
+          test -n "$IDP_GITHUB_CLIENT_ID" && test -n "$IDP_GITHUB_CLIENT_SECRET" || { echo 'GitHub provider credentials are required.' >&2; exit 1; }
+          test -n "$IDP_MICROSOFT_PERSONAL_CLIENT_ID" && test -n "$IDP_MICROSOFT_PERSONAL_CLIENT_SECRET" || { echo 'Microsoft personal provider credentials are required.' >&2; exit 1; }
+          test -n "$IDP_MICROSOFT_WORK_SCHOOL_CLIENT_ID" && test -n "$IDP_MICROSOFT_WORK_SCHOOL_CLIENT_SECRET" || { echo 'Microsoft work/school provider credentials are required.' >&2; exit 1; }
+          test -n "$SMTP_HOST" && test -n "$SMTP_FROM" || { echo 'SMTP_HOST and SMTP_FROM are required.' >&2; exit 1; }
+          put_secret() {
+            local secret_name="$1"
+            local secret_value="$2"
+            if [ -n "$secret_value" ]; then
+              az keyvault secret set --vault-name "$KEY_VAULT_NAME" --name "$secret_name" --value "$secret_value" --output none
+            fi
+          }
+          put_secret keycloak-cli-client-secret "$CLI_CLIENT_SECRET"
+          put_secret smtp-host "$SMTP_HOST"
+          put_secret smtp-port "$SMTP_PORT"
+          put_secret smtp-from "$SMTP_FROM"
+          put_secret smtp-from-display-name "$SMTP_FROM_DISPLAY_NAME"
+          put_secret smtp-reply-to "$SMTP_REPLY_TO"
+          put_secret smtp-auth "$SMTP_AUTH"
+          put_secret smtp-user "$SMTP_USER"
+          put_secret smtp-password "$SMTP_PASSWORD"
+          put_secret smtp-ssl "$SMTP_SSL"
+          put_secret smtp-starttls "$SMTP_STARTTLS"
+          put_secret idp-google-client-id "$IDP_GOOGLE_CLIENT_ID"
+          put_secret idp-google-client-secret "$IDP_GOOGLE_CLIENT_SECRET"
+          put_secret idp-github-client-id "$IDP_GITHUB_CLIENT_ID"
+          put_secret idp-github-client-secret "$IDP_GITHUB_CLIENT_SECRET"
+          put_secret idp-microsoft-personal-client-id "$IDP_MICROSOFT_PERSONAL_CLIENT_ID"
+          put_secret idp-microsoft-personal-client-secret "$IDP_MICROSOFT_PERSONAL_CLIENT_SECRET"
+          put_secret idp-microsoft-work-school-client-id "$IDP_MICROSOFT_WORK_SCHOOL_CLIENT_ID"
+          put_secret idp-microsoft-work-school-client-secret "$IDP_MICROSOFT_WORK_SCHOOL_CLIENT_SECRET"
+      - name: Resolve environment Keycloak hostname
+        run: |
+          url=$(az deployment group show --resource-group "$RESOURCE_GROUP" --name main --query properties.outputs.keycloakUrl.value --output tsv)
+          if [ -z "$url" ]; then
+            host=$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "flowmate-${{ inputs.environment == 'Production' && 'production' || 'test' }}-keycloak" --query properties.configuration.ingress.fqdn --output tsv)
+            url="https://$host"
+          fi
+          echo "KEYCLOAK_URL=$url" >> "$GITHUB_ENV"
+      - name: Build Test image
+        if: ${{ inputs.environment == 'Test' }}
+        id: image-build
+        run: |
+          az acr login --name "$ACR_NAME"
+          docker build --platform linux/amd64 --tag "$ACR_NAME.azurecr.io/keycloak:$RELEASE_TAG" infra/keycloak
+          docker push "$ACR_NAME.azurecr.io/keycloak:$RELEASE_TAG"
+          digest=$(az acr repository show --name "$ACR_NAME" --image "keycloak:$RELEASE_TAG" --query digest --output tsv)
+          echo "image=$ACR_NAME.azurecr.io/keycloak@$digest" >> "$GITHUB_OUTPUT"
+      - name: Promote tested image to Production ACR
+        if: ${{ inputs.environment == 'Production' }}
+        id: image-promote
+        env:
+          TEST_ACR_NAME: ${{ vars.TEST_KEYCLOAK_ACR_NAME }}
+        run: |
+          test -n "$TEST_ACR_NAME" || { echo 'TEST_KEYCLOAK_ACR_NAME is required in the Production environment.' >&2; exit 1; }
+          az acr import --name "$ACR_NAME" --source "$TEST_ACR_NAME.azurecr.io/keycloak:$RELEASE_TAG" --image "keycloak:$RELEASE_TAG"
+          digest=$(az acr repository show --name "$ACR_NAME" --image "keycloak:$RELEASE_TAG" --query digest --output tsv)
+          source_digest=$(az acr repository show --name "$TEST_ACR_NAME" --image "keycloak:$RELEASE_TAG" --query digest --output tsv)
+          test "$digest" = "$source_digest" || { echo 'Image digest changed during promotion.' >&2; exit 1; }
+          echo "image=$ACR_NAME.azurecr.io/keycloak@$digest" >> "$GITHUB_OUTPUT"
+      - name: Deploy Keycloak at one replica
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file infra/keycloak/main.bicep \
+            --parameters @infra/keycloak/${{ inputs.environment == 'Production' && 'production' || 'test' }}.parameters.json \
+              location="$LOCATION" keycloakImage="${{ inputs.environment == 'Production' && steps.image-promote.outputs.image || steps.image-build.outputs.image }}" \
+              postgresAdminPassword="$PG_PASSWORD" keycloakBootstrapPassword="$BOOTSTRAP_PASSWORD" deployKeycloak=true
+      - name: Wait for OIDC discovery
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error "$KEYCLOAK_URL/realms/flowmate/.well-known/openid-configuration" -o /tmp/flowmate-oidc.json; then
+              python -c 'import json, os; d=json.load(open("/tmp/flowmate-oidc.json")); assert d["issuer"] == os.environ["KEYCLOAK_URL"].rstrip("/") + "/realms/flowmate"'
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'Keycloak discovery did not become ready.' >&2
+          exit 1
+      - name: Reconcile realm and verify discovery
+        env:
+          KEYCLOAK_REALM: flowmate
+          KEYCLOAK_ADMIN_USERNAME: bootstrap-admin
+          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD }}
+          KEYCLOAK_CLI_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLI_CLIENT_SECRET }}
+          FLOWMATE_FRONTEND_ORIGINS: ${{ vars.FLOWMATE_FRONTEND_ORIGINS }}
+          FLOWMATE_FRONTEND_REDIRECT_URIS: ${{ vars.FLOWMATE_FRONTEND_REDIRECT_URIS }}
+        run: python infra/keycloak/provision_realm.py

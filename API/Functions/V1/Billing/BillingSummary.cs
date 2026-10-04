@@ -5,7 +5,7 @@ using Services.Billing;
 
 namespace API.Functions.V1.Billing;
 
-public sealed class BillingSummary(Auth0TokenValidator tokens, IBillingService billing)
+public sealed class BillingSummary(OidcTokenValidator tokens, IBillingService billing)
 {
     [Function("BillingSummary")]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/billing")] HttpRequestData request, CancellationToken cancellationToken)

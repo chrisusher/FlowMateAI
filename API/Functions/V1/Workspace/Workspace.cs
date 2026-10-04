@@ -8,7 +8,7 @@ using Shared.Enums;
 
 namespace API.Functions.V1.Workspace;
 
-public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService workspaces)
+public sealed class Workspace(OidcTokenValidator tokens, IWorkspaceService workspaces)
 {
 
     [Function("Workspace")]
