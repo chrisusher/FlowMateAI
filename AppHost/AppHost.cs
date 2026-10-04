@@ -36,6 +36,8 @@ storage.AddTables("tables");
 var cosmosDb = builder.AddAzureCosmosDB("cosmosDb")
 .WithAccessKeyAuthentication();
 
+var cosmosAccountEndpoint = builder.Configuration["Database:AccountEndpoint"];
+
 var database = cosmosDb.AddCosmosDatabase("database", "flowmate");
 
 // Key Vault
@@ -94,7 +96,19 @@ var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
     .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
     .WithReference(database)
+    .WithHttpHealthCheck("/api/health")
     .WithExternalHttpEndpoints();
+
+if (string.IsNullOrWhiteSpace(cosmosAccountEndpoint))
+{
+    api.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression);
+    mcp.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression);
+}
+else
+{
+    api.WithEnvironment("Database__AccountEndpoint", cosmosAccountEndpoint);
+    mcp.WithEnvironment("Database__AccountEndpoint", cosmosAccountEndpoint);
+}
 
 var cli = builder.AddProject<Projects.CLI>("cli")
     .WithArgs("--help")

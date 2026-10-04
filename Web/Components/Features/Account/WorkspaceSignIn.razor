@@ -4,8 +4,16 @@
 <div class="auth-screen">
     <img class="auth-mark" src="branding/flowmate-symbol.svg" alt="FlowMate" />
     <div class="eyebrow">A QUIETER WAY TO GET THINGS DONE</div>
-    <h1>Your focus, in good company.</h1>
-    <p>Sign in to keep your projects, plans, and focus history private to your account.</p>
+    @if (Auth.IsSessionExpired)
+    {
+        <h1>Your session expired.</h1>
+        <p role="alert">Your local work, current timer, and place in FlowMate are saved. Sign in again to continue syncing; you'll return to this page.</p>
+    }
+    else
+    {
+        <h1>Your focus, in good company.</h1>
+        <p>Sign in to keep your projects, plans, and focus history private to your account.</p>
+    }
     <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.Google)'>
         <span>G</span>
         Continue with Google

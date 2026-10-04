@@ -1,4 +1,4 @@
-extern alias Identity;
+using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 using Azure.Storage.Blobs;
 using ChrisUsher.Core.Services.Interfaces;
@@ -89,16 +89,10 @@ public static class Services
 
             return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
         });
-        services.AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
-        services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
-        services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
-        services.AddScoped<IMcpCredentialService, McpCredentialService>();
-        services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
-        services.AddScoped<IUserDataResetService, UserDataResetService>();
 
         if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))
         {
-            services.AddSingleton(new SecretClient(vaultUri, new Identity::Azure.Identity.DefaultAzureCredential()));
+            services.AddSingleton(new SecretClient(vaultUri, new DefaultAzureCredential()));
         }
 
         services.AddTransient<IStorageService>(services =>
@@ -108,26 +102,31 @@ public static class Services
             return new BlobStorageService(blobServiceClient);
         });
 
-        services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
-        services.AddScoped<IActivityArchiveRepository, BlobActivityArchiveRepository>();
-        services.AddScoped<IWorkspaceService, WorkspaceService>();
-        services.AddScoped<IBillingRepository, BillingRepository>();
-        services.AddScoped<IBillingService, StripeBillingService>();
-        services.AddScoped<IFocusCoachService, FoundryFocusCoachService>();
-
         #region Config
         services.AddSingleton(functionsConfig!);
         services.AddSingleton(globalConfig!);
         #endregion
 
         #region Repositories
-
+        services.AddScoped<IActivityArchiveRepository, BlobActivityArchiveRepository>();
+        services.AddScoped<IBillingRepository, BillingRepository>();
+        services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
+        services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
+        services.
+        AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
+        services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         #endregion
 
         #region Services
 
-        #region EF Core Services
+        services.AddScoped<IFocusCoachService, FoundryFocusCoachService>();
+        services.AddScoped<IMcpCredentialService, McpCredentialService>();
 
+        #region EF Core Services
+        services.AddScoped<IBillingService, StripeBillingService>();
+        services.AddScoped<IUserDataResetService, UserDataResetService>();
+        services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IWorkspaceService, WorkspaceService>();
         #endregion
 
         #endregion
@@ -141,15 +140,20 @@ public static class Services
 
     public static IServiceCollection AddMcpServices(this IServiceCollection services, IConfiguration configuration)
     {
+        var global = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
+
+        var settings = ResolveDatabaseSettings(configuration, global.Environment);
+
         services.AddDatabase(configuration);
         services.TryAddSingleton(TimeProvider.System);
+
         services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
         services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();
-        var global = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
-        var settings = ResolveDatabaseSettings(configuration, global.Environment);
+
         var client = string.IsNullOrWhiteSpace(settings.AccountKey)
-            ? new CosmosClient(settings.AccountEndpoint, new Identity::Azure.Identity.DefaultAzureCredential())
+            ? new CosmosClient(settings.AccountEndpoint, new DefaultAzureCredential())
             : new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
+
         services.AddSingleton(client);
         services.AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
@@ -186,7 +190,7 @@ public static class Services
 
             if (string.IsNullOrWhiteSpace(settings.AccountKey))
             {
-                options.UseCosmos(settings.AccountEndpoint, new Identity::Azure.Identity.DefaultAzureCredential(), settings.DatabaseName);
+                options.UseCosmos(settings.AccountEndpoint, new DefaultAzureCredential(), settings.DatabaseName);
             }
             else
             {
@@ -205,12 +209,15 @@ public static class Services
     public static CosmosDatabaseSettings ResolveDatabaseSettings(IConfiguration configuration, string? environment = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
-        var cosmosConnection = configuration.GetConnectionString("database");
+        var cosmosConnection = configuration.GetConnectionString("database")
+            ?? configuration["DATABASE_CONNECTIONSTRING"];
+
         var globalEnvironment = environment
             ?? configuration["Global:Environment"]
             ?? configuration["Global__Environment"]
             ?? configuration["DOTNET_ENVIRONMENT"]
             ?? "Development";
+
         var accountEndpoint = NormaliseCosmosAccountEndpoint(
             configuration["Database:AccountEndpoint"]
                 ?? configuration["Database__AccountEndpoint"]
@@ -218,10 +225,12 @@ public static class Services
                 ?? configuration["Database__AccountName"]
                 ?? ConnectionValue(cosmosConnection, "AccountEndpoint")
                 ?? string.Empty);
+
         var accountKey = configuration["Database:Key"]
             ?? configuration["Database__Key"]
             ?? ConnectionValue(cosmosConnection, "AccountKey")
             ?? string.Empty;
+
         var databaseName = ResolveCosmosDatabaseName(configuration, globalEnvironment);
 
         return new CosmosDatabaseSettings(accountEndpoint, accountKey, databaseName);

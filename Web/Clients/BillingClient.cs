@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Shared.Contracts;
 using Shared.Enums;
@@ -10,7 +9,7 @@ public sealed class BillingClient(HttpClient http, AuthClient auth)
     public async Task<IReadOnlyList<BillingPrice>> GetPricesAsync(CancellationToken cancellationToken = default)
     {
         using var request = await auth.AuthorizedRequestAsync(HttpMethod.Get, "api/v1/billing/prices", cancellationToken);
-        using var response = await http.SendAsync(request, cancellationToken);
+        using var response = await auth.SendAsync(http, request, cancellationToken: cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -23,7 +22,7 @@ public sealed class BillingClient(HttpClient http, AuthClient auth)
     public async Task<BillingSummary?> GetSummaryAsync(CancellationToken cancellationToken = default)
     {
         using var request = await auth.AuthorizedRequestAsync(HttpMethod.Get, "api/v1/billing", cancellationToken);
-        using var response = await http.SendAsync(request, cancellationToken);
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
 
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<BillingSummary>(cancellationToken: cancellationToken) : null;
     }
@@ -45,7 +44,19 @@ public sealed class BillingClient(HttpClient http, AuthClient auth)
         {
             request.Content = JsonContent.Create(body);
         }
-        using var response = await http.SendAsync(request, cancellationToken);
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+
+        if (auth.IsSessionExpired)
+        {
+            return new(false, null, BillingActionCode.RequestFailed, "Your session expired. Sign in again to continue.");
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadFromJsonAsync<ApiError>(cancellationToken: cancellationToken);
+
+            return new(false, null, BillingActionCode.RequestFailed, error?.Message ?? "The billing request could not be completed.");
+        }
 
         return await response.Content.ReadFromJsonAsync<BillingActionResponse>(cancellationToken: cancellationToken)
             ?? new(false, null, BillingActionCode.RequestFailed, "The billing request could not be completed.");

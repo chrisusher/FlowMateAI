@@ -1,5 +1,8 @@
 using System.Net.Http.Headers;
+using System.Net;
+using System.Net.Http.Json;
 using Microsoft.JSInterop;
+using Shared.Contracts;
 using Shared.Enums;
 
 namespace Web.Clients;
@@ -9,7 +12,10 @@ public sealed class AuthClient(IJSRuntime js, IConfiguration configuration) : IA
     private IJSObjectReference? _module;
     private DotNetObjectReference<AuthClient>? _reference;
     private Task? _initialization;
+    private bool _isSessionExpired;
     public AuthSession Session { get; private set; } = new();
+    public AuthSessionStatus Status { get; private set; } = AuthSessionStatus.Uninitialized;
+    public bool IsSessionExpired => _isSessionExpired;
     public event Action? Changed;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(configuration["Keycloak:Url"]) &&
@@ -27,6 +33,12 @@ public sealed class AuthClient(IJSRuntime js, IConfiguration configuration) : IA
             realm = configuration["Keycloak:Realm"],
             clientId = configuration["Keycloak:ClientId"]
         });
+        _isSessionExpired = Session.SessionExpired;
+        Status = Session.SessionExpired
+            ? AuthSessionStatus.Expired
+            : !IsConfigured
+            ? AuthSessionStatus.Unconfigured
+            : Session.SignedIn ? AuthSessionStatus.SignedIn : AuthSessionStatus.SignedOut;
         _reference = DotNetObjectReference.Create(this);
         await module.InvokeVoidAsync("subscribe", _reference);
     }
@@ -57,12 +69,12 @@ public sealed class AuthClient(IJSRuntime js, IConfiguration configuration) : IA
     public async Task<string?> GetAccessTokenAsync(CancellationToken cancellationToken = default)
     {
         await InitialiseAsync();
+        var wasSignedIn = Session.SignedIn;
         var token = await (await ModuleAsync()).InvokeAsync<string?>("getAccessToken", cancellationToken);
 
-        if (string.IsNullOrWhiteSpace(token) && Session.SignedIn)
+        if (string.IsNullOrWhiteSpace(token) && wasSignedIn)
         {
-            Session = new() { Configured = IsConfigured };
-            Changed?.Invoke();
+            MarkSessionExpired();
         }
 
         return token;
@@ -82,10 +94,56 @@ public sealed class AuthClient(IJSRuntime js, IConfiguration configuration) : IA
         return request;
     }
 
+    public async Task<HttpResponseMessage> SendAsync(
+        HttpClient http,
+        HttpRequestMessage request,
+        bool requiresAuthentication = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (requiresAuthentication && IsSessionExpired)
+        {
+            return ExpiredResponse();
+        }
+
+        var response = await http.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized &&
+            (requiresAuthentication || request.Headers.Authorization is not null))
+        {
+            MarkSessionExpired();
+        }
+
+        return response;
+    }
+
+    private void MarkSessionExpired()
+    {
+        if (_isSessionExpired)
+        {
+            return;
+        }
+
+        _isSessionExpired = true;
+        Session.SignedIn = false;
+        Session.SessionExpired = true;
+        Status = AuthSessionStatus.Expired;
+        Changed?.Invoke();
+    }
+
+    private static HttpResponseMessage ExpiredResponse() => new(HttpStatusCode.Unauthorized)
+    {
+        Content = JsonContent.Create(new ApiError("session_expired", "Your session expired. Sign in again to continue."))
+    };
+
     [JSInvokable]
     public void SessionChanged(AuthSession session)
     {
         Session = session;
+        _isSessionExpired = session.SessionExpired;
+        Status = session.SessionExpired
+            ? AuthSessionStatus.Expired
+            : !IsConfigured
+            ? AuthSessionStatus.Unconfigured
+            : Session.SignedIn ? AuthSessionStatus.SignedIn : AuthSessionStatus.SignedOut;
         Changed?.Invoke();
     }
 

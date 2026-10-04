@@ -7,4 +7,5 @@ public sealed class AuthSession
     public string? Sub { get; set; }
     public string? Name { get; set; }
     public string? Email { get; set; }
+    public bool SessionExpired { get; set; }
 }

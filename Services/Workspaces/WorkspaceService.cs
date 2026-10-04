@@ -23,7 +23,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
     {
         var existing = await repository.GetAsync(ownerId, cancellationToken);
 
-        if (existing is not null && !string.IsNullOrEmpty(request.Revision) && existing.ETag != request.Revision)
+        if (existing is not null && (string.IsNullOrEmpty(request.Revision) || !string.Equals(existing.ETag, request.Revision, StringComparison.Ordinal)))
         {
             return new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.");
         }

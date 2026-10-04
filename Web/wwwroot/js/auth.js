@@ -11,6 +11,7 @@ let initialization;
 let refresh;
 let subscriber;
 let configured = false;
+let sessionExpired = false;
 
 function clearLegacySession() {
     for (const key of [StorageKeys.legacySession, StorageKeys.legacyState, StorageKeys.legacyVerifier]) {
@@ -46,7 +47,8 @@ export function getSession() {
         signedIn: !!adapter?.authenticated && !!claims?.sub,
         sub: claims?.sub,
         name: claims?.name || claims?.preferred_username || claims?.email,
-        email: claims?.email
+        email: claims?.email,
+        sessionExpired
     };
 }
 
@@ -93,8 +95,10 @@ export async function getAccessToken() {
         refresh = (async () => {
             try {
                 await adapter.updateToken(30);
+                sessionExpired = false;
                 return adapter.token || null;
             } catch {
+                sessionExpired = true;
                 adapter.clearToken();
                 notify();
                 return null;
