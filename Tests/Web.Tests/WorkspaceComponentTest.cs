@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Bunit.TestDoubles;
 using ChrisUsher.Core.Shared;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Configuration;
@@ -18,6 +19,7 @@ public abstract class WorkspaceComponentTest : BunitContext
     protected BunitJSModuleInterop WorkspaceModule { get; }
     protected BunitJSModuleInterop AuthModule { get; }
     protected IConfigurationRoot Configuration { get; }
+    protected BunitAuthorizationContext Authorization { get; }
     protected WorkspaceStore Store => Services.GetRequiredService<WorkspaceStore>();
     protected WorkspaceStatistics Stats => Services.GetRequiredService<WorkspaceStatistics>();
     protected WorkspaceTaskManager Tasks => Services.GetRequiredService<WorkspaceTaskManager>();
@@ -32,6 +34,9 @@ public abstract class WorkspaceComponentTest : BunitContext
 
     protected WorkspaceComponentTest()
     {
+        Authorization = AddAuthorization();
+        Authorization.SetAuthorized("test-user");
+
         // Radzen's DOM measurements are irrelevant to component behavior; application
         // storage and authentication calls have explicit results and remain observable.
         JSInterop.Mode = JSRuntimeMode.Loose;

@@ -9,7 +9,8 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
 {
     public async Task<IReadOnlyList<BillingPrice>> GetPricesAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await http.GetAsync("api/v1/billing/prices", cancellationToken);
+        using var request = Authorized(HttpMethod.Get, "api/v1/billing/prices");
+        using var response = await http.SendAsync(request, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {

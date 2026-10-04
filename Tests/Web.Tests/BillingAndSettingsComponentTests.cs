@@ -26,7 +26,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         cut.Find(".checkout-button").Click();
         Assert.That(Billing.BillingMessage, Is.EqualTo("Checkout unavailable"));
         cut.Find(".plan-button").Click();
-        Assert.That(Store.Data.Plan, Is.EqualTo("Pro"));
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Pro));
         Assert.That(Billing.BillingMessage, Is.EqualTo("Trial started"));
         Assert.That(cut.Find(".plan-button").HasAttribute("disabled"), Is.True);
         Assert.That(cut.Find(".plan-button").TextContent, Does.Contain("Trial already used"));

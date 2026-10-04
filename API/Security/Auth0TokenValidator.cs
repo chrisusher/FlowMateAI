@@ -49,6 +49,12 @@ public sealed class Auth0TokenValidator(IConfiguration configuration, IHttpClien
                 return null;
             }
 
+            if (!body.TryGetProperty("sub", out var subject) || subject.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(subject.GetString()))
+            {
+                return null;
+            }
+
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
             if (!body.TryGetProperty("exp", out var exp) || exp.GetInt64() <= now)
@@ -100,14 +106,15 @@ public sealed class Auth0TokenValidator(IConfiguration configuration, IHttpClien
                 }
             }
 
-            if (!claims.Any(c => c.Type == "sub"))
+            if (!claims.Any(c => c.Type == "sub" && !string.IsNullOrWhiteSpace(c.Value)))
             {
                 return null;
             }
 
             return new ClaimsPrincipal(new ClaimsIdentity(claims, "Auth0", "name", "role"));
         }
-        catch (Exception ex) when (ex is FormatException or JsonException or CryptographicException or HttpRequestException or InvalidOperationException or KeyNotFoundException)
+        catch (Exception ex) when (ex is FormatException or JsonException or CryptographicException or HttpRequestException or InvalidOperationException or KeyNotFoundException or ArgumentException ||
+                                   ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
 
             return null;

@@ -25,7 +25,7 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
         cut.WaitForState(() => cut.FindAll(".nav-count").Count == 0);
         Assert.That(cut.FindAll(".nav-count"), Is.Empty);
         Assert.That(cut.Find(".profile-link").GetAttribute("href"), Is.EqualTo("settings"));
-        Assert.That(Content(cut.FindAll(".brand > span")[1]), Is.EqualTo("flowmate.ai"));
+        Assert.That(Content(cut.Find(".brand")), Does.Contain("flowmate.ai"));
     }
 
     [Test]

@@ -1,6 +1,7 @@
 @page "/"
 @page "/today"
 @page "/{View}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @layout WorkspaceLayout
 @inherits WorkspaceComponentBase
 @inject WorkspaceStatistics Stats

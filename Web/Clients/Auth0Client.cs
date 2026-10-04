@@ -5,6 +5,7 @@ namespace Web.Clients;
 public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : IAsyncDisposable
 {
     private IJSObjectReference? _module;
+    private bool _initialised;
 
     public AuthSession Session { get; private set; } = new();
 
@@ -28,6 +29,11 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
 
     public async Task InitialiseAsync()
     {
+        if (_initialised)
+        {
+            return;
+        }
+
         var module = await ModuleAsync();
         Session = await module.InvokeAsync<AuthSession>("initialize", new
         {
@@ -35,6 +41,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
             clientId = ClientId,
             audience = Audience
         });
+        _initialised = true;
     }
 
     public async Task LoginAsync(string? connection = null) => await (await ModuleAsync()).InvokeVoidAsync(

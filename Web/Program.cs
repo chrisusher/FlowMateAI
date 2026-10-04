@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Radzen;
 using Web.Clients;
@@ -44,6 +45,8 @@ public class Program
 
         // API clients
         builder.Services.AddScoped<Auth0Client>();
+        builder.Services.AddAuthorizationCore();
+        builder.Services.AddScoped<AuthenticationStateProvider, Auth0AuthenticationStateProvider>();
         builder.Services.AddScoped<BillingClient>();
         builder.Services.AddScoped<McpKeysClient>();
         builder.Services.AddScoped<WorkspaceStore>();
