@@ -24,6 +24,13 @@ if ([string]::IsNullOrWhiteSpace($realm)) { $realm = 'flowmate' }
 $realm = $realm.Trim()
 $adminUser = Get-RequiredEnvironmentValue 'KEYCLOAK_ADMIN_USERNAME'
 $adminPassword = Get-RequiredEnvironmentValue 'KEYCLOAK_ADMIN_PASSWORD'
+$verifyEmail = $true
+$verifyEmailSetting = [Environment]::GetEnvironmentVariable('KEYCLOAK_VERIFY_EMAIL')
+if (-not [string]::IsNullOrWhiteSpace($verifyEmailSetting)) {
+    if (-not [bool]::TryParse($verifyEmailSetting, [ref]$verifyEmail)) {
+        throw 'KEYCLOAK_VERIFY_EMAIL must be true or false when set.'
+    }
+}
 
 function Invoke-KeycloakRequest(
     [string] $Method,
@@ -85,7 +92,7 @@ $currentResponse = Invoke-KeycloakRequest -Method GET -Path "$root/$quotedRealm"
 $realmSettings = @{
     realm = $realm; enabled = $true; sslRequired = 'external'; registrationAllowed = $true
     registrationEmailAsUsername = $true; loginWithEmailAllowed = $true; duplicateEmailsAllowed = $false
-    verifyEmail = $true; resetPasswordAllowed = $true; bruteForceProtected = $true; failureFactor = 5
+    verifyEmail = $verifyEmail; resetPasswordAllowed = $true; bruteForceProtected = $true; failureFactor = 5
     waitIncrementSeconds = 60; maxFailureWaitSeconds = 900; passwordPolicy = 'length(15) and notUsername'
     accessTokenLifespan = 300; ssoSessionIdleTimeout = 1800; ssoSessionMaxLifespan = 28800
 }
@@ -129,6 +136,75 @@ function Upsert-ApiAudienceScope {
     return $matching[0].id
 }
 
+function Upsert-UserClaimsScope {
+    $scopes = (Invoke-KeycloakRequest -Method GET -Path "$root/$quotedRealm/client-scopes?search=flowmate-user-claims" -Token $token).Data
+    $scope = @{
+        name = 'flowmate-user-claims'; description = 'Adds the FlowMate subject and basic user profile claims'
+        protocol = 'openid-connect'
+        attributes = @{ 'include.in.token.scope' = 'true'; 'display.on.consent.screen' = 'false' }
+        protocolMappers = @(
+            @{
+                name = 'FlowMate subject'; protocol = 'openid-connect'; protocolMapper = 'oidc-sub-mapper'; consentRequired = $false
+                config = @{ 'introspection.token.claim' = 'true'; 'access.token.claim' = 'true' }
+            },
+            @{
+                name = 'FlowMate email verified'; protocol = 'openid-connect'; protocolMapper = 'oidc-usermodel-property-mapper'; consentRequired = $false
+                config = @{
+                    'introspection.token.claim' = 'true'; 'userinfo.token.claim' = 'true'; 'user.attribute' = 'emailVerified'
+                    'id.token.claim' = 'true'; 'access.token.claim' = 'true'; 'claim.name' = 'email_verified'; 'jsonType.label' = 'boolean'
+                }
+            },
+            @{
+                name = 'FlowMate email'; protocol = 'openid-connect'; protocolMapper = 'oidc-usermodel-attribute-mapper'; consentRequired = $false
+                config = @{
+                    'introspection.token.claim' = 'true'; 'userinfo.token.claim' = 'true'; 'user.attribute' = 'email'
+                    'id.token.claim' = 'true'; 'access.token.claim' = 'true'; 'claim.name' = 'email'; 'jsonType.label' = 'String'
+                }
+            },
+            @{
+                name = 'FlowMate username'; protocol = 'openid-connect'; protocolMapper = 'oidc-usermodel-attribute-mapper'; consentRequired = $false
+                config = @{
+                    'introspection.token.claim' = 'true'; 'userinfo.token.claim' = 'true'; 'user.attribute' = 'username'
+                    'id.token.claim' = 'true'; 'access.token.claim' = 'true'; 'claim.name' = 'preferred_username'; 'jsonType.label' = 'String'
+                }
+            },
+            @{
+                name = 'FlowMate given name'; protocol = 'openid-connect'; protocolMapper = 'oidc-usermodel-attribute-mapper'; consentRequired = $false
+                config = @{
+                    'introspection.token.claim' = 'true'; 'userinfo.token.claim' = 'true'; 'user.attribute' = 'firstName'
+                    'id.token.claim' = 'true'; 'access.token.claim' = 'true'; 'claim.name' = 'given_name'; 'jsonType.label' = 'String'
+                }
+            },
+            @{
+                name = 'FlowMate full name'; protocol = 'openid-connect'; protocolMapper = 'oidc-full-name-mapper'; consentRequired = $false
+                config = @{
+                    'id.token.claim' = 'true'; 'introspection.token.claim' = 'true'
+                    'access.token.claim' = 'true'; 'userinfo.token.claim' = 'true'
+                }
+            },
+            @{
+                name = 'FlowMate family name'; protocol = 'openid-connect'; protocolMapper = 'oidc-usermodel-attribute-mapper'; consentRequired = $false
+                config = @{
+                    'introspection.token.claim' = 'true'; 'userinfo.token.claim' = 'true'; 'user.attribute' = 'lastName'
+                    'id.token.claim' = 'true'; 'access.token.claim' = 'true'; 'claim.name' = 'family_name'; 'jsonType.label' = 'String'
+                }
+            }
+        )
+    }
+    $matching = @($scopes | Where-Object { $_.name -eq $scope.name })
+    if ($matching.Count -gt 0) {
+        $scope.id = $matching[0].id
+        $null = Invoke-KeycloakRequest -Method PUT -Path "$root/$quotedRealm/client-scopes/$($scope.id)" -Token $token -Payload $scope
+        return $scope.id
+    }
+
+    $null = Invoke-KeycloakRequest -Method POST -Path "$root/$quotedRealm/client-scopes" -Token $token -Payload $scope
+    $scopes = (Invoke-KeycloakRequest -Method GET -Path "$root/$quotedRealm/client-scopes?search=flowmate-user-claims" -Token $token).Data
+    $matching = @($scopes | Where-Object { $_.name -eq $scope.name })
+    if ($matching.Count -eq 0) { throw 'Keycloak did not create the FlowMate user claims scope.' }
+    return $matching[0].id
+}
+
 function Upsert-KeycloakClient([string] $ClientId, [hashtable] $Representation) {
     $found = @(Get-KeycloakClients $ClientId)
     if ($found.Count -gt 0) {
@@ -143,6 +219,22 @@ function Upsert-KeycloakClient([string] $ClientId, [hashtable] $Representation) 
     return $found[0].id
 }
 
+function Ensure-DefaultClientScope([string] $ClientId, [string] $ScopeName) {
+    $clients = @(Get-KeycloakClients $ClientId)
+    if ($clients.Count -eq 0) { throw "Keycloak client $ClientId is missing." }
+    $clientUuid = [Uri]::EscapeDataString($clients[0].id)
+
+    $scopes = (Invoke-KeycloakRequest -Method GET -Path "$root/$quotedRealm/client-scopes?search=$([Uri]::EscapeDataString($ScopeName))" -Token $token).Data
+    $matching = @($scopes | Where-Object { $_.name -eq $ScopeName })
+    if ($matching.Count -eq 0) { throw "Keycloak client scope $ScopeName is missing." }
+    $scopeUuid = [Uri]::EscapeDataString($matching[0].id)
+
+    $defaultScopes = (Invoke-KeycloakRequest -Method GET -Path "$root/$quotedRealm/clients/$clientUuid/default-client-scopes" -Token $token).Data
+    if (@($defaultScopes | Where-Object { $_.id -eq $matching[0].id }).Count -eq 0) {
+        $null = Invoke-KeycloakRequest -Method PUT -Path "$root/$quotedRealm/clients/$clientUuid/default-client-scopes/$scopeUuid" -Token $token
+    }
+}
+
 $redirectUris = @(([Environment]::GetEnvironmentVariable('FLOWMATE_FRONTEND_REDIRECT_URIS') -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $webOrigins = @(([Environment]::GetEnvironmentVariable('FLOWMATE_FRONTEND_ORIGINS') -split ',') | ForEach-Object { $_.Trim().TrimEnd('/') } | Where-Object { $_ })
 if ($redirectUris.Count -eq 0 -or $webOrigins.Count -eq 0) {
@@ -150,14 +242,16 @@ if ($redirectUris.Count -eq 0 -or $webOrigins.Count -eq 0) {
 }
 
 $null = Upsert-ApiAudienceScope
+$null = Upsert-UserClaimsScope
 $null = Upsert-KeycloakClient 'flowmate-web' @{
     clientId = 'flowmate-web'; name = 'FlowMate browser application'; enabled = $true
     protocol = 'openid-connect'; publicClient = $true; standardFlowEnabled = $true
     implicitFlowEnabled = $false; directAccessGrantsEnabled = $false; serviceAccountsEnabled = $false
     redirectUris = $redirectUris; webOrigins = $webOrigins
-    defaultClientScopes = @('profile', 'email', 'flowmate-api-audience')
     attributes = @{ 'pkce.code.challenge.method' = 'S256'; 'post.logout.redirect.uris' = '+' }
 }
+Ensure-DefaultClientScope 'flowmate-web' 'flowmate-api-audience'
+Ensure-DefaultClientScope 'flowmate-web' 'flowmate-user-claims'
 $null = Upsert-KeycloakClient 'flowmate-api' @{
     clientId = 'flowmate-api'; name = 'FlowMate API audience'; enabled = $true
     protocol = 'openid-connect'; bearerOnly = $true; publicClient = $false

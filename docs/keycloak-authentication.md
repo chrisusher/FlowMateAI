@@ -4,19 +4,20 @@ Deployed FlowMate environments use a separate Keycloak realm and PostgreSQL data
 
 ## Local development
 
-The Aspire AppHost starts Keycloak with its embedded `dev-file` database and a persistent Docker data volume, then imports the baseline realm from `infra/keycloak/realm-import/flowmate-realm.json`. This keeps local development self-contained. The Azure deployment uses PostgreSQL separately for production-like environments. Aspire exposes a stable Keycloak port and gives the API its server-side issuer. The gateway injects browser-safe endpoint and client settings. The imported realm defaults enable email registration, verification and recovery, brute-force protection, the 15-character password policy, PKCE, and the API audience mapper.
+The Aspire AppHost starts Keycloak with its embedded `dev-file` database and a persistent Docker data volume, then imports the baseline realm from `infra/keycloak/realm-import/flowmate-realm.json`. This keeps local development self-contained. The Azure deployment uses PostgreSQL separately for production-like environments. Aspire exposes the Keycloak endpoint to the API and Blazor gateway; the gateway passes the browser-safe endpoint into WebAssembly configuration. The local realm allows loopback callbacks on Aspire's assigned ports, enables account registration without email verification, and keeps brute-force protection, the 15-character password policy, and PKCE. Its `flowmate-user-claims` scope supplies the subject, name, and email claims required by the browser and API. Deployed environments keep email verification enabled.
 
-Run `infra/keycloak/provision-realm.ps1` after starting Keycloak to set exact browser callback/origin allow-lists and any configured provider or SMTP credentials. Re-running it updates realm settings and clients in place; it does not import over or delete users, credentials, or realm signing keys.
+Run `infra/keycloak/provision-realm.ps1` after starting Keycloak to set browser callback/origin allow-lists and any configured provider or SMTP credentials. For local Aspire, use the gateway's HTTPS URL and set `KEYCLOAK_VERIFY_EMAIL=false` so local registration does not depend on an SMTP server. For deployed environments leave that setting unset; verification remains enabled. Re-running the script updates realm settings and clients in place; it does not import over or delete users, credentials, or realm signing keys.
 
 Set these variables in the shell used to run the provisioning script:
 
 ```text
-KEYCLOAK_URL=http://localhost:8080
+KEYCLOAK_URL=https://localhost:<keycloak-port>
 KEYCLOAK_REALM=flowmate
 KEYCLOAK_ADMIN_USERNAME=admin
 KEYCLOAK_ADMIN_PASSWORD=<local Aspire admin password>
-FLOWMATE_FRONTEND_REDIRECT_URIS=http://localhost:<gateway-port>/frontend/
-FLOWMATE_FRONTEND_ORIGINS=http://localhost:<gateway-port>
+KEYCLOAK_VERIFY_EMAIL=false
+FLOWMATE_FRONTEND_REDIRECT_URIS=https://localhost:*,http://localhost:*,https://frontend-gateway-flowmateai.dev.localhost:*,http://frontend-gateway-flowmateai.dev.localhost:*
+FLOWMATE_FRONTEND_ORIGINS=https://localhost:*,http://localhost:*,https://frontend-gateway-flowmateai.dev.localhost:*,http://frontend-gateway-flowmateai.dev.localhost:*
 ```
 
 Provider client credentials are optional at provisioning time. Configure them as secrets for each environment:
@@ -34,9 +35,9 @@ Create upstream provider applications with Keycloak's broker callback `https://<
 
 ## Environment configuration
 
-The WebAssembly app reads `Keycloak:Url`, `Keycloak:Realm`, and `Keycloak:ClientId`; provider aliases are under `Keycloak:IdentityProviders`. The API reads `Authentication:Authority` and `Authentication:Audience`. The CLI reads `Keycloak:Url`, `Keycloak:Realm`, `Keycloak:ManagementClientId`, and `Keycloak:ManagementClientSecret`. Set the CLI service-account client to use client credentials and grant only `query-users` and `view-users` from `realm-management`.
+The WebAssembly app reads its public settings from `Web/wwwroot/appsettings.json`: `Keycloak:Realm`, `Keycloak:ClientId`, and provider aliases under `Keycloak:IdentityProviders`. In local Aspire, `Keycloak:Url` is resolved from the gateway's browser-safe service configuration; deployed builds set it in the same appsettings file. The API reads `Authentication:Authority` and `Authentication:Audience`. The CLI reads `Keycloak:Url`, `Keycloak:Realm`, `Keycloak:ManagementClientId`, and `Keycloak:ManagementClientSecret`. Set the CLI service-account client to use client credentials and grant only `query-users` and `view-users` from `realm-management`.
 
-`FLOWMATE_FRONTEND_REDIRECT_URIS` and `FLOWMATE_FRONTEND_ORIGINS` are explicit comma-separated allow-lists. Set the exact root callback for Static Web Apps and the exact `/frontend/` callback for local Aspire. Avoid wildcard redirects. Public browser settings may be embedded in the static bundle; never put a client secret there.
+`FLOWMATE_FRONTEND_REDIRECT_URIS` and `FLOWMATE_FRONTEND_ORIGINS` are comma-separated allow-lists. For local Aspire, keep the loopback-only wildcard entries shown above so sign-in survives dynamically assigned ports. For deployed environments, use exact redirect URLs and origins, including the Static Web Apps root callback. Public browser settings may be embedded in the static bundle; never put a client secret there.
 
 ## Azure Container Apps
 

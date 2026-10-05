@@ -50,7 +50,7 @@ jobs:
         run: |
           python - <<'PY'
           import json, os
-          path = "Web/appsettings.json"
+          path = "Web/wwwroot/appsettings.json"
           with open(path, encoding="utf-8") as source:
               settings = json.load(source)
           settings["ApiBaseUrl"] = os.environ["API_BASE_URL"]

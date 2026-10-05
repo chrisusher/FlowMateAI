@@ -10,9 +10,16 @@
                 <NotAuthorized>
                     @if (!Auth.IsConfigured)
                     {
-                        <main class="auth-screen" role="alert">
-                            <h1>Sign-in is unavailable</h1>
-                            <p>FlowMate sign-in has not been configured. Please try again later.</p>
+                        <main class="auth-screen">
+                            <section class="auth-card auth-unavailable" role="alert" aria-labelledby="sign-in-unavailable-title">
+                                <a class="auth-brand" href="/" aria-label="FlowMate home">
+                                    <img class="auth-wordmark auth-wordmark-light" src="branding/flowmate-wordmark.svg" alt="FlowMate" />
+                                    <img class="auth-wordmark auth-wordmark-dark" src="branding/flowmate-wordmark-dark.svg" alt="" aria-hidden="true" />
+                                </a>
+                                <div class="eyebrow">A QUIETER WAY TO GET THINGS DONE</div>
+                                <h1 id="sign-in-unavailable-title">Sign-in is unavailable</h1>
+                                <p class="auth-description">FlowMate sign-in has not been configured. Please try again later.</p>
+                            </section>
                         </main>
                     }
                     else

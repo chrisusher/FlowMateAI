@@ -49,9 +49,9 @@ var serviceBus = builder.AddAzureServiceBus("flowmate-service-bus");
 var keycloak = builder.AddKeycloak("keycloak", 8080)
     .WithDataVolume("keycloak-data")
     .WithRealmImport("../infra/keycloak/realm-import");
-    
+
 var keycloakBaseUrl = keycloak.GetEndpoint("http");
-var keycloakAuthority = keycloakBaseUrl + "/realms/flowmate";
+var keycloakAuthority = ReferenceExpression.Create($"{keycloakBaseUrl}/realms/flowmate");
 
 var dashboardOtlpEndpoint = builder.Configuration["ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL"];
 var otlpProtocol = string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_PROTOCOL"]) ? "grpc" : builder.Configuration["OTEL_EXPORTER_OTLP_PROTOCOL"];
@@ -381,9 +381,9 @@ cli.WithProcessCommand(
 
 var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithReference(api)
+    .WithReference(keycloak)
     .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"))
     .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"))
-    .WithEnvironment("Keycloak__Url", keycloakBaseUrl)
     .WithEnvironment("Keycloak__Realm", "flowmate")
     .WithEnvironment("Keycloak__ClientId", "flowmate-web");
 
