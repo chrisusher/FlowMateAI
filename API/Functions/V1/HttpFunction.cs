@@ -7,7 +7,7 @@ namespace API.Functions.V1;
 internal static class HttpFunction
 {
     internal static async Task<(string? UserId, string? Email)> UserAsync(
-        HttpRequestData request, Auth0TokenValidator tokens, CancellationToken cancellationToken)
+        HttpRequestData request, OidcTokenValidator tokens, CancellationToken cancellationToken)
     {
         var authorization = request.Headers.TryGetValues("Authorization", out var values) ? values.FirstOrDefault() : null;
         var principal = await tokens.ValidateAsync(authorization, cancellationToken);

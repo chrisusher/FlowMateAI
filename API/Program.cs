@@ -70,7 +70,7 @@ var host = new HostBuilder()
             });
 
         services.AddHttpClient();
-        services.AddSingleton<Auth0TokenValidator>();
+        services.AddSingleton<OidcTokenValidator>();
 
         var configuration = context.Configuration;
         services.AddServices(configuration);

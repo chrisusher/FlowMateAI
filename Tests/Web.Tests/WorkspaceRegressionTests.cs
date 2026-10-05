@@ -149,7 +149,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         Assert.That(Auth.IsSessionExpired, Is.True);
         Assert.That(Auth.Session.Sub, Is.EqualTo("test-user"));
-        Assert.That(Auth.Session.AccessToken, Is.Null);
+        Assert.That(Auth.Session.SessionExpired, Is.True);
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Draft kept through reauthentication"));
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.AuthenticationExpired));
         Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
@@ -199,20 +199,18 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task AlreadyExpiredAccessTokenIsRejectedBeforeAnAuthenticatedRequestIsSent()
+    public async Task KeycloakRefreshFailureIsRejectedBeforeAnAuthenticatedRequestIsSent()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "test-client";
-        Configuration["Auth0:Audience"] = "test-api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "test-client";
+        Configuration["Keycloak:Realm"] = "test-api";
         AuthModule.Setup<AuthSession>("initialize", _ => true).SetResult(new()
         {
             Configured = true,
             SignedIn = true,
-            SessionExpired = false,
-            Sub = "test-user",
-            AccessToken = "expired-token",
-            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds()
+            Sub = "test-user"
         });
+        AuthModule.Setup<string?>("getAccessToken", _ => true).SetResult(null);
         await Auth.InitialiseAsync();
 
         await Store.SaveAsync();

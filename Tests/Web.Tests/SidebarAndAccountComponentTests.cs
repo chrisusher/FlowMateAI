@@ -43,9 +43,9 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
     [Test]
     public void WorkspaceTopbarShowsSignInForAConfiguredSignedOutUser()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "client";
-        Configuration["Auth0:Audience"] = "api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "client";
+        Configuration["Keycloak:Realm"] = "api";
         var cut = Render<WorkspaceTopbar>();
         Assert.That(cut.FindAll(".user-chip"), Is.Empty);
         Assert.That(Content(cut.Find(".quiet-button")), Is.EqualTo("Sign in"));
@@ -53,16 +53,54 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
         Assert.That(Navigation.Uri, Does.EndWith("/settings"));
     }
 
-    [TestCase(0, "google-oauth2")]
+    [TestCase(0, "google")]
     [TestCase(1, "github")]
-    [TestCase(2, "windowslive")]
-    [TestCase(3, "azuread")]
+    [TestCase(2, "microsoft-personal")]
+    [TestCase(3, "microsoft-work-school")]
     public void WorkspaceSignInUsesTheSelectedProvider(int button, string connection)
     {
         var cut = Render<WorkspaceSignIn>();
-        Assert.That(cut.FindAll(".auth-provider").Count, Is.EqualTo(4));
+        Assert.That(cut.FindAll(".auth-provider").Count, Is.EqualTo(5));
         cut.FindAll(".auth-provider")[button].Click();
         var invocation = AuthModule.Invocations.Where(call => call.Identifier == "login").Single();
-        Assert.That(invocation.Arguments[1], Is.EqualTo(connection));
+        Assert.That(invocation.Arguments[0], Is.EqualTo(connection));
+    }
+
+    [Test]
+    public void WorkspaceSignInUsesAThemeAwareWordmarkAndProviderLogos()
+    {
+        var cut = Render<WorkspaceSignIn>();
+
+        var wordmarks = cut.FindAll(".auth-brand img");
+        Assert.That(wordmarks.Select(image => image.GetAttribute("src")), Is.EquivalentTo(new[]
+        {
+            "branding/flowmate-wordmark.svg",
+            "branding/flowmate-wordmark-dark.svg"
+        }));
+        Assert.That(wordmarks[0].GetAttribute("alt"), Is.EqualTo("FlowMate"));
+        Assert.That(wordmarks[1].GetAttribute("aria-hidden"), Is.EqualTo("true"));
+
+        var providerButtons = cut.FindAll(".auth-provider");
+        Assert.That(providerButtons.Select(button => button.QuerySelector("svg.provider-logo")?.ClassName), Is.EquivalentTo(new[]
+        {
+            "provider-logo google-logo",
+            "provider-logo github-logo",
+            "provider-logo microsoft-logo",
+            "provider-logo microsoft-logo",
+            "provider-logo email-logo"
+        }));
+    }
+
+    [Test]
+    public void WorkspaceSignInEmailAndRegistrationActionsUseKeycloakFlows()
+    {
+        var cut = Render<WorkspaceSignIn>();
+
+        cut.Find(".auth-email").Click();
+        var login = AuthModule.Invocations.Single(call => call.Identifier == "login");
+        Assert.That(login.Arguments[0], Is.Null);
+
+        cut.Find(".auth-register").Click();
+        Assert.That(AuthModule.Invocations.Count(call => call.Identifier == "register"), Is.EqualTo(1));
     }
 }

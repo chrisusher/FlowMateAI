@@ -10,13 +10,13 @@ public enum WorkspaceSyncState
 
     [JsonStringEnumMemberName("offline")]
     Offline = 2,
-    
+
     [JsonStringEnumMemberName("conflict")]
     Conflict = 3,
-    
+
     [JsonStringEnumMemberName("rejected")]
     Rejected = 4,
-    
+
     [JsonStringEnumMemberName("failed")]
     Failed = 5,
 

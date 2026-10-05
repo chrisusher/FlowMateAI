@@ -19,6 +19,15 @@ public class Program
         EnvironmentVariablesExtensions.AddEnvironmentVariables(
             (IConfigurationBuilder)builder.Configuration);
 
+        // The Aspire Blazor gateway injects referenced services into browser-safe configuration.
+        // Use that endpoint for OIDC when running locally; a configured URL still wins elsewhere.
+
+        if (string.IsNullOrWhiteSpace(builder.Configuration["Keycloak:Url"]))
+        {
+            builder.Configuration["Keycloak:Url"] = builder.Configuration["services:keycloak:https:0"]
+                ?? builder.Configuration["services:keycloak:http:0"];
+        }
+
         // The gateway exposes referenced services as browser-safe service-discovery values.
         // Preserve the configured fallback outside Aspire, but prefer the same-origin proxy
         // while the app is orchestrated locally.
@@ -44,9 +53,9 @@ public class Program
         });
 
         // API clients
-        builder.Services.AddScoped<Auth0Client>();
+        builder.Services.AddScoped<AuthClient>();
         builder.Services.AddAuthorizationCore();
-        builder.Services.AddScoped<AuthenticationStateProvider, Auth0AuthenticationStateProvider>();
+        builder.Services.AddScoped<AuthenticationStateProvider, OidcAuthenticationStateProvider>();
         builder.Services.AddScoped<BillingClient>();
         builder.Services.AddScoped<McpKeysClient>();
         builder.Services.AddScoped<WorkspaceStore>();

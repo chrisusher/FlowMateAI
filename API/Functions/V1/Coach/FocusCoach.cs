@@ -11,7 +11,7 @@ using Shared.Models;
 
 namespace API.Functions.V1.Coach;
 
-public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces)
+public sealed class FocusCoach(OidcTokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces)
 {
 
     [Function("FocusCoach")]

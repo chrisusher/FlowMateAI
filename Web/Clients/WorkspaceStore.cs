@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Microsoft.JSInterop;
@@ -8,7 +7,7 @@ using Shared.Models;
 
 namespace Web.Clients;
 
-public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client auth)
+public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, AuthClient auth)
 {
     private const string StoragePrefix = "flowmate.workspace.v1.";
     private IJSObjectReference? _module;
@@ -41,12 +40,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, SharedCommon.JsonOptions) ?? new();
         }
 
-        if (auth.Session.SignedIn && !string.IsNullOrWhiteSpace(auth.Session.AccessToken) && !_pendingSync)
+        if (auth.Session.SignedIn && !_pendingSync)
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
+                using var request = await auth.AuthorizedRequestAsync(HttpMethod.Get, "api/v1/workspace");
                 using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
                 response.EnsureSuccessStatusCode();
                 var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
@@ -110,7 +108,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             await PersistLocalAsync();
             await SetPendingSyncAsync(true);
 
-            if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
+            if (!auth.Session.SignedIn || auth.IsSessionExpired)
             {
                 SetSyncState(auth.IsSessionExpired ? WorkspaceSyncState.AuthenticationExpired : WorkspaceSyncState.Pending,
                     auth.IsSessionExpired
@@ -132,11 +130,8 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             var sentWorkspace = JsonSerializer.Deserialize<WorkspaceSnapshot>(JsonSerializer.Serialize(Data, SharedCommon.JsonOptions), SharedCommon.JsonOptions) ?? new();
             var sentJson = JsonSerializer.Serialize(sentWorkspace, SharedCommon.JsonOptions);
             SetSyncState(WorkspaceSyncState.Saving, "Saving your workspace…");
-            using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/workspace")
-            {
-                Content = JsonContent.Create(new WorkspaceSaveRequest(sentWorkspace, _revision), options: SharedCommon.JsonOptions)
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
+            using var request = await auth.AuthorizedRequestAsync(HttpMethod.Put, "api/v1/workspace");
+            request.Content = JsonContent.Create(new WorkspaceSaveRequest(sentWorkspace, _revision), options: SharedCommon.JsonOptions);
             using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
@@ -251,8 +246,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     private async Task LoadConflictAsync(string? errorCode)
     {
-        using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
-        refresh.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
+        using var refresh = await auth.AuthorizedRequestAsync(HttpMethod.Get, "api/v1/workspace");
         using var latest = await auth.SendAsync(http, refresh, requiresAuthentication: true);
 
         if (latest.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
@@ -302,15 +296,12 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     public async Task<CoachResponse?> AskCoachAsync(string prompt, string? conversationId, CancellationToken cancellationToken = default)
     {
-        if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
+        if (!auth.Session.SignedIn)
         {
             return null;
         }
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/coach")
-        {
-            Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: SharedCommon.JsonOptions)
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
+        using var request = await auth.AuthorizedRequestAsync(HttpMethod.Post, "api/v1/coach", cancellationToken);
+        request.Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: SharedCommon.JsonOptions);
         using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
 
         if (!response.IsSuccessStatusCode)

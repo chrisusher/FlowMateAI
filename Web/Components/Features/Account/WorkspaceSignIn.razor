@@ -1,34 +1,52 @@
 @inherits WorkspaceComponentBase
-@inject Auth0Client Auth
+@inject AuthClient Auth
 
-<div class="auth-screen">
-    <img class="auth-mark" src="/branding/flowmate-symbol.svg" alt="FlowMate" />
-    <div class="eyebrow">A QUIETER WAY TO GET THINGS DONE</div>
-    @if (Auth.IsSessionExpired)
-    {
-        <h1>Your session expired.</h1>
-        <p role="alert">Your local work, current timer, and place in FlowMate are saved. Sign in again to continue syncing; you'll return to this page.</p>
-    }
-    else
-    {
-        <h1>Your focus, in good company.</h1>
-        <p>Sign in to keep your projects, plans, and focus history private to your account.</p>
-    }
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.GoogleConnection)'>
-        <span>G</span>
-        Continue with Google
-    </button>
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.GitHubConnection)'>
-        <span>GH</span>
-        Continue with GitHub
-    </button>
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.MicrosoftPersonalConnection)'>
-        <span>M</span>
-        Microsoft personal account
-    </button>
-    <button class="auth-provider" @onclick='() => Auth.LoginAsync(Auth.MicrosoftWorkSchoolConnection)'>
-        <span>M</span>
-        Microsoft work or school
-    </button>
-    <small>Accounts from different providers stay separate unless you link them in Auth0.</small>
-</div>
+<main class="auth-screen">
+    <section class="auth-card" aria-labelledby="sign-in-title">
+        <a class="auth-brand" href="/" aria-label="FlowMate home">
+            <img class="auth-wordmark auth-wordmark-light" src="branding/flowmate-wordmark.svg" alt="FlowMate" />
+            <img class="auth-wordmark auth-wordmark-dark" src="branding/flowmate-wordmark-dark.svg" alt="" aria-hidden="true" />
+        </a>
+        <div class="eyebrow">A QUIETER WAY TO GET THINGS DONE</div>
+        @if (Auth.IsSessionExpired)
+        {
+            <h1 id="sign-in-title">Your session expired</h1>
+            <p class="auth-description" role="alert">Your local work, current timer, and place in FlowMate are saved. Sign in again to continue syncing; you’ll return to this page.</p>
+        }
+        else
+        {
+            <h1 id="sign-in-title">Your focus, in good company.</h1>
+            <p class="auth-description">Sign in to keep your projects, plans, and focus history private to your account.</p>
+        }
+
+        <div class="auth-providers" aria-label="Choose a sign-in provider">
+            <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.Google)'>
+                <svg class="provider-logo google-logo" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5Z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.76 7.18l7.73 6C44.42 38.1 46.98 31.9 46.98 24.55Z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.13.76-4.59l-7.98-6.2A23.9 23.9 0 0 0 0 24c0 3.88.93 7.56 2.56 10.78l7.97-6.19Z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.8l-7.73-6c-2.15 1.45-4.9 2.3-8.18 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.2C6.51 42.62 14.62 48 24 48Z"/></svg>
+                <span>Continue with Google</span>
+            </button>
+            <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.GitHub)'>
+                <svg class="provider-logo github-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .9a11.1 11.1 0 0 0-3.51 21.63c.56.1.76-.24.76-.54v-2.1c-3.1.67-3.76-1.32-3.76-1.32-.5-1.29-1.24-1.64-1.24-1.64-1.01-.69.08-.68.08-.68 1.12.08 1.71 1.15 1.71 1.15.99 1.7 2.6 1.21 3.23.93.1-.72.39-1.21.7-1.49-2.47-.28-5.07-1.24-5.07-5.5 0-1.22.44-2.21 1.15-2.99-.12-.28-.5-1.42.1-2.95 0 0 .94-.3 3.05 1.14a10.6 10.6 0 0 1 5.55 0c2.11-1.43 3.05-1.14 3.05-1.14.6 1.53.22 2.67.11 2.95.71.78 1.14 1.77 1.14 2.99 0 4.27-2.6 5.21-5.08 5.49.4.35.75 1.02.75 2.06v3.1c0 .3.2.65.77.54A11.1 11.1 0 0 0 12 .9Z"/></svg>
+                <span>Continue with GitHub</span>
+            </button>
+            <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.MicrosoftPersonal)'>
+                <svg class="provider-logo microsoft-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#f25022" d="M1 1h10v10H1z"/><path fill="#7fba00" d="M13 1h10v10H13z"/><path fill="#00a4ef" d="M1 13h10v10H1z"/><path fill="#ffb900" d="M13 13h10v10H13z"/></svg>
+                <span>Microsoft personal account</span>
+            </button>
+            <button class="auth-provider" @onclick='() => Auth.LoginAsync(SignInProvider.MicrosoftWorkSchool)'>
+                <svg class="provider-logo microsoft-logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#f25022" d="M1 1h10v10H1z"/><path fill="#7fba00" d="M13 1h10v10H13z"/><path fill="#00a4ef" d="M1 13h10v10H1z"/><path fill="#ffb900" d="M13 13h10v10H13z"/></svg>
+                <span>Microsoft work or school</span>
+            </button>
+        </div>
+
+        <div class="auth-divider"><span>or continue with</span></div>
+        <button class="auth-provider auth-email" @onclick="() => Auth.LoginAsync()">
+            <svg class="provider-logo email-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.75 5.75h16.5c.69 0 1.25.56 1.25 1.25v10c0 .69-.56 1.25-1.25 1.25H3.75c-.69 0-1.25-.56-1.25-1.25V7c0-.69.56-1.25 1.25-1.25Z"/><path d="m3 7 9 6.5L21 7"/></svg>
+            <span>Sign in with email</span>
+        </button>
+        <div class="auth-register-row">
+            <span>New to FlowMate?</span>
+            <button class="auth-register" @onclick="Auth.RegisterAsync">Create an account</button>
+        </div>
+        <p class="auth-footnote">Accounts from different providers stay separate unless you link them in Keycloak.</p>
+    </section>
+</main>

@@ -15,7 +15,7 @@ public interface IUserDataResetService
 }
 
 /// <summary>
-/// Removes application-owned data for one Auth0 subject. This deliberately never creates
+/// Removes application-owned data for one Keycloak subject. This deliberately never creates
 /// the Cosmos database, containers, or the archive container.
 /// </summary>
 public sealed class UserDataResetService(IUserDataResetRepository repository, BlobServiceClient blobClient, IMcpCredentialService credentials) : IUserDataResetService

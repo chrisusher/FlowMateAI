@@ -6,7 +6,7 @@ using Web.Clients;
 
 namespace Web.Managers;
 
-public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth, WorkspaceStatistics statistics, WorkspaceBillingManager billing) : WorkspaceManager
+public sealed class WorkspaceCoachManager(WorkspaceStore store, AuthClient auth, WorkspaceStatistics statistics, WorkspaceBillingManager billing) : WorkspaceManager
 {
     private WorkspaceStore Store => store;
 

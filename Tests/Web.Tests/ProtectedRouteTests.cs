@@ -18,6 +18,8 @@ public sealed class ProtectedRouteTests : WorkspaceComponentTest
         var cut = Render<Routes>();
 
         cut.WaitForElement("[role=alert]");
+        Assert.That(cut.Find(".auth-card").GetAttribute("aria-labelledby"), Is.EqualTo("sign-in-unavailable-title"));
+        Assert.That(cut.Find(".auth-brand img").GetAttribute("src"), Is.EqualTo("branding/flowmate-wordmark.svg"));
         Assert.That(cut.Markup, Does.Contain("Sign-in is unavailable"));
         Assert.That(cut.Markup, Does.Not.Contain("Make today count."));
     }
@@ -25,9 +27,9 @@ public sealed class ProtectedRouteTests : WorkspaceComponentTest
     [Test]
     public void ConfiguredAnonymousUserSeesSignInInsteadOfProtectedPage()
     {
-        Configuration["Auth0:Domain"] = "auth.example.test";
-        Configuration["Auth0:ClientId"] = "test-client";
-        Configuration["Auth0:Audience"] = "test-api";
+        Configuration["Keycloak:Url"] = "auth.example.test";
+        Configuration["Keycloak:ClientId"] = "test-client";
+        Configuration["Keycloak:Realm"] = "test-api";
         Authorization.SetNotAuthorized();
         Navigation.NavigateTo("/settings");
 

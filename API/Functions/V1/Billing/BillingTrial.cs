@@ -5,7 +5,7 @@ using Services.Billing;
 
 namespace API.Functions.V1.Billing;
 
-public sealed class BillingTrial(Auth0TokenValidator tokens, IBillingService billing)
+public sealed class BillingTrial(OidcTokenValidator tokens, IBillingService billing)
 {
     [Function("BillingTrial")]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/billing/trial")] HttpRequestData request, CancellationToken cancellationToken)

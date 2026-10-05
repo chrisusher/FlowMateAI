@@ -1,1 +1,26 @@
-<Routes />
+@inject Web.Clients.AuthClient Auth
+
+@if (_ready)
+{
+    <Routes />
+}
+else
+{
+    <div class="app-startup" role="status" aria-live="polite">Loading FlowMate…</div>
+}
+
+@code {
+    private bool _ready;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await Auth.InitialiseAsync();
+        _ready = true;
+        StateHasChanged();
+    }
+}

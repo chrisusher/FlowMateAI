@@ -6,7 +6,7 @@ namespace API.Functions.V1.McpKeys;
 
 internal static class McpKeyHttpHelpers
 {
-    public static async Task<string?> OwnerAsync(Auth0TokenValidator tokens, HttpRequestData request, CancellationToken cancellationToken)
+    public static async Task<string?> OwnerAsync(OidcTokenValidator tokens, HttpRequestData request, CancellationToken cancellationToken)
     {
         var authorization = request.Headers.TryGetValues("Authorization", out var values) ? values.FirstOrDefault() : null;
 

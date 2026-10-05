@@ -88,7 +88,7 @@ public static class Services
             var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
 
             return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
-        });        
+        });
 
         if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))
         {
@@ -146,9 +146,9 @@ public static class Services
 
         services.AddDatabase(configuration);
         services.TryAddSingleton(TimeProvider.System);
-        
+
         services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
-        services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();        
+        services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();
 
         var client = string.IsNullOrWhiteSpace(settings.AccountKey)
             ? new CosmosClient(settings.AccountEndpoint, new DefaultAzureCredential())
