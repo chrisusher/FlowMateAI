@@ -19,6 +19,9 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="../../infra/keycloak/realm-import/flowmate-realm.json" Link="flowmate-realm.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <Using Include="NUnit.Framework" />
   </ItemGroup>
 </Project>

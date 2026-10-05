@@ -48,7 +48,7 @@ function Get-ProjectPath {
 
     switch ($Name) {
         'Component' { 
-            return 'Tests/ComponentTests/ComponentTests.csproj' 
+            return 'Tests/Web.Tests/Web.Tests.csproj'
         }
         'Backend' { 
             return 'Tests/Services.Tests/Services.Tests.csproj' 
@@ -97,8 +97,7 @@ function Test-Target {
         '--no-restore',
         '--configuration', $Configuration,
         '--artifacts-path', $artifactRoot,
-        '--logger', 'console;verbosity=minimal',
-        '--logger', "trx;LogFileName=$Name.trx",
+        '--output', 'Normal',
         '--results-directory', $resultsRoot
     )
 

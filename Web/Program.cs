@@ -21,6 +21,7 @@ public class Program
 
         // The Aspire Blazor gateway injects referenced services into browser-safe configuration.
         // Use that endpoint for OIDC when running locally; a configured URL still wins elsewhere.
+
         if (string.IsNullOrWhiteSpace(builder.Configuration["Keycloak:Url"]))
         {
             builder.Configuration["Keycloak:Url"] = builder.Configuration["services:keycloak:https:0"]

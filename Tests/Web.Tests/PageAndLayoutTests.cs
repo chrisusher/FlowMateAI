@@ -262,7 +262,7 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
         var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Private body"))));
         cut.WaitForElement(".auth-screen");
         Assert.That(cut.Markup, Does.Not.Contain("Private body"));
-        Assert.That(cut.FindAll(".auth-provider").Count, Is.EqualTo(4));
+        Assert.That(cut.FindAll(".auth-provider").Count, Is.EqualTo(5));
     }
 
     [Test]

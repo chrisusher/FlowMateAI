@@ -76,6 +76,30 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "authorizationServicesEnabled": false
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "flowmate-api-audience",
+      "description": "Adds the FlowMate API audience to browser access tokens",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "FlowMate API audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "flowmate-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
     },
     {
       "name": "flowmate-user-claims",
@@ -181,30 +205,6 @@
             "access.token.claim": "true",
             "claim.name": "family_name",
             "jsonType.label": "String"
-          }
-        }
-      ]
-    }
-  ],
-  "clientScopes": [
-    {
-      "name": "flowmate-api-audience",
-      "description": "Adds the FlowMate API audience to browser access tokens",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "true",
-        "display.on.consent.screen": "false"
-      },
-      "protocolMappers": [
-        {
-          "name": "FlowMate API audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "flowmate-api",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
           }
         }
       ]
