@@ -48,6 +48,8 @@ var serviceBus = builder.AddAzureServiceBus("flowmate-service-bus");
 
 var keycloak = builder.AddKeycloak("keycloak", 8080)
     .WithDataVolume("keycloak-data")
+    .WithEnvironment("KC_PROXY_HEADERS", "xforwarded")
+    .WithEnvironment("KC_HOSTNAME", "https://localhost:8080")
     .WithRealmImport("../infra/keycloak/realm-import");
 
 var keycloakBaseUrl = keycloak.GetEndpoint("http");
