@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ChrisUsher.Core.Shared;
+using Microsoft.JSInterop;
 using Shared.Contracts;
 using Shared.Enums;
 using Web.Clients;
@@ -242,7 +243,13 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey))
             .SetResult(JsonSerializer.Serialize(draft, SharedCommon.JsonOptions));
         WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey + ".pending"))
-            .SetResult("true");
+            .SetResult(JsonSerializer.Serialize(new
+            {
+                AccountId = "test-user",
+                Revision = "saved-revision",
+                Workspace = draft,
+                UpdatedAt = DateTimeOffset.UtcNow
+            }, SharedCommon.JsonOptions));
         WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey + ".revision"))
             .SetResult("saved-revision");
         WorkspaceSaveRequest? restored = null;
@@ -264,6 +271,115 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(restored.Workspace.Timer.Phase, Is.EqualTo(TimerPhase.Paused));
         Assert.That(Store.Data.Tasks.Single().Title, Is.EqualTo("Saved task"));
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
+    }
+
+    [Test]
+    public async Task WorkspaceDraftIsNeverSavedUnderAnotherSignedInAccount()
+    {
+        await SignInAsync();
+        Store.Data.DisplayName = "Account one draft";
+        await Store.SaveAsync();
+        Api.Paths.Clear();
+        Auth.Session.Sub = "account-two";
+        Auth.Session.AccessToken = "account-two-token";
+
+        await Store.SaveAsync();
+
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Pending));
+        Assert.That(Api.Paths, Is.Empty);
+        Assert.That(JSInterop.Invocations.Any(call =>
+            call.Identifier == "write" && call.Arguments[0]?.ToString()?.Contains("account-two", StringComparison.Ordinal) == true), Is.False);
+
+        var otherWorkspace = new WorkspaceSnapshot
+        {
+            DisplayName = "Account two workspace",
+            Projects = [new() { Id = "account-two-project", Name = "Account two project" }]
+        };
+        WorkspaceSaveRequest? sent = null;
+        Api.Respond = async (request, _) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(otherWorkspace, "account-two-revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            sent = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(sent!.Workspace, "account-two-saved-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+        var accountTwoStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth);
+
+        await accountTwoStore.InitialiseAsync();
+
+        Assert.That(sent!.Workspace.DisplayName, Is.EqualTo("Account two workspace"));
+        Assert.That(sent.Revision, Is.EqualTo("account-two-revision"));
+        Assert.That(JSInterop.Invocations.Any(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.account-two")), Is.True);
+    }
+
+    [Test]
+    public async Task PlanRejectedSaveRemainsPendingAndDoesNotReportCloudSuccess()
+    {
+        await SignInAsync();
+        Store.Data.DisplayName = "Draft after plan rejection";
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+        {
+            Content = JsonContent.Create(new ApiError("project_limit", "Your plan has reached its project limit."), options: SharedCommon.JsonOptions)
+        });
+
+        await Store.SaveAsync();
+
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Rejected));
+        Assert.That(Store.SyncMessage, Does.Contain("project limit"));
+        var pending = JSInterop.Invocations.Last(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
+            .Arguments[1]!.ToString();
+        Assert.That(pending, Does.Contain("test-user"));
+        Assert.That(pending, Does.Contain("Draft after plan rejection"));
+    }
+
+    [Test]
+    public async Task OfflineDraftEnvelopeRestoresTheLatestEditAndItsAccountRevisionAfterReload()
+    {
+        await SignInAsync();
+        Api.Respond = (_, _) => throw new HttpRequestException("Network unavailable");
+        Store.Data.DisplayName = "First offline edit";
+        await Store.SaveAsync();
+        Store.Data.DisplayName = "Second offline edit";
+        await Store.SaveAsync();
+
+        var pending = JSInterop.Invocations.Last(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
+            .Arguments[1]!.ToString();
+        using var pendingJson = JsonDocument.Parse(pending!);
+        Assert.That(Property(pendingJson.RootElement, "AccountId").GetString(), Is.EqualTo("test-user"));
+        Assert.That(Property(Property(pendingJson.RootElement, "Workspace"), "DisplayName").GetString(), Is.EqualTo("Second offline edit"));
+
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
+            .SetResult(pending);
+        WorkspaceSaveRequest? restored = null;
+        Api.Respond = async (request, _) =>
+        {
+            restored = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(restored!.Workspace, "reconnected-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+        var reloadedStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth);
+
+        await reloadedStore.InitialiseAsync();
+
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(restored!.Workspace.DisplayName, Is.EqualTo("Second offline edit"));
+        Assert.That(reloadedStore.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
     }
 
     [Test]
@@ -345,4 +461,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Content(cut.Find(".crumb strong")), Is.EqualTo("Settings"));
         Assert.That(cut.FindAll("#billing"), Has.Exactly(1).Items);
     }
+
+    private static JsonElement Property(JsonElement element, string name) => element.EnumerateObject()
+        .Single(property => string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)).Value;
 }
