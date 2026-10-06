@@ -25,11 +25,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private bool _remoteLoadFailed;
     public WorkspaceSnapshot Data { get; private set; } = new();
     public string ClientId { get; private set; } = "";
+    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow + _serverClockOffset;
     public WorkspaceSyncState SyncState { get; private set; } = WorkspaceSyncState.Saved;
     public string? SyncMessage { get; private set; }
     public bool HasConflict => _remoteConflict is not null;
     public bool RequiresRemoteReload => _remoteLoadFailed;
     public event Action? Changed;
+    private TimeSpan _serverClockOffset;
 
     public async Task InitialiseAsync()
     {
@@ -53,6 +55,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 Data = cache.Workspace;
                 _revision = cache.Revision;
                 _pendingSync = cache.Pending;
+                _serverClockOffset = cache.ServerClockOffset;
             }
         }
         else if (!string.IsNullOrWhiteSpace(json))
@@ -115,6 +118,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
                 if (remote is not null && remote.Workspace is not null && !string.IsNullOrWhiteSpace(remote.Revision))
                 {
+                    CalibrateClock(response);
                     Data = remote.Workspace;
                     _revision = remote.Revision;
                     await PersistRevisionAsync();
@@ -273,6 +277,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
                 if (saved is not null && saved.Workspace is not null && !string.IsNullOrWhiteSpace(saved.Revision))
                 {
+                    CalibrateClock(response);
                     _revision = saved.Revision;
                     var currentJson = JsonSerializer.Serialize(Data, SharedCommon.JsonOptions);
 
@@ -400,6 +405,8 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
+            CalibrateClock(response);
+
             _remoteLoadFailed = false;
 
             if (_pendingSync)
@@ -517,7 +524,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         if (latest.IsSuccessStatusCode)
         {
+            CalibrateClock(latest);
             _remoteConflict = await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+
+            if (string.Equals(errorCode, "timer_conflict", StringComparison.Ordinal) && _remoteConflict?.Workspace is { } remoteWorkspace)
+            {
+                Data.Timer = remoteWorkspace.Timer;
+            }
         }
 
         var timerConflict = string.Equals(errorCode, "timer_conflict", StringComparison.Ordinal);
@@ -530,7 +543,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     private async Task PersistLocalAsync()
     {
-        var json = JsonSerializer.Serialize(new WorkspaceCacheRecord(_storageAccountId, _revision, _pendingSync, Data, DateTimeOffset.UtcNow), SharedCommon.JsonOptions);
+        var json = JsonSerializer.Serialize(new WorkspaceCacheRecord(_storageAccountId, _revision, _pendingSync, Data, DateTimeOffset.UtcNow, _serverClockOffset), SharedCommon.JsonOptions);
         await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
     }
 
@@ -583,7 +596,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         }
     }
 
-    private sealed record WorkspaceCacheRecord(string AccountId, string? Revision, bool Pending, WorkspaceSnapshot Workspace, DateTimeOffset UpdatedAt);
+    private sealed record WorkspaceCacheRecord(string AccountId, string? Revision, bool Pending, WorkspaceSnapshot Workspace, DateTimeOffset UpdatedAt, TimeSpan ServerClockOffset);
     private sealed record PendingWorkspaceDraft(string AccountId, string? Revision, WorkspaceSnapshot Workspace, DateTimeOffset UpdatedAt);
 
     public ProjectRecord? Project(string id) => Data.Projects.FirstOrDefault(p => p.Id == id);
@@ -634,9 +647,9 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     {
         var timer = Data.Timer;
 
-        if ((timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak) && timer.EndsAt is { } end && (timer.OwnerClientId == ClientId || end <= DateTimeOffset.UtcNow))
+        if ((timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak) && timer.EndsAt is { } end && (timer.OwnerClientId == ClientId || end <= UtcNow))
         {
-            var left = (int)Math.Ceiling((end - DateTimeOffset.UtcNow).TotalSeconds);
+            var left = (int)Math.Ceiling((end - UtcNow).TotalSeconds);
 
             if (left > 0)
             {
@@ -647,33 +660,33 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
             if (timer.Phase == TimerPhase.Focus)
             {
-                foreach (var interval in timer.CompletedIntervals)
-                {
-                    RecordFocus(interval.StartedAt, interval.EndedAt, timer.TaskId, timer.ProjectId, (int)(interval.EndedAt - interval.StartedAt).TotalSeconds);
-                }
-
-                if (timer.StartedAt is { } started)
-                {
-                    RecordFocus(started, end, timer.TaskId, timer.ProjectId, Math.Max(0, timer.DurationSeconds - timer.CompletedIntervals.Sum(i => (int)(i.EndedAt - i.StartedAt).TotalSeconds)));
-                }
+                RecordFocusIntervals(CompletedTimerIntervals(timer, end), timer.TaskId, timer.ProjectId, timer.DurationSeconds, timer.EnsureFocusSessionId());
+                timer.CompletedPomodoros++;
             }
 
             // A closed tab never starts the next focus session on the user's behalf.
-            timer.Phase = timer.Phase == TimerPhase.Focus ? TimerPhase.Idle : TimerPhase.Idle;
+            timer.Phase = TimerPhase.Idle;
             timer.EndsAt = null;
             timer.StartedAt = null;
             timer.RemainingSeconds = 0;
+            timer.DurationSeconds = 0;
+            timer.CompletedIntervals.Clear();
+            timer.FocusSessionId = null;
+            timer.OwnerClientId = "";
         }
     }
 
     public void RecordFocus(DateTimeOffset started, DateTimeOffset ended, string? taskId, string projectId, int plannedSeconds)
     {
-        var finish = started.AddSeconds(Math.Max(0, Math.Min((ended - started).TotalSeconds, plannedSeconds)));
+        RecordFocusIntervals([new() { StartedAt = started, EndedAt = ended }], taskId, projectId, plannedSeconds);
+    }
 
-        if (finish <= started)
-        {
-            return;
-        }
+    public void RecordFocusIntervals(IReadOnlyCollection<FocusIntervalRecord> intervals, string? taskId, string projectId, int plannedSeconds, string? focusSessionId = null)
+    {
+        var remainingSeconds = (double)Math.Max(0, plannedSeconds);
+        var elapsed = 0d;
+        var assignedMinutes = 0;
+        var sessionRecords = new Dictionary<string, FocusSessionRecord>(StringComparer.Ordinal);
         TimeZoneInfo zone;
 
         try
@@ -685,36 +698,88 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             zone = TimeZoneInfo.Local;
         }
 
-        var cursor = started;
-        var elapsed = 0d;
-        var assignedMinutes = 0;
-
-        while (cursor < finish)
+        foreach (var interval in intervals.OrderBy(interval => interval.StartedAt))
         {
-            var localDate = TimeZoneInfo.ConvertTime(cursor, zone).Date;
-            var nextMidnight = DateTime.SpecifyKind(localDate.AddDays(1), DateTimeKind.Unspecified);
-
-            while (zone.IsInvalidTime(nextMidnight))
+            if (remainingSeconds <= 0)
             {
-                nextMidnight = nextMidnight.AddMinutes(1);
+                break;
             }
-            var nextBoundary = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(nextMidnight, zone), TimeSpan.Zero);
-            var segmentEnd = nextBoundary < finish ? nextBoundary : finish;
 
-            if (segmentEnd <= cursor)
-            {
-                segmentEnd = finish;
-            }
-            elapsed += (segmentEnd - cursor).TotalSeconds;
-            var cumulativeMinutes = (int)Math.Floor(elapsed / 60d);
-            var segmentMinutes = cumulativeMinutes - assignedMinutes;
+            var intervalSeconds = Math.Min((interval.EndedAt - interval.StartedAt).TotalSeconds, remainingSeconds);
+            var finish = interval.StartedAt.AddSeconds(Math.Max(0, intervalSeconds));
 
-            if (segmentMinutes > 0)
+            if (finish <= interval.StartedAt)
             {
-                Data.Sessions.Add(new() { StartedAt = cursor, EndedAt = segmentEnd, FocusMinutes = segmentMinutes, TaskId = taskId, ProjectId = projectId });
+                continue;
             }
-            assignedMinutes = cumulativeMinutes;
-            cursor = segmentEnd;
+
+            var cursor = interval.StartedAt;
+
+            while (cursor < finish)
+            {
+                var localDate = TimeZoneInfo.ConvertTime(cursor, zone).Date;
+                var nextMidnight = DateTime.SpecifyKind(localDate.AddDays(1), DateTimeKind.Unspecified);
+
+                while (zone.IsInvalidTime(nextMidnight))
+                {
+                    nextMidnight = nextMidnight.AddMinutes(1);
+                }
+                var nextBoundary = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(nextMidnight, zone), TimeSpan.Zero);
+                var segmentEnd = nextBoundary < finish ? nextBoundary : finish;
+
+                if (segmentEnd <= cursor)
+                {
+                    segmentEnd = finish;
+                }
+                elapsed += (segmentEnd - cursor).TotalSeconds;
+                var cumulativeMinutes = (int)Math.Floor(elapsed / 60d);
+                var segmentMinutes = cumulativeMinutes - assignedMinutes;
+
+                if (segmentMinutes > 0)
+                {
+                    var sessionDay = TimeZoneInfo.ConvertTime(cursor, zone).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+                    var sessionId = focusSessionId is null ? Guid.NewGuid().ToString("N") : $"{focusSessionId}-{sessionDay}";
+
+                    if (sessionRecords.TryGetValue(sessionId, out var session))
+                    {
+                        session.EndedAt = segmentEnd;
+                        session.FocusMinutes += segmentMinutes;
+                    }
+                    else
+                    {
+                        sessionRecords.Add(sessionId, new() { Id = sessionId, StartedAt = cursor, EndedAt = segmentEnd, FocusMinutes = segmentMinutes, TaskId = taskId, ProjectId = projectId });
+                    }
+                }
+                assignedMinutes = cumulativeMinutes;
+                cursor = segmentEnd;
+            }
+
+            remainingSeconds -= intervalSeconds;
+        }
+
+        foreach (var session in sessionRecords.Values.Where(session => Data.Sessions.All(existing => existing.Id != session.Id)))
+        {
+            Data.Sessions.Add(session);
+        }
+    }
+
+    private static IReadOnlyCollection<FocusIntervalRecord> CompletedTimerIntervals(TimerSnapshot timer, DateTimeOffset end)
+    {
+        var intervals = timer.CompletedIntervals.ToList();
+
+        if (timer.StartedAt is { } started && end > started)
+        {
+            intervals.Add(new() { StartedAt = started, EndedAt = end });
+        }
+
+        return intervals;
+    }
+
+    private void CalibrateClock(HttpResponseMessage response)
+    {
+        if (response.Headers.Date is { } serverDate)
+        {
+            _serverClockOffset = serverDate - DateTimeOffset.UtcNow;
         }
     }
 

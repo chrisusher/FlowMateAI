@@ -68,6 +68,10 @@
             <button class="timer-secondary" @onclick="Timer.EndFocus">Finish</button>
         }
     </div>
+    @if (!string.IsNullOrWhiteSpace(Timer.CompletionMessage))
+    {
+        <p class="timer-completion" role="status" aria-live="polite">@Timer.CompletionMessage</p>
+    }
     <div class="session-note">
         <span class="session-dots">
             @for (var i = 0; i < 4; i++)

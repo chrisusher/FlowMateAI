@@ -75,7 +75,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         JsonSerializer.Deserialize<WorkspaceSnapshot>(payload, SharedCommon.JsonOptions) ?? new();
 
     private static bool SameTimer(TimerSnapshot left, TimerSnapshot right) =>
-        left.Phase == right.Phase && left.EndsAt == right.EndsAt && left.StartedAt == right.StartedAt &&
+        left.Phase == right.Phase && left.EndsAt == right.EndsAt && left.StartedAt == right.StartedAt && left.FocusSessionId == right.FocusSessionId &&
         left.PausedAt == right.PausedAt && left.RemainingSeconds == right.RemainingSeconds &&
         left.DurationSeconds == right.DurationSeconds && left.CompletedPomodoros == right.CompletedPomodoros &&
         left.TaskId == right.TaskId && left.ProjectId == right.ProjectId && left.OwnerClientId == right.OwnerClientId &&
