@@ -22,11 +22,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private WorkspaceResponse? _remoteConflict;
     private bool _pendingSync;
     private bool _invalidPendingDraft;
+    private bool _remoteLoadFailed;
     public WorkspaceSnapshot Data { get; private set; } = new();
     public string ClientId { get; private set; } = "";
     public WorkspaceSyncState SyncState { get; private set; } = WorkspaceSyncState.Saved;
     public string? SyncMessage { get; private set; }
     public bool HasConflict => _remoteConflict is not null;
+    public bool RequiresRemoteReload => _remoteLoadFailed;
     public event Action? Changed;
 
     public async Task InitialiseAsync()
@@ -38,18 +40,39 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         var pending = await module.InvokeAsync<string?>("read", PendingStorageKey);
         var revision = await module.InvokeAsync<string?>("read", RevisionStorageKey);
         _revision = string.IsNullOrWhiteSpace(revision) ? null : revision;
+        var cache = ReadWorkspaceCache(json);
 
-        if (!string.IsNullOrWhiteSpace(json))
+        if (cache is not null)
         {
-            Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, SharedCommon.JsonOptions) ?? new();
+            if (!string.Equals(cache.AccountId, _storageAccountId, StringComparison.Ordinal))
+            {
+                _invalidPendingDraft = true;
+            }
+            else
+            {
+                Data = cache.Workspace;
+                _revision = cache.Revision;
+                _pendingSync = cache.Pending;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                Data = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, SharedCommon.JsonOptions) ?? new();
+            }
+            catch (JsonException)
+            {
+                _invalidPendingDraft = true;
+            }
         }
 
-        if (string.Equals(pending, "true", StringComparison.Ordinal))
+        if (cache is null && string.Equals(pending, "true", StringComparison.Ordinal))
         {
             // Migrate the original pending flag while keeping its local snapshot and revision.
             _pendingSync = true;
         }
-        else if (!string.IsNullOrWhiteSpace(pending) && !string.Equals(pending, "false", StringComparison.Ordinal))
+        else if (cache is null && !string.IsNullOrWhiteSpace(pending) && !string.Equals(pending, "false", StringComparison.Ordinal))
         {
             try
             {
@@ -90,7 +113,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 response.EnsureSuccessStatusCode();
                 var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
-                if (remote is not null)
+                if (remote is not null && remote.Workspace is not null && !string.IsNullOrWhiteSpace(remote.Revision))
                 {
                     Data = remote.Workspace;
                     _revision = remote.Revision;
@@ -101,11 +124,21 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                         Data.DisplayName = auth.Session.Name ?? "FlowMate user";
                     }
                 }
+                else
+                {
+                    _remoteLoadFailed = true;
+                    SetSyncState(WorkspaceSyncState.Failed, "The server returned an incomplete workspace. Your local copy is safe; retry loading the server workspace.");
+                }
             }
-            catch (HttpRequestException) { /* Keep the user's local workspace available during an API outage. */ }
+            catch (HttpRequestException)
+            {
+                _remoteLoadFailed = true;
+                SetSyncState(WorkspaceSyncState.Offline, "The latest workspace could not be loaded. Your local copy is safe; reconnect and retry.");
+            }
             catch (JsonException)
             {
-                SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable workspace. Your local draft is still available; retry the save.");
+                _remoteLoadFailed = true;
+                SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable workspace. Your local draft is still available; retry loading the server workspace.");
             }
         }
 
@@ -140,6 +173,15 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         Data.ClientId = ClientId;
         RecoverTimer();
+
+        if (_remoteLoadFailed)
+        {
+            await PersistLocalAsync();
+            Changed?.Invoke();
+
+            return;
+        }
+
         await SaveAsync();
     }
 
@@ -172,7 +214,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             }
 
             await SetPendingSyncAsync(true);
-            await PersistLocalAsync();
+
+            if (_remoteLoadFailed)
+            {
+                SetSyncState(WorkspaceSyncState.Failed, "Your draft is saved on this device. Load the latest server workspace before retrying the save.");
+                Changed?.Invoke();
+
+                return;
+            }
 
             if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
             {
@@ -222,7 +271,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             {
                 var saved = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
-                if (saved is not null)
+                if (saved is not null && saved.Workspace is not null && !string.IsNullOrWhiteSpace(saved.Revision))
                 {
                     _revision = saved.Revision;
                     var currentJson = JsonSerializer.Serialize(Data, SharedCommon.JsonOptions);
@@ -231,13 +280,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     {
                         Data = saved.Workspace;
                         Data.ClientId = ClientId;
-                        await PersistLocalAsync();
                         await SetPendingSyncAsync(false);
                         SetSyncState(WorkspaceSyncState.Saved, "Workspace saved.");
                     }
                     else
                     {
-                        await PersistLocalAsync();
                         await SetPendingSyncAsync(true);
                         SetSyncState(WorkspaceSyncState.Pending, "Your latest edits are saved on this device and waiting to sync.");
                     }
@@ -286,6 +333,113 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         Changed?.Invoke();
     }
 
+    public async Task RetrySaveAsync()
+    {
+        BindAccount();
+
+        if (!_remoteLoadFailed)
+        {
+            await SaveAsync();
+
+            return;
+        }
+
+        if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+        {
+            SetSyncState(WorkspaceSyncState.Pending, "Your account changed. This draft is saved for its original account; switch back to sync it.");
+            Changed?.Invoke();
+
+            return;
+        }
+
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
+            {
+                SetSyncState(WorkspaceSyncState.Pending, "Saved on this device. Sign in to load and sync the latest workspace.");
+
+                return;
+            }
+
+            var requestAccountId = auth.Session.Sub ?? "local";
+            var accessToken = auth.Session.AccessToken;
+
+            if (!string.Equals(requestAccountId, _storageAccountId, StringComparison.Ordinal))
+            {
+                SetSyncState(WorkspaceSyncState.Pending, "Your account changed. This draft is saved for its original account; switch back to sync it.");
+
+                return;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
+            {
+                SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Sign in again to load and sync the latest workspace.");
+
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                SetSyncState(WorkspaceSyncState.Offline, "The latest workspace could not be loaded. Your local copy is safe; reconnect and retry.");
+
+                return;
+            }
+
+            var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+
+            if (remote is null || remote.Workspace is null || string.IsNullOrWhiteSpace(remote.Revision))
+            {
+                SetSyncState(WorkspaceSyncState.Failed, "The server returned an incomplete workspace. Your local draft is still available; retry loading.");
+
+                return;
+            }
+
+            _remoteLoadFailed = false;
+
+            if (_pendingSync)
+            {
+                _remoteConflict = remote;
+                SetSyncState(WorkspaceSyncState.Conflict, "The server workspace loaded while your local draft had changes. Choose which version to keep.");
+
+                return;
+            }
+
+            Data = remote.Workspace;
+            Data.ClientId = ClientId;
+            _revision = remote.Revision;
+            RecoverTimer();
+            await PersistLocalAsync();
+            SetSyncState(WorkspaceSyncState.Saved, "Workspace loaded.");
+        }
+        catch (HttpRequestException)
+        {
+            SetSyncState(WorkspaceSyncState.Offline, "The latest workspace could not be loaded. Your local copy is safe; reconnect and retry.");
+        }
+        catch (OperationCanceledException)
+        {
+            SetSyncState(WorkspaceSyncState.Offline, "Loading the latest workspace was interrupted. Your local copy is safe; reconnect and retry.");
+        }
+        catch (JsonException)
+        {
+            SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable workspace. Your local draft is still available; retry loading.");
+        }
+        catch (JSException)
+        {
+            SetSyncState(WorkspaceSyncState.Failed, "This browser could not preserve the local workspace. Check available storage before retrying.");
+        }
+        finally
+        {
+            _saveGate.Release();
+            Changed?.Invoke();
+        }
+    }
+
     public async Task PreserveForReauthenticationAsync()
     {
         await _saveGate.WaitAsync();
@@ -294,7 +448,6 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             Data.ClientId = ClientId;
             await SetPendingSyncAsync(true);
-            await PersistLocalAsync();
             SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
         }
         catch (JSException)
@@ -377,21 +530,23 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     private async Task PersistLocalAsync()
     {
-        var json = JsonSerializer.Serialize(Data, SharedCommon.JsonOptions);
+        var json = JsonSerializer.Serialize(new WorkspaceCacheRecord(_storageAccountId, _revision, _pendingSync, Data, DateTimeOffset.UtcNow), SharedCommon.JsonOptions);
         await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
     }
 
-    private async Task PersistRevisionAsync() =>
+    private async Task PersistRevisionAsync()
+    {
+        await PersistLocalAsync();
         await (await ModuleAsync()).InvokeVoidAsync("write", RevisionStorageKey, _revision ?? "");
+    }
 
     private async Task SetPendingSyncAsync(bool pending)
     {
         _pendingSync = pending;
-        var value = pending
-            ? JsonSerializer.Serialize(new PendingWorkspaceDraft(_storageAccountId, _revision, Data, DateTimeOffset.UtcNow), SharedCommon.JsonOptions)
-            : "false";
+        await PersistLocalAsync();
+        var value = pending ? "true" : "false";
         await (await ModuleAsync()).InvokeVoidAsync("write", PendingStorageKey, value);
-        await PersistRevisionAsync();
+        await (await ModuleAsync()).InvokeVoidAsync("write", RevisionStorageKey, _revision ?? "");
     }
 
     private void SetSyncState(WorkspaceSyncState state, string message)
@@ -400,6 +555,35 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         SyncMessage = message;
     }
 
+    private static WorkspaceCacheRecord? ReadWorkspaceCache(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.EnumerateObject().Any(property => string.Equals(property.Name, "AccountId", StringComparison.OrdinalIgnoreCase)) ||
+                !document.RootElement.EnumerateObject().Any(property => string.Equals(property.Name, "Workspace", StringComparison.OrdinalIgnoreCase)))
+            {
+                return null;
+            }
+
+            var cache = JsonSerializer.Deserialize<WorkspaceCacheRecord>(json, SharedCommon.JsonOptions);
+
+            return cache is null || cache.Workspace is null || string.IsNullOrWhiteSpace(cache.AccountId) ? null : cache;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed record WorkspaceCacheRecord(string AccountId, string? Revision, bool Pending, WorkspaceSnapshot Workspace, DateTimeOffset UpdatedAt);
     private sealed record PendingWorkspaceDraft(string AccountId, string? Revision, WorkspaceSnapshot Workspace, DateTimeOffset UpdatedAt);
 
     public ProjectRecord? Project(string id) => Data.Projects.FirstOrDefault(p => p.Id == id);

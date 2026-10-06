@@ -156,8 +156,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
         Assert.That(JSInterop.Invocations.Any(call =>
             call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") &&
-            call.Arguments[1]?.ToString() is { } value && value.Contains("test-user", StringComparison.Ordinal) &&
-            value.Contains("Draft kept through reauthentication", StringComparison.Ordinal)), Is.True);
+            Equals(call.Arguments[1], "true")), Is.True);
     }
 
     [Test]
@@ -172,8 +171,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Offline));
         Assert.That(JSInterop.Invocations.Any(call =>
             call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") &&
-            call.Arguments[1]?.ToString() is { } value && value.Contains("test-user", StringComparison.Ordinal) &&
-            value.Contains("Offline draft", StringComparison.Ordinal)), Is.True);
+            Equals(call.Arguments[1], "true")), Is.True);
 
         Api.Respond = async (request, _) =>
         {
@@ -191,6 +189,72 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Offline draft"));
         Assert.That(JSInterop.Invocations.Any(call =>
             call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") && Equals(call.Arguments[1], "false")), Is.True);
+    }
+
+    [Test]
+    public async Task UnreadableStartupWorkspaceWaitsForExplicitReloadBeforeSavingLocalEdits()
+    {
+        await SignInAsync();
+        const string workspaceKey = "flowmate.workspace.v1.test-user";
+        var cached = new WorkspaceSnapshot
+        {
+            DisplayName = "Cached workspace",
+            Projects = [new() { Id = "cached-project", Name = "Cached project" }]
+        };
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey))
+            .SetResult(JsonSerializer.Serialize(cached, SharedCommon.JsonOptions));
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], workspaceKey + ".revision"))
+            .SetResult("cached-revision");
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{ invalid workspace response")
+        });
+
+        await Store.InitialiseAsync();
+
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Cached workspace"));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Failed));
+        Assert.That(Store.RequiresRemoteReload, Is.True);
+
+        Store.Data.DisplayName = "Local edit after read failure";
+        await Store.SaveAsync();
+
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Failed));
+
+        var latest = new WorkspaceSnapshot
+        {
+            DisplayName = "Latest remote workspace",
+            Projects = [new() { Id = "remote-project", Name = "Remote project" }]
+        };
+        WorkspaceSaveRequest? localRetry = null;
+        Api.Respond = async (request, _) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(latest, "latest-revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            localRetry = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(localRetry!.Workspace, "saved-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.RetrySaveAsync();
+
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Conflict));
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Local edit after read failure"));
+        await Store.KeepLocalVersionAsync();
+        Assert.That(localRetry!.Revision, Is.EqualTo("latest-revision"));
+        Assert.That(localRetry.Workspace.DisplayName, Is.EqualTo("Local edit after read failure"));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
     }
 
     [Test]
@@ -341,11 +405,13 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Rejected));
         Assert.That(Store.SyncMessage, Does.Contain("project limit"));
-        var pending = JSInterop.Invocations.Last(call =>
-            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
+        var cached = JSInterop.Invocations.Last(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user"))
             .Arguments[1]!.ToString();
-        Assert.That(pending, Does.Contain("test-user"));
-        Assert.That(pending, Does.Contain("Draft after plan rejection"));
+        using var cachedJson = JsonDocument.Parse(cached!);
+        Assert.That(Property(cachedJson.RootElement, "AccountId").GetString(), Is.EqualTo("test-user"));
+        Assert.That(Property(cachedJson.RootElement, "Pending").GetBoolean(), Is.True);
+        Assert.That(Property(Property(cachedJson.RootElement, "Workspace"), "DisplayName").GetString(), Is.EqualTo("Draft after plan rejection"));
     }
 
     [Test]
@@ -358,15 +424,19 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Store.Data.DisplayName = "Second offline edit";
         await Store.SaveAsync();
 
-        var pending = JSInterop.Invocations.Last(call =>
-            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
+        var cached = JSInterop.Invocations.Last(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user"))
             .Arguments[1]!.ToString();
-        using var pendingJson = JsonDocument.Parse(pending!);
-        Assert.That(Property(pendingJson.RootElement, "AccountId").GetString(), Is.EqualTo("test-user"));
-        Assert.That(Property(Property(pendingJson.RootElement, "Workspace"), "DisplayName").GetString(), Is.EqualTo("Second offline edit"));
+        using var cachedJson = JsonDocument.Parse(cached!);
+        Assert.That(Property(cachedJson.RootElement, "AccountId").GetString(), Is.EqualTo("test-user"));
+        Assert.That(Property(cachedJson.RootElement, "Pending").GetBoolean(), Is.True);
+        Assert.That(Property(Property(cachedJson.RootElement, "Workspace"), "DisplayName").GetString(), Is.EqualTo("Second offline edit"));
+        Assert.That(JSInterop.Invocations.Last(call =>
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
+            .Arguments[1], Is.EqualTo("true"));
 
-        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
-            .SetResult(pending);
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], "flowmate.workspace.v1.test-user"))
+            .SetResult(cached);
         Api.Paths.Clear();
         WorkspaceSaveRequest? restored = null;
         Api.Respond = async (request, _) =>

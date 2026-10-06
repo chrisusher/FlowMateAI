@@ -49,7 +49,7 @@
                         }
                         else if (Store.SyncState is WorkspaceSyncState.Offline or WorkspaceSyncState.Conflict or WorkspaceSyncState.Rejected or WorkspaceSyncState.Failed)
                         {
-                            <button class="quiet-button" @onclick="Store.SaveAsync">Retry save</button>
+                            <button class="quiet-button" @onclick="Store.RetrySaveAsync">@(Store.RequiresRemoteReload ? "Retry load" : "Retry save")</button>
                         }
                     </div>
                 }
