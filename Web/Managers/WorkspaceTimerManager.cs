@@ -13,6 +13,7 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
     private readonly SemaphoreSlim _gate = new(1, 1);
     private CancellationTokenSource? _clockCancellation;
     private Task? _clockTask;
+    public string? CompletionMessage { get; private set; }
 
     public void StartClock()
     {
@@ -114,7 +115,7 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
         _ => "One thing at a time"
     };
 
-    public int SecondsLeft => IsRunning && Store.Data.Timer.EndsAt is { } end ? Math.Max(0, (int)Math.Ceiling((end - DateTimeOffset.UtcNow).TotalSeconds)) : Store.Data.Timer.RemainingSeconds;
+    public int SecondsLeft => IsRunning && Store.Data.Timer.EndsAt is { } end ? Math.Max(0, (int)Math.Ceiling((end - Store.UtcNow).TotalSeconds)) : Store.Data.Timer.RemainingSeconds;
 
     public string TimeLeft => $"{SecondsLeft / 60:00}:{SecondsLeft % 60:00}";
 
@@ -128,15 +129,20 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
 
         if (timer.Phase == TimerPhase.Focus)
         {
-            RecordTimerIntervals(timer.EndsAt ?? DateTimeOffset.UtcNow);
+            var longBreak = (timer.CompletedPomodoros + 1) % 4 == 0;
+            RecordTimerIntervals(timer.EndsAt ?? Store.UtcNow);
             timer.CompletedPomodoros++;
-            await Play("break");
-            BeginBreak(timer.CompletedPomodoros % 4 == 0 ? 15 : 5);
+            CompletionMessage = longBreak
+                ? "Focus complete. Your 15-minute long break has started."
+                : "Focus complete. Your 5-minute short break has started.";
+            BeginBreak(longBreak ? 15 : 5);
+            await Play(TimerTone.Break);
         }
         else
         {
-            await Play("resume");
             StartFocusInternal();
+            CompletionMessage = "Break complete. A new focus session has started.";
+            await Play(TimerTone.Focus);
         }
         await Store.SaveAsync();
     }
@@ -144,12 +150,14 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
     private void StartFocusInternal()
     {
         var timer = Store.Data.Timer;
+        CompletionMessage = null;
         timer.CompletedIntervals.Clear();
         timer.OwnerClientId = Store.ClientId;
+        timer.FocusSessionId = Guid.NewGuid().ToString("N");
         timer.Phase = TimerPhase.Focus;
         timer.DurationSeconds = 25 * 60;
         timer.RemainingSeconds = timer.DurationSeconds;
-        timer.StartedAt = DateTimeOffset.UtcNow;
+        timer.StartedAt = Store.UtcNow;
         timer.EndsAt = timer.StartedAt.Value.AddSeconds(timer.DurationSeconds);
 
         if (string.IsNullOrEmpty(timer.TaskId))
@@ -181,7 +189,7 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
         t.Phase = minutes == 15 ? TimerPhase.LongBreak : TimerPhase.ShortBreak;
         t.DurationSeconds = minutes * 60;
         t.RemainingSeconds = t.DurationSeconds;
-        t.StartedAt = DateTimeOffset.UtcNow;
+        t.StartedAt = Store.UtcNow;
         t.EndsAt = t.StartedAt.Value.AddSeconds(t.DurationSeconds);
     }
 
@@ -194,7 +202,14 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        if (SecondsLeft <= 0)
+        {
+            await TimerElapsed();
+
+            return;
+        }
+
+        var now = Store.UtcNow;
 
         if (t.StartedAt is { } start && now > start)
         {
@@ -223,7 +238,7 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
         }
 
         t.Phase = TimerPhase.Focus;
-        t.StartedAt = DateTimeOffset.UtcNow;
+        t.StartedAt = Store.UtcNow;
         t.EndsAt = t.StartedAt.Value.AddSeconds(t.RemainingSeconds);
         t.PausedAt = null;
         await Store.SaveAsync();
@@ -238,7 +253,8 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
             return;
         }
 
-        RecordTimerIntervals(DateTimeOffset.UtcNow);
+        RecordTimerIntervals(Store.UtcNow);
+        CompletionMessage = null;
         ResetTimer();
         await Store.SaveAsync();
     }
@@ -252,26 +268,35 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
 
         ResetTimer();
         StartFocusInternal();
+        CompletionMessage = "Break skipped. Your next focus session has started.";
         await Store.SaveAsync();
+    }
+
+    private async Task ReclaimControlCore()
+    {
+        var timer = Store.Data.Timer;
+
+        if (timer.Phase is not (TimerPhase.Focus or TimerPhase.Paused or TimerPhase.ShortBreak or TimerPhase.LongBreak))
+        {
+            return;
+        }
+
+        timer.OwnerClientId = Store.ClientId;
+        await Store.SaveTimerReclaimAsync();
     }
 
     private void RecordTimerIntervals(DateTimeOffset activeEnd)
     {
         var t = Store.Data.Timer;
-        var usedSeconds = 0;
-
-        foreach (var interval in t.CompletedIntervals)
-        {
-            var seconds = Math.Max(0, (int)(interval.EndedAt - interval.StartedAt).TotalSeconds);
-            Store.RecordFocus(interval.StartedAt, interval.EndedAt, t.TaskId, t.ProjectId, seconds);
-            usedSeconds += seconds;
-        }
+        var intervals = t.CompletedIntervals.ToList();
 
         if (t.StartedAt is { } start && activeEnd > start)
         {
-            var seconds = (int)(activeEnd - start).TotalSeconds;
-            Store.RecordFocus(start, activeEnd, t.TaskId, t.ProjectId, Math.Min(seconds, Math.Max(0, t.DurationSeconds - usedSeconds)));
+            intervals.Add(new() { StartedAt = start, EndedAt = activeEnd });
         }
+
+        Store.RecordFocusIntervals(intervals, t.TaskId, t.ProjectId, t.DurationSeconds, t.EnsureFocusSessionId());
+        t.FocusSessionId = null;
     }
 
     private void ResetTimer()
@@ -283,16 +308,24 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
         t.PausedAt = null;
         t.RemainingSeconds = 0;
         t.DurationSeconds = 0;
+        t.FocusSessionId = null;
         t.CompletedIntervals.Clear();
         t.OwnerClientId = "";
     }
 
-    private async Task Play(string kind)
+    private async Task Play(TimerTone tone)
     {
         if (!Store.Data.Muted)
         {
-            _workspaceModule ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/workspace.js");
-            await _workspaceModule.InvokeVoidAsync("playTone", kind);
+            try
+            {
+                _workspaceModule ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/workspace.js");
+                await _workspaceModule.InvokeVoidAsync("playTone", tone.ToWireValue());
+            }
+            catch (JSException)
+            {
+                // Browser autoplay restrictions must never interrupt a timer transition.
+            }
         }
     }
 
@@ -305,4 +338,6 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
     public Task EndFocus() => ExecuteAsync(EndFocusCore);
 
     public Task SkipBreak() => ExecuteAsync(SkipBreakCore);
+
+    public Task ReclaimControl() => ExecuteAsync(ReclaimControlCore, requiresOwnership: false);
 }

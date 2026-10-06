@@ -7,11 +7,11 @@ export function write(key, value) {
 }
 
 export function getClientId() {
-  let id = localStorage.getItem("flowmate.device.id");
+  let id = sessionStorage.getItem("flowmate.tab.id");
 
   if (!id) {
     id = crypto.randomUUID();
-    localStorage.setItem("flowmate.device.id", id);
+    sessionStorage.setItem("flowmate.tab.id", id);
   }
   return id;
 }
@@ -20,18 +20,30 @@ const TimerTone = Object.freeze({
   Break: "break"
 });
 
-export function playTone(kind) {
+let timerAudioContext;
+
+export async function playTone(kind) {
   try {
-    const audio = new AudioContext();
-    const oscillator = audio.createOscillator();
-    const gain = audio.createGain();
+    timerAudioContext ??= new AudioContext();
+
+    if (timerAudioContext.state === "suspended") {
+      await timerAudioContext.resume();
+    }
+
+    const oscillator = timerAudioContext.createOscillator();
+    const gain = timerAudioContext.createGain();
     oscillator.type = "sine";
     oscillator.frequency.value = kind === TimerTone.Break ? 660 : 880;
-    gain.gain.setValueAtTime(0.0001, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.35);
-    oscillator.connect(gain); gain.connect(audio.destination);
-    oscillator.start(); oscillator.stop(audio.currentTime + 0.36);
-    oscillator.onended = () => audio.close();
-  } catch { /* Browser audio is best effort. */ }
+    gain.gain.setValueAtTime(0.0001, timerAudioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, timerAudioContext.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, timerAudioContext.currentTime + 0.35);
+    oscillator.connect(gain);
+    gain.connect(timerAudioContext.destination);
+    oscillator.start();
+    oscillator.stop(timerAudioContext.currentTime + 0.36);
+    return true;
+  } catch {
+    // Autoplay policies can reject audio outside a recent user gesture.
+    return false;
+  }
 }

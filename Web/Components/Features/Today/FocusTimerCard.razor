@@ -40,6 +40,7 @@
         else if (Timer.IsRunning)
         {
             <span class="timer-other-device">Timer active on another device</span>
+            <button class="timer-secondary timer-reclaim" @onclick="Timer.ReclaimControl">Take control</button>
         }
         else if (Store.Data.Timer.Phase == TimerPhase.Paused && Timer.CanControlTimer)
         {
@@ -51,6 +52,7 @@
         else if (Store.Data.Timer.Phase == TimerPhase.Paused)
         {
             <span class="timer-other-device">Timer paused on another device</span>
+            <button class="timer-secondary timer-reclaim" @onclick="Timer.ReclaimControl">Take control</button>
         }
         else
         {
@@ -68,6 +70,10 @@
             <button class="timer-secondary" @onclick="Timer.EndFocus">Finish</button>
         }
     </div>
+    @if (!string.IsNullOrWhiteSpace(Timer.CompletionMessage))
+    {
+        <p class="timer-completion" role="status" aria-live="polite">@Timer.CompletionMessage</p>
+    }
     <div class="session-note">
         <span class="session-dots">
             @for (var i = 0; i < 4; i++)
