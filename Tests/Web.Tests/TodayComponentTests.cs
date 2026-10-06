@@ -32,7 +32,8 @@ public sealed class TodayComponentTests : WorkspaceComponentTest
         Store.Data.Timer.OwnerClientId = "other-device";
         var cut = Render<FocusTimerCard>();
         Assert.That(cut.Find(".timer-other-device").TextContent, Does.Contain(message));
-        Assert.That(cut.FindAll(".timer-primary,.timer-secondary"), Is.Empty);
+        Assert.That(cut.FindAll(".timer-primary,.timer-secondary:not(.timer-reclaim)"), Is.Empty);
+        Assert.That(cut.FindAll(".timer-reclaim"), Has.Exactly(1).Items);
     }
 
     [Test]
@@ -43,6 +44,26 @@ public sealed class TodayComponentTests : WorkspaceComponentTest
         cut.Find(".timer-primary").Click();
         Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Focus));
         Assert.That(Store.Data.Timer.OwnerClientId, Is.EqualTo(Store.ClientId));
+    }
+
+    [TestCase(TimerPhase.Focus)]
+    [TestCase(TimerPhase.Paused)]
+    [TestCase(TimerPhase.ShortBreak)]
+    public void FocusTimerCardAllowsReclaimingATimerFromAClosedTab(TimerPhase phase)
+    {
+        Store.Data.Timer.Phase = phase;
+        Store.Data.Timer.OwnerClientId = "closed-tab";
+        Store.Data.Timer.DurationSeconds = phase == TimerPhase.ShortBreak ? 300 : 1500;
+        Store.Data.Timer.RemainingSeconds = 900;
+
+        var cut = Render<FocusTimerCard>();
+
+        cut.Find(".timer-reclaim").Click();
+
+        Assert.That(Store.Data.Timer.OwnerClientId, Is.EqualTo(Store.ClientId));
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(phase));
+        Assert.That(Timer.CanControlTimer, Is.True);
+        Assert.That(cut.FindAll(".timer-reclaim"), Is.Empty);
     }
 
     [TestCase(TimerPhase.ShortBreak)]

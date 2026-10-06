@@ -40,6 +40,7 @@
         else if (Timer.IsRunning)
         {
             <span class="timer-other-device">Timer active on another device</span>
+            <button class="timer-secondary timer-reclaim" @onclick="Timer.ReclaimControl">Take control</button>
         }
         else if (Store.Data.Timer.Phase == TimerPhase.Paused && Timer.CanControlTimer)
         {
@@ -51,6 +52,7 @@
         else if (Store.Data.Timer.Phase == TimerPhase.Paused)
         {
             <span class="timer-other-device">Timer paused on another device</span>
+            <button class="timer-secondary timer-reclaim" @onclick="Timer.ReclaimControl">Take control</button>
         }
         else
         {

@@ -272,6 +272,19 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
         await Store.SaveAsync();
     }
 
+    private async Task ReclaimControlCore()
+    {
+        var timer = Store.Data.Timer;
+
+        if (timer.Phase is not (TimerPhase.Focus or TimerPhase.Paused or TimerPhase.ShortBreak or TimerPhase.LongBreak))
+        {
+            return;
+        }
+
+        timer.OwnerClientId = Store.ClientId;
+        await Store.SaveTimerReclaimAsync();
+    }
+
     private void RecordTimerIntervals(DateTimeOffset activeEnd)
     {
         var t = Store.Data.Timer;
@@ -325,4 +338,6 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
     public Task EndFocus() => ExecuteAsync(EndFocusCore);
 
     public Task SkipBreak() => ExecuteAsync(SkipBreakCore);
+
+    public Task ReclaimControl() => ExecuteAsync(ReclaimControlCore, requiresOwnership: false);
 }

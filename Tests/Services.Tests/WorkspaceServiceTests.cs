@@ -69,6 +69,40 @@ public sealed class WorkspaceServiceTests
         Assert.That(repository.SaveCount, Is.Zero);
     }
 
+    [Test]
+    public async Task ExplicitReclaimTransfersAnUnchangedActiveTimerToTheRequestingClient()
+    {
+        var timer = new TimerSnapshot
+        {
+            Phase = TimerPhase.Paused,
+            OwnerClientId = "closed-device",
+            RemainingSeconds = 900,
+            DurationSeconds = 1500,
+            FocusSessionId = "focus-session"
+        };
+        var current = new WorkspaceSnapshot { ClientId = "closed-device", Timer = timer };
+        var repository = new InMemoryWorkspaceRepository();
+        repository.Seed("user", current, "revision-1");
+        var service = CreateService(repository);
+        var reclaimed = new WorkspaceSnapshot
+        {
+            ClientId = "reopened-device",
+            Timer = new TimerSnapshot
+            {
+                Phase = timer.Phase,
+                OwnerClientId = "reopened-device",
+                RemainingSeconds = timer.RemainingSeconds,
+                DurationSeconds = timer.DurationSeconds,
+                FocusSessionId = timer.FocusSessionId
+            }
+        };
+
+        var result = await service.SaveAsync("user", new(reclaimed, "revision-1", ReclaimTimer: true));
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(repository.Read("user").Timer.OwnerClientId, Is.EqualTo("reopened-device"));
+    }
+
     private static WorkspaceService CreateService(IWorkspaceRepository repository) =>
         new(repository, new EmptyActivityArchiveRepository(), new FreeBillingRepository());
 

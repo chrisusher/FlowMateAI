@@ -44,7 +44,12 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         var timerActive = current.Timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused;
         var timerExpired = current.Timer.EndsAt is { } currentEnd && currentEnd <= DateTimeOffset.UtcNow;
 
-        if (timerActive && !timerExpired && current.Timer.OwnerClientId != request.Workspace.ClientId && !SameTimer(current.Timer, request.Workspace.Timer))
+        var explicitTimerReclaim = request.ReclaimTimer &&
+            request.Workspace.Timer.OwnerClientId == request.Workspace.ClientId &&
+            SameTimerExceptOwner(current.Timer, request.Workspace.Timer);
+
+        if (timerActive && !timerExpired && current.Timer.OwnerClientId != request.Workspace.ClientId &&
+            !SameTimer(current.Timer, request.Workspace.Timer) && !explicitTimerReclaim)
         {
             return new(null, WorkspaceSaveErrorCode.TimerConflict, "A timer is already active on another device.");
         }
@@ -80,4 +85,10 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         left.DurationSeconds == right.DurationSeconds && left.CompletedPomodoros == right.CompletedPomodoros &&
         left.TaskId == right.TaskId && left.ProjectId == right.ProjectId && left.OwnerClientId == right.OwnerClientId &&
         left.CompletedIntervals.SequenceEqual(right.CompletedIntervals);
+
+    private static bool SameTimerExceptOwner(TimerSnapshot left, TimerSnapshot right) =>
+        left.Phase == right.Phase && left.EndsAt == right.EndsAt && left.StartedAt == right.StartedAt && left.FocusSessionId == right.FocusSessionId &&
+        left.PausedAt == right.PausedAt && left.RemainingSeconds == right.RemainingSeconds &&
+        left.DurationSeconds == right.DurationSeconds && left.CompletedPomodoros == right.CompletedPomodoros &&
+        left.TaskId == right.TaskId && left.ProjectId == right.ProjectId && left.CompletedIntervals.SequenceEqual(right.CompletedIntervals);
 }

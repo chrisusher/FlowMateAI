@@ -189,7 +189,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         await SaveAsync();
     }
 
-    public async Task SaveAsync()
+    public Task SaveAsync() => SaveAsync(reclaimTimer: false);
+
+    public Task SaveTimerReclaimAsync() => SaveAsync(reclaimTimer: true);
+
+    private async Task SaveAsync(bool reclaimTimer)
     {
         BindAccount();
 
@@ -251,7 +255,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             SetSyncState(WorkspaceSyncState.Saving, "Saving your workspace…");
             using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/workspace")
             {
-                Content = JsonContent.Create(new WorkspaceSaveRequest(sentWorkspace, _revision), options: SharedCommon.JsonOptions)
+                Content = JsonContent.Create(new WorkspaceSaveRequest(sentWorkspace, _revision, reclaimTimer), options: SharedCommon.JsonOptions)
             };
             var requestAccountId = auth.Session.Sub ?? "local";
             var accessToken = auth.Session.AccessToken;
