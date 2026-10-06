@@ -155,7 +155,9 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.AuthenticationExpired));
         Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
         Assert.That(JSInterop.Invocations.Any(call =>
-            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") && Equals(call.Arguments[1], "true")), Is.True);
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") &&
+            call.Arguments[1]?.ToString() is { } value && value.Contains("test-user", StringComparison.Ordinal) &&
+            value.Contains("Draft kept through reauthentication", StringComparison.Ordinal)), Is.True);
     }
 
     [Test]
@@ -169,7 +171,9 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Offline));
         Assert.That(JSInterop.Invocations.Any(call =>
-            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") && Equals(call.Arguments[1], "true")), Is.True);
+            call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") &&
+            call.Arguments[1]?.ToString() is { } value && value.Contains("test-user", StringComparison.Ordinal) &&
+            value.Contains("Offline draft", StringComparison.Ordinal)), Is.True);
 
         Api.Respond = async (request, _) =>
         {
@@ -363,6 +367,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], "flowmate.workspace.v1.test-user.pending"))
             .SetResult(pending);
+        Api.Paths.Clear();
         WorkspaceSaveRequest? restored = null;
         Api.Respond = async (request, _) =>
         {
