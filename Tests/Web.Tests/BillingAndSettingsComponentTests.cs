@@ -16,7 +16,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ProPlanCardChangesPriceAndHandlesTrialAndCheckout()
+    public async Task ProPlanCardChangesPriceAndRoutesEntitledCustomersToBillingPortal()
     {
         await Billing.InitializeAsync();
         var cut = Render<ProPlanCard>();
@@ -24,12 +24,91 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         await cut.InvokeAsync(() => Billing.Annual = true);
         Assert.That(Content(cut.Find(".price")), Is.EqualTo("£96 / year"));
         cut.Find(".checkout-button").Click();
-        Assert.That(Billing.BillingMessage, Is.EqualTo("Checkout unavailable"));
-        cut.Find(".plan-button").Click();
-        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Pro));
-        Assert.That(Billing.BillingMessage, Is.EqualTo("Trial started"));
+        Assert.That(Billing.BillingMessage, Is.EqualTo("Portal unavailable"));
         Assert.That(cut.Find(".plan-button").HasAttribute("disabled"), Is.True);
-        Assert.That(cut.Find(".plan-button").TextContent, Does.Contain("Trial already used"));
+        Assert.That(cut.Find(".plan-button").TextContent, Does.Contain("Pro subscription active"));
+    }
+
+    [Test]
+    public async Task RepeatedCheckoutClicksSendOnlyOneRequest()
+    {
+        await SignInAsync();
+        var requestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var checkoutRequests = 0;
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/v1/billing/prices")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new[] { new BillingPrice("month", "gbp", 1000, "£10 / month") })
+                };
+            }
+
+            if (request.RequestUri.AbsolutePath == "/api/v1/billing")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+                };
+            }
+
+            if (request.RequestUri.AbsolutePath == "/api/v1/billing/checkout")
+            {
+                Interlocked.Increment(ref checkoutRequests);
+                requestStarted.TrySetResult();
+                await releaseRequest.Task.WaitAsync(cancellationToken);
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new BillingActionResponse(false, null, BillingActionCode.StripeError, "Checkout unavailable"))
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        };
+
+        await Billing.InitializeAsync();
+        var firstCheckout = Billing.BuyPro();
+        await requestStarted.Task;
+        var secondCheckout = Billing.BuyPro();
+
+        Assert.That(Billing.CheckoutInProgress, Is.True);
+        Assert.That(checkoutRequests, Is.EqualTo(1));
+        releaseRequest.SetResult();
+        await Task.WhenAll(firstCheckout, secondCheckout);
+        Assert.That(Billing.CheckoutInProgress, Is.False);
+    }
+
+    [Test]
+    public async Task CheckoutReturnShowsPendingUntilServerConfirmsPro()
+    {
+        await SignInAsync();
+        var status = "Free";
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary(status, status == "Pro" ? "active" : "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitializeAsync();
+        Billing.ShowCheckoutReturn("return");
+        Assert.That(Billing.CheckoutPending, Is.True);
+        Assert.That(Billing.BillingMessage, Does.Contain("Payment is processing"));
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
+
+        status = "Pro";
+        await Billing.RefreshSubscriptionStatusAsync();
+        Assert.That(Billing.CheckoutPending, Is.False);
+        Assert.That(Billing.BillingMessage, Is.EqualTo("Your Pro subscription is active."));
     }
 
     [Test]

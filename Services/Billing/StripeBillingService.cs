@@ -102,6 +102,11 @@ public sealed class StripeBillingService(
         }
         var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
 
+        if (IsEntitled(entitlement.SubscriptionStatus))
+        {
+            return await CreatePortalAsync(userId, cancellationToken);
+        }
+
         if (entitlement.TrialUsed)
         {
             return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
@@ -110,6 +115,11 @@ public sealed class StripeBillingService(
         try
         {
             var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
+
+            if (await HasEntitledStripeSubscriptionAsync(customer, cancellationToken))
+            {
+                return await CreatePortalAsync(userId, cancellationToken);
+            }
 
             var form = new Dictionary<string, string>
             {
@@ -156,7 +166,25 @@ public sealed class StripeBillingService(
         try
         {
             var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
+
+            if (IsEntitled(entitlement.SubscriptionStatus))
+            {
+                return await CreatePortalAsync(userId, cancellationToken);
+            }
+
             var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
+
+            if (await HasEntitledStripeSubscriptionAsync(customer, cancellationToken))
+            {
+                return await CreatePortalAsync(userId, cancellationToken);
+            }
+
+            var openSession = await GetOpenCheckoutSessionAsync(customer, cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(openSession))
+            {
+                return new(true, openSession, null, null);
+            }
 
             var form = new Dictionary<string, string>
             {
@@ -169,7 +197,7 @@ public sealed class StripeBillingService(
                 ["subscription_data[metadata][user_id]"] = userId
             };
 
-            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, $"flowmate-checkout-{userId}-{(annual ? "annual" : "monthly")}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}", cancellationToken);
+            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId), cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -184,6 +212,53 @@ public sealed class StripeBillingService(
         {
             return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. Try again in a moment.");
         }
+    }
+
+    private async Task<bool> HasEntitledStripeSubscriptionAsync(string customerId, CancellationToken cancellationToken)
+    {
+        using var response = await SendAsync(HttpMethod.Get,
+            $"subscriptions?customer={Uri.EscapeDataString(customerId)}&status=all&limit=100", null, null, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(StripeError(await response.Content.ReadAsStringAsync(cancellationToken)));
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+
+        return document.RootElement.TryGetProperty("data", out var subscriptions)
+            && subscriptions.ValueKind == JsonValueKind.Array
+            && subscriptions.EnumerateArray().Any(subscription =>
+                subscription.TryGetProperty("status", out var status)
+                && IsEntitled(status.GetString() ?? ""));
+    }
+
+    private async Task<string?> GetOpenCheckoutSessionAsync(string customerId, CancellationToken cancellationToken)
+    {
+        using var response = await SendAsync(HttpMethod.Get,
+            $"checkout/sessions?customer={Uri.EscapeDataString(customerId)}&status=open&limit=1", null, null, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(StripeError(await response.Content.ReadAsStringAsync(cancellationToken)));
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+
+        return document.RootElement.TryGetProperty("data", out var sessions)
+            && sessions.ValueKind == JsonValueKind.Array
+            && sessions.EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Object } session
+            && session.TryGetProperty("url", out var url)
+            ? url.GetString()
+            : null;
+    }
+
+    private static string CheckoutIdempotencyKey(string userId)
+    {
+        var userHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId))).ToLowerInvariant();
+        var utcDay = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+
+        return $"flowmate-checkout-{userHash}-{utcDay}";
     }
 
     public async Task<BillingActionResponse> CreatePortalAsync(string userId, CancellationToken cancellationToken = default)
