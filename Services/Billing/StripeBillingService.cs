@@ -179,7 +179,7 @@ public sealed class StripeBillingService(
                 return await CreatePortalAsync(userId, cancellationToken);
             }
 
-            var openSession = await GetOpenCheckoutSessionAsync(customer, cancellationToken);
+            var openSession = await GetOpenCheckoutSessionAsync(customer, priceId, cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(openSession))
             {
@@ -233,10 +233,10 @@ public sealed class StripeBillingService(
                 && IsEntitled(status.GetString() ?? ""));
     }
 
-    private async Task<string?> GetOpenCheckoutSessionAsync(string customerId, CancellationToken cancellationToken)
+    private async Task<string?> GetOpenCheckoutSessionAsync(string customerId, string priceId, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(HttpMethod.Get,
-            $"checkout/sessions?customer={Uri.EscapeDataString(customerId)}&status=open&limit=1", null, null, cancellationToken);
+            $"checkout/sessions?customer={Uri.EscapeDataString(customerId)}&status=open&limit=100&expand%5B%5D=data.line_items", null, null, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -245,12 +245,43 @@ public sealed class StripeBillingService(
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
 
-        return document.RootElement.TryGetProperty("data", out var sessions)
-            && sessions.ValueKind == JsonValueKind.Array
-            && sessions.EnumerateArray().FirstOrDefault() is { ValueKind: JsonValueKind.Object } session
-            && session.TryGetProperty("url", out var url)
-            ? url.GetString()
-            : null;
+        if (!document.RootElement.TryGetProperty("data", out var sessions) || sessions.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var session in sessions.EnumerateArray())
+        {
+            if (!session.TryGetProperty("mode", out var mode)
+                || mode.ValueKind != JsonValueKind.String
+                || mode.GetString() != "subscription"
+                || !session.TryGetProperty("line_items", out var lineItems)
+                || lineItems.ValueKind != JsonValueKind.Object
+                || !lineItems.TryGetProperty("data", out var items)
+                || items.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var hasRequestedPrice = items.EnumerateArray().Any(item =>
+                item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty("price", out var price)
+                && (price.ValueKind == JsonValueKind.String
+                    ? string.Equals(price.GetString(), priceId, StringComparison.Ordinal)
+                    : price.ValueKind == JsonValueKind.Object
+                        && price.TryGetProperty("id", out var id)
+                        && id.ValueKind == JsonValueKind.String
+                        && string.Equals(id.GetString(), priceId, StringComparison.Ordinal)));
+
+            if (hasRequestedPrice
+                && session.TryGetProperty("url", out var url)
+                && url.ValueKind == JsonValueKind.String)
+            {
+                return url.GetString();
+            }
+        }
+
+        return null;
     }
 
     private static string CheckoutIdempotencyKey(string userId)
