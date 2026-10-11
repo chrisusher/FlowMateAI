@@ -174,7 +174,7 @@ public sealed class StripeBillingServiceTests
                 return JsonResponse("{\"url\":\"https://billing.example.test/portal\"}");
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
         private static string? FormValue(string body, string key) => body.Split('&')
