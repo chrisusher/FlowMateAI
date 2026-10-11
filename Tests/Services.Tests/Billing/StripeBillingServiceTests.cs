@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Services.Billing;
 using Services.Database;
@@ -24,6 +25,35 @@ public sealed class StripeBillingServiceTests
         Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
         Assert.That(handler.CheckoutIdempotencyKeys, Has.Count.EqualTo(1));
         Assert.That(handler.CheckoutIdempotencyKeys[0], Does.Not.Contain("auth0|customer"));
+    }
+
+    [Test]
+    public async Task CheckoutDoesNotReuseOpenSessionForDifferentPrice()
+    {
+        var handler = new StripeHandler();
+        var service = CreateService(handler, new StubBillingRepository());
+
+        var monthly = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
+        var annual = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", true);
+        var annualRetry = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", true);
+
+        Assert.That(monthly.Url, Is.EqualTo("https://checkout.example.test/session/price_monthly"));
+        Assert.That(annual.Url, Is.EqualTo("https://checkout.example.test/session/price_annual"));
+        Assert.That(annualRetry.Url, Is.EqualTo(annual.Url));
+        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task CheckoutDoesNotReuseOpenSessionOutsideSubscriptionMode()
+    {
+        var handler = new StripeHandler();
+        handler.OpenCheckoutSessions.Add(new StripeHandler.OpenCheckoutSession("payment", "price_monthly", "https://checkout.example.test/wrong-mode"));
+        var service = CreateService(handler, new StubBillingRepository());
+
+        var result = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
+
+        Assert.That(result.Url, Is.EqualTo("https://checkout.example.test/session/price_monthly"));
+        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
     }
 
     [Test]
@@ -95,9 +125,9 @@ public sealed class StripeBillingServiceTests
         public List<string> CheckoutIdempotencyKeys { get; } = [];
         public int CheckoutSessionCreations { get; private set; }
         public string? SubscriptionStatus { get; init; }
-        public bool HasOpenSession { get; private set; }
+        public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.PathAndQuery.TrimStart('/').Replace("v1/", "", StringComparison.Ordinal);
             Requests.Add(path);
@@ -117,18 +147,26 @@ public sealed class StripeBillingServiceTests
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal)
                 && request.Method == HttpMethod.Get)
             {
-                return JsonResponse(HasOpenSession
-                    ? "{\"data\":[{\"url\":\"https://checkout.example.test/session\"}]}"
-                    : "{\"data\":[]}");
+                var sessions = OpenCheckoutSessions.Select(session => new
+                {
+                    mode = session.Mode,
+                    url = session.Url,
+                    line_items = new { data = new[] { new { price = new { id = session.PriceId } } } }
+                });
+
+                return JsonResponse(JsonSerializer.Serialize(new { data = sessions }));
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal))
             {
                 CheckoutSessionCreations++;
                 CheckoutIdempotencyKeys.Add(request.Headers.GetValues("Idempotency-Key").Single());
-                HasOpenSession = true;
+                var form = await request.Content!.ReadAsStringAsync(cancellationToken);
+                var priceId = FormValue(form, "line_items[0][price]")!;
+                var url = $"https://checkout.example.test/session/{priceId}";
+                OpenCheckoutSessions.Add(new OpenCheckoutSession("subscription", priceId, url));
 
-                return JsonResponse("{\"id\":\"cs_test\",\"url\":\"https://checkout.example.test/session\"}");
+                return JsonResponse(JsonSerializer.Serialize(new { id = "cs_test", url }));
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/billing_portal/sessions", StringComparison.Ordinal))
@@ -139,10 +177,18 @@ public sealed class StripeBillingServiceTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
 
-        private static Task<HttpResponseMessage> JsonResponse(string json) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        private static string? FormValue(string body, string key) => body.Split('&')
+            .Select(pair => pair.Split('=', 2))
+            .Where(pair => pair.Length == 2 && Uri.UnescapeDataString(pair[0]) == key)
+            .Select(pair => Uri.UnescapeDataString(pair[1]))
+            .FirstOrDefault();
+
+        private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
-        });
+        };
+
+        public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url);
     }
 
     private sealed class StubBillingRepository : IBillingRepository
