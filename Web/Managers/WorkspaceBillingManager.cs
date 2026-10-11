@@ -140,7 +140,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
     public async Task BuyPro()
     {
-        if (_checkoutInProgress || !HasSelectedPrice)
+        if (_checkoutInProgress)
         {
             return;
         }
@@ -149,6 +149,11 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
         {
             await OpenBillingPortal();
 
+            return;
+        }
+
+        if (!HasSelectedPrice)
+        {
             return;
         }
 
