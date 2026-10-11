@@ -148,7 +148,8 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     [TestCase("RETURN")]
     public void PricingPageIgnoresUnknownCheckoutQueryValues(string checkoutResult)
     {
-        Render<PricingPage>(parameters => parameters.Add(page => page.CheckoutResult, checkoutResult));
+        Navigation.NavigateTo($"pricing?checkout={Uri.EscapeDataString(checkoutResult)}");
+        Render<PricingPage>();
 
         Assert.That(Billing.BillingMessage, Is.Null);
         Assert.That(Api.Paths, Is.Empty);
