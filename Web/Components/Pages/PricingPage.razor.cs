@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Shared.Enums;
 
 namespace Web.Components.Pages;
 
@@ -7,7 +8,7 @@ public partial class PricingPage
     [SupplyParameterFromQuery(Name = "checkout")]
     public string? CheckoutResult { get; set; }
 
-    private string? _handledCheckoutResult;
+    private CheckoutOutcome? _handledCheckoutOutcome;
 
     protected override void OnInitialized()
     {
@@ -17,11 +18,20 @@ public partial class PricingPage
 
     protected override async Task OnParametersSetAsync()
     {
-        if ((CheckoutResult is "return" or "cancelled") && _handledCheckoutResult != CheckoutResult)
+        var outcome = CheckoutResult switch
         {
-            _handledCheckoutResult = CheckoutResult;
-            await Billing.InitializeAsync();
-            Billing.ShowCheckoutReturn(CheckoutResult);
+            "return" => CheckoutOutcome.Return,
+            "cancelled" => CheckoutOutcome.Cancelled,
+            _ => (CheckoutOutcome?)null
+        };
+
+        if (outcome is null || _handledCheckoutOutcome == outcome)
+        {
+            return;
         }
+
+        _handledCheckoutOutcome = outcome;
+        await Billing.InitializeAsync();
+        Billing.ShowCheckoutReturn(outcome.Value);
     }
 }
