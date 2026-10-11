@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Components.Web;
+
 namespace Web.Components.Features.Editors;
 
 public partial class ProjectEditorDialog
@@ -8,5 +10,11 @@ public partial class ProjectEditorDialog
         Observe(Projects);
     }
 
-
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            Projects.CloseProjectDialog();
+        }
+    }
 }

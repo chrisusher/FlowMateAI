@@ -21,9 +21,9 @@
                     <label class="field-label">
                         Project
                         <InputSelect class="field-input" @bind-Value="Tasks.Draft.ProjectId">
-                            @foreach (var project in Store.Data.Projects)
+                            @foreach (var project in Store.Data.Projects.Where(project => !project.IsArchived || project.Id == Tasks.Draft.ProjectId))
                             {
-                                <option value="@project.Id">@project.Name</option>
+                                <option value="@project.Id" disabled="@project.IsArchived">@project.Name@(project.IsArchived ? " (archived)" : "")</option>
                             }
                         </InputSelect>
                     </label>

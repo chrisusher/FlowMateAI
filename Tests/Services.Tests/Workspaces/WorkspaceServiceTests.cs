@@ -99,6 +99,58 @@ public sealed class WorkspaceServiceTests
         Assert.That(repository.Read("user").Timer.OwnerClientId, Is.EqualTo("reopened-device"));
     }
 
+    [Test]
+    public async Task ArchivingAProjectAllowsAReplacementWithoutRemovingItsHistory()
+    {
+        var current = new WorkspaceSnapshot
+        {
+            Projects =
+            [
+                new() { Id = "one", Name = "One" },
+                new() { Id = "two", Name = "Two" },
+                new() { Id = "three", Name = "Three" }
+            ],
+            Tasks = [new() { Id = "task-one", ProjectId = "one", Title = "Keep this task" }],
+            Sessions = [new() { Id = "session-one", ProjectId = "one", FocusMinutes = 12 }]
+        };
+        var repository = new InMemoryWorkspaceRepository();
+        repository.Seed("user", current, "revision-1");
+        var service = CreateService(repository);
+        current.Projects[0].IsArchived = true;
+        current.Projects.Add(new() { Id = "four", Name = "Four" });
+
+        var result = await service.SaveAsync("user", new(current, "revision-1"));
+
+        Assert.That(result.Succeeded, Is.True);
+        var saved = repository.Read("user");
+        Assert.That(saved.Projects.Count(project => !project.IsArchived), Is.EqualTo(3));
+        Assert.That(saved.Projects.Single(project => project.Id == "one").IsArchived, Is.True);
+        Assert.That(saved.Tasks.Single().ProjectId, Is.EqualTo("one"));
+        Assert.That(saved.Sessions.Single().ProjectId, Is.EqualTo("one"));
+    }
+
+    [Test]
+    public async Task ServerRejectsAddingAnActiveProjectBeyondTheLimit()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        repository.Seed("user", new WorkspaceSnapshot
+        {
+            Projects =
+            [
+                new() { Id = "one", Name = "One" },
+                new() { Id = "two", Name = "Two" },
+                new() { Id = "three", Name = "Three" }
+            ]
+        }, "revision-1");
+        var request = repository.Read("user");
+        request.Projects.Add(new() { Id = "four", Name = "Four" });
+
+        var result = await CreateService(repository).SaveAsync("user", new(request, "revision-1"));
+
+        Assert.That(result.ErrorCode, Is.EqualTo(WorkspaceSaveErrorCode.ProjectLimit));
+        Assert.That(repository.SaveCount, Is.Zero);
+    }
+
     private static WorkspaceService CreateService(IWorkspaceRepository repository) =>
         new(repository, new EmptyActivityArchiveRepository(), new FreeBillingRepository());
 

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Shared.Models;
+using Web.Managers;
 
 namespace Web.Components.Features.Projects;
 
@@ -12,5 +13,6 @@ public partial class ProjectCard
     }
 
     [Parameter, EditorRequired] public ProjectRecord Project { get; set; } = default!;
+    [Inject] private WorkspaceProjectManager Projects { get; set; } = default!;
     private List<TaskRecord> ProjectTasks => Store.Data.Tasks.Where(t => t.ProjectId == Project.Id).ToList();
 }

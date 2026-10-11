@@ -4,22 +4,27 @@
 @if (Projects.DialogOpen)
 {
     <div class="modal-shade" @onclick="Projects.CloseProjectDialog">
-        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="project-dialog-title" @onclick:stopPropagation="true">
+        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="project-dialog-title" tabindex="-1" @onkeydown="HandleKeyDown" @onclick:stopPropagation="true">
             <div class="dialog-heading">
                 <div>
                     <span class="eyebrow">YOUR WORK</span>
-                    <h2 id="project-dialog-title">New project</h2>
+                    <h2 id="project-dialog-title">@(Projects.EditingProjectId is null ? "New project" : "Rename project")</h2>
                 </div>
                 <button type="button" class="dialog-close" aria-label="Close project form" @onclick="Projects.CloseProjectDialog">&#215;</button>
             </div>
             <form @onsubmit="Projects.SaveProject" @onsubmit:preventDefault="true">
                 <label class="field-label">
                     Project name
-                    <input class="field-input" @bind="Projects.DraftName" maxlength="80" placeholder="What are you working on?" />
+                    <input class="field-input" @bind="Projects.DraftName" maxlength="80" autofocus aria-describedby="@(string.IsNullOrWhiteSpace(Projects.ValidationMessage) ? "project-name-help" : "project-name-help project-name-error")" placeholder="What are you working on?" />
                 </label>
+                <small id="project-name-help" class="field-hint">Use up to 80 characters. Extra spaces at the ends are removed.</small>
+                @if (!string.IsNullOrWhiteSpace(Projects.ValidationMessage))
+                {
+                    <p class="field-error" id="project-name-error" role="alert">@Projects.ValidationMessage</p>
+                }
                 <div class="dialog-actions">
                     <button type="button" class="text-button" @onclick="Projects.CloseProjectDialog">Cancel</button>
-                    <button type="submit" class="timer-primary" disabled="@string.IsNullOrWhiteSpace(Projects.DraftName)">Create project</button>
+                    <button type="submit" class="timer-primary" disabled="@string.IsNullOrWhiteSpace(Projects.DraftName)">@(Projects.EditingProjectId is null ? "Create project" : "Save name")</button>
                 </div>
             </form>
         </section>
