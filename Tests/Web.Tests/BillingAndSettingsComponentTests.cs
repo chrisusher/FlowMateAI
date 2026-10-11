@@ -4,6 +4,7 @@ using Shared.Contracts;
 using Shared.Enums;
 using Web.Components.Features.Pricing;
 using Web.Components.Features.Settings;
+using Web.Components.Pages;
 
 namespace Web.Tests;
 
@@ -104,7 +105,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         });
 
         await Billing.InitializeAsync();
-        Billing.ShowCheckoutReturn("return");
+        Billing.ShowCheckoutReturn(CheckoutOutcome.Return);
         Assert.That(Billing.CheckoutPending, Is.True);
         Assert.That(Billing.BillingMessage, Does.Contain("Payment is processing"));
         Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
@@ -141,6 +142,16 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Billing.BillingMessage, Is.EqualTo("Checkout is temporarily unavailable."));
         await cut.InvokeAsync(() => Billing.StartTrial());
         Assert.That(Billing.BillingMessage, Is.EqualTo("Billing is temporarily unavailable."));
+    }
+
+    [TestCase("unknown")]
+    [TestCase("RETURN")]
+    public void PricingPageIgnoresUnknownCheckoutQueryValues(string checkoutResult)
+    {
+        Render<PricingPage>(parameters => parameters.Add(page => page.CheckoutResult, checkoutResult));
+
+        Assert.That(Billing.BillingMessage, Is.Null);
+        Assert.That(Api.Paths, Is.Empty);
     }
 
     [Test]
