@@ -1,13 +1,11 @@
-using System.Net;
 using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
-using NUnit.Framework;
 using Services.Database;
 using Services.Repositories;
 
-namespace Services.Tests;
+namespace Services.Tests.Repositories;
 
 [TestFixture]
 public sealed class McpUsageRepositoryTests
@@ -86,9 +84,18 @@ public sealed class McpUsageRepositoryTests
     private sealed class RecordingContext() : DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
         .UseCosmos("https://localhost:8081", Convert.ToBase64String(new byte[64]), "tests").Options)
     {
-        public EntityState SavedState { get; private set; }
-        public string? OriginalRevision { get; private set; }
-        public Exception? Failure { get; set; }
+        public EntityState SavedState
+        {
+            get; private set;
+        }
+        public string? OriginalRevision
+        {
+            get; private set;
+        }
+        public Exception? Failure
+        {
+            get; set;
+        }
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {

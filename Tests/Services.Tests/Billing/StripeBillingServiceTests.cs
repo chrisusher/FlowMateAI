@@ -1,12 +1,10 @@
-using System.Net;
 using System.Text;
 using Microsoft.Extensions.Configuration;
-using NUnit.Framework;
 using Services.Billing;
 using Services.Database;
 using Services.Repositories;
 
-namespace Services.Tests;
+namespace Services.Tests.Billing;
 
 [TestFixture]
 public sealed class StripeBillingServiceTests
