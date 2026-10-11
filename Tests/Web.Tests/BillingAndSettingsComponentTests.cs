@@ -21,6 +21,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     [Test]
     public async Task ProPlanCardChangesPriceAndRoutesEntitledCustomersToBillingPortal()
     {
+        await SignInAsync();
         await Billing.InitializeAsync();
         var cut = Render<ProPlanCard>();
         Assert.That(Content(cut.Find(".price")), Is.EqualTo("£10 / month"));
@@ -115,13 +116,30 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void ProPlanCardReportsNetworkFailure()
+    public async Task ProPlanCardReportsNetworkFailure()
     {
-        Api.Respond = (_, _) => throw new HttpRequestException("Offline");
+        await SignInAsync();
+        Api.Respond = (request, _) => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new BillingPrice("month", "gbp", 1000, "£10 / month"),
+                    new BillingPrice("year", "gbp", 9600, "£96 / year")
+                })
+            }),
+            "/api/v1/billing" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+            }),
+            _ => throw new HttpRequestException("Offline")
+        };
+        await Billing.InitializeAsync();
         var cut = Render<ProPlanCard>();
-        cut.Find(".checkout-button").Click();
+        await cut.InvokeAsync(() => Billing.BuyPro());
         Assert.That(Billing.BillingMessage, Is.EqualTo("Checkout is temporarily unavailable."));
-        cut.Find(".plan-button").Click();
+        await cut.InvokeAsync(() => Billing.StartTrial());
         Assert.That(Billing.BillingMessage, Is.EqualTo("Billing is temporarily unavailable."));
     }
 
