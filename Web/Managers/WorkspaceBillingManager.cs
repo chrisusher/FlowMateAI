@@ -72,20 +72,24 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
     public string PriceLabel => Prices.FirstOrDefault(p => p.Interval == (Annual ? "year" : "month"))?.Display ?? "Pricing unavailable";
 
-    public void ShowCheckoutReturn(string? result)
+    public void ShowCheckoutReturn(CheckoutOutcome outcome)
     {
-        if (result == "return")
+        switch (outcome)
         {
-            _checkoutPending = !HasEntitledSubscription;
-            BillingMessage = _checkoutPending
-                ? "Payment is processing. Pro access will appear once Stripe confirms your subscription."
-                : "Your Pro subscription is active.";
+            case CheckoutOutcome.Return:
+                _checkoutPending = !HasEntitledSubscription;
+                BillingMessage = _checkoutPending
+                    ? "Payment is processing. Pro access will appear once Stripe confirms your subscription."
+                    : "Your Pro subscription is active.";
+                break;
+            case CheckoutOutcome.Cancelled:
+                _checkoutPending = false;
+                BillingMessage = "Checkout was canceled. No subscription was started.";
+                break;
+            default:
+                return;
         }
-        else if (result == "cancelled")
-        {
-            _checkoutPending = false;
-            BillingMessage = "Checkout was canceled. No subscription was started.";
-        }
+
         NotifyChanged();
     }
 
