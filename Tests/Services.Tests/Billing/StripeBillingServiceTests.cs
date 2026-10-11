@@ -41,6 +41,8 @@ public sealed class StripeBillingServiceTests
         Assert.That(annual.Url, Is.EqualTo("https://checkout.example.test/session/price_annual"));
         Assert.That(annualRetry.Url, Is.EqualTo(annual.Url));
         Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(2));
+        Assert.That(handler.CheckoutIdempotencyKeys, Has.Count.EqualTo(2));
+        Assert.That(handler.CheckoutIdempotencyKeys[0], Is.Not.EqualTo(handler.CheckoutIdempotencyKeys[1]));
     }
 
     [Test]
