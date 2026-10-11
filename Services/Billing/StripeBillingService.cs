@@ -197,7 +197,7 @@ public sealed class StripeBillingService(
                 ["subscription_data[metadata][user_id]"] = userId
             };
 
-            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId), cancellationToken);
+            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId, priceId), cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -284,12 +284,12 @@ public sealed class StripeBillingService(
         return null;
     }
 
-    private static string CheckoutIdempotencyKey(string userId)
+    private static string CheckoutIdempotencyKey(string userId, string priceId)
     {
-        var userHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId))).ToLowerInvariant();
+        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + "\n" + priceId))).ToLowerInvariant();
         var utcDay = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
-        return $"flowmate-checkout-{userHash}-{utcDay}";
+        return $"flowmate-checkout-{requestHash}-{utcDay}";
     }
 
     public async Task<BillingActionResponse> CreatePortalAsync(string userId, CancellationToken cancellationToken = default)
