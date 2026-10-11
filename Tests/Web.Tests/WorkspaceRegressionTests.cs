@@ -681,10 +681,23 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     {
         await SignInAsync();
         var currentUrl = Navigation.Uri;
-        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
         {
-            Content = JsonContent.Create(new ApiError("unauthorized", "The access token expired."), options: SharedCommon.JsonOptions)
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[] { new BillingPrice("month", "gbp", 1000, "£10 / month") })
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = JsonContent.Create(new ApiError("unauthorized", "The access token expired."), options: SharedCommon.JsonOptions)
+            }
         });
+        await Billing.InitializeAsync();
+        Api.Paths.Clear();
 
         await Billing.BuyPro();
 
@@ -718,8 +731,9 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void PricingPageRetainsTheBillingIntervalWhenRecreated()
+    public async Task PricingPageRetainsTheBillingIntervalWhenRecreated()
     {
+        await Billing.InitializeAsync();
         var first = Render<PricingPage>();
         first.FindAll(".billing-toggle button")[1].Click();
         first.Dispose();

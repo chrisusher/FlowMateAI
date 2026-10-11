@@ -1,15 +1,14 @@
 using Microsoft.Extensions.Configuration;
-using NUnit.Framework;
 using Services.Database;
 using Services.Mcp;
 using Services.Repositories;
 
-namespace Services.Tests;
+namespace Services.Tests.Mcp;
 
 [TestFixture]
 public sealed class FreeUsageLimiterTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 10, 3, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _now = new(2026, 10, 3, 12, 0, 0, TimeSpan.Zero);
 
     [Test]
     public async Task FirstAdmissionCreatesUsageWithConfiguredLimits()
@@ -20,13 +19,13 @@ public sealed class FreeUsageLimiterTests
         Assert.That(admission.Admitted, Is.True);
         Assert.That(admission.MinuteRemaining, Is.EqualTo(1));
         Assert.That(admission.DayRemaining, Is.EqualTo(2));
-        Assert.That(admission.MinuteResetAt, Is.EqualTo(Now.AddMinutes(1)));
-        Assert.That(admission.DayResetAt.UtcDateTime, Is.EqualTo(Now.Date.AddDays(1)));
+        Assert.That(admission.MinuteResetAt, Is.EqualTo(_now.AddMinutes(1)));
+        Assert.That(admission.DayResetAt.UtcDateTime, Is.EqualTo(_now.Date.AddDays(1)));
         Assert.That(repository.Saved!.Id, Is.EqualTo("usage"));
         Assert.That(repository.Saved.UserId, Is.EqualTo("user"));
         Assert.That(repository.Saved.UtcDay, Is.EqualTo("2026-10-03"));
         Assert.That(repository.Saved.DailyCount, Is.EqualTo(1));
-        Assert.That(repository.Saved.RecentAdmissions, Is.EqualTo(new[] { Now }));
+        Assert.That(repository.Saved.RecentAdmissions, Is.EqualTo(new[] { _now }));
         Assert.That(repository.Saved.Ttl, Is.EqualTo(172800));
         Assert.That(repository.ExpectedRevision, Is.Null);
     }
@@ -40,7 +39,7 @@ public sealed class FreeUsageLimiterTests
             {
                 UtcDay = "2026-10-02",
                 DailyCount = 3,
-                RecentAdmissions = [Now.AddMinutes(-2), Now.AddMinutes(-1)],
+                RecentAdmissions = [_now.AddMinutes(-2), _now.AddMinutes(-1)],
                 ETag = "revision"
             }
         };
@@ -48,7 +47,7 @@ public sealed class FreeUsageLimiterTests
 
         Assert.That(admission.Admitted, Is.True);
         Assert.That(repository.Saved!.DailyCount, Is.EqualTo(1));
-        Assert.That(repository.Saved.RecentAdmissions, Is.EqualTo(new[] { Now }));
+        Assert.That(repository.Saved.RecentAdmissions, Is.EqualTo(new[] { _now }));
         Assert.That(repository.ExpectedRevision, Is.EqualTo("revision"));
     }
 
@@ -63,7 +62,7 @@ public sealed class FreeUsageLimiterTests
             {
                 UtcDay = "2026-10-03",
                 DailyCount = dailyCount,
-                RecentAdmissions = Enumerable.Repeat(Now.AddSeconds(-10), recentCount).ToList()
+                RecentAdmissions = Enumerable.Repeat(_now.AddSeconds(-10), recentCount).ToList()
             }
         };
         var admission = await CreateLimiter(repository).AdmitAsync("user");
@@ -83,7 +82,7 @@ public sealed class FreeUsageLimiterTests
             {
                 UtcDay = "2026-10-03",
                 DailyCount = 2,
-                RecentAdmissions = [Now, Now],
+                RecentAdmissions = [_now, _now],
                 ETag = "winner"
             };
 
@@ -157,7 +156,7 @@ public sealed class FreeUsageLimiterTests
 
     private sealed class FixedClock : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => Now;
+        public override DateTimeOffset GetUtcNow() => _now;
     }
 
     private sealed class StubRepository : IMcpUsageRepository

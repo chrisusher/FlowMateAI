@@ -19,7 +19,11 @@
     </div>
     @if (!string.IsNullOrEmpty(Billing.BillingMessage))
     {
-        <p class="billing-message">@Billing.BillingMessage</p>
+        <p class="billing-message" role="status" aria-live="polite">@Billing.BillingMessage</p>
+    }
+    @if (Billing.CheckoutPending)
+    {
+        <button class="text-button" @onclick="Billing.RefreshSubscriptionStatusAsync">Check payment status</button>
     }
 </div>
 <div class="pricing-grid">

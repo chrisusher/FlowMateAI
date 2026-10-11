@@ -1,14 +1,10 @@
 using System.Text.Json;
 using ChrisUsher.Core.Shared;
-using NUnit.Framework;
 using Services.Database;
 using Services.Repositories;
 using Services.Workspaces;
-using Shared.Contracts;
-using Shared.Enums;
-using Shared.Models;
 
-namespace Services.Tests;
+namespace Services.Tests.Workspaces;
 
 public sealed class WorkspaceServiceTests
 {
