@@ -150,6 +150,13 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
     private void StartFocusInternal()
     {
         var timer = Store.Data.Timer;
+
+        if (Store.Project(timer.ProjectId)?.IsArchived == true || Store.Project(Store.Task(timer.TaskId)?.ProjectId ?? "")?.IsArchived == true)
+        {
+            timer.TaskId = null;
+            timer.ProjectId = "";
+        }
+
         CompletionMessage = null;
         timer.CompletedIntervals.Clear();
         timer.OwnerClientId = Store.ClientId;

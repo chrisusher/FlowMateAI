@@ -175,6 +175,34 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task ArchivingSelectedProjectClearsIdleTimerSelection()
+    {
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+
+        Projects.RequestArchive(Project);
+        await Projects.ConfirmArchiveAsync();
+
+        Assert.That(Store.Data.Timer.TaskId, Is.Null);
+        Assert.That(Store.Data.Timer.ProjectId, Is.Empty);
+    }
+
+    [Test]
+    public async Task StartingFocusRejectsAnArchivedProjectSelectionAndDoesNotSelectItsTasks()
+    {
+        Project.IsArchived = true;
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+
+        await Timer.StartFocus();
+
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Focus));
+        Assert.That(Store.Data.Timer.TaskId, Is.Null);
+        Assert.That(Store.Data.Timer.ProjectId, Is.Empty);
+        Assert.That(Stats.PlannedTasks, Is.Empty);
+    }
+
+    [Test]
     public async Task ArchivedProjectFreesAnActiveSlotAndInvalidNamesAreRejected()
     {
         Store.Data.Projects.AddRange(Enumerable.Range(2, 2).Select(i => new ProjectRecord { Id = $"project-{i}", Name = $"Project {i}" }));

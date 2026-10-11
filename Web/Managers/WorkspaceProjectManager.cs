@@ -114,8 +114,7 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
     {
         ActionMessage = null;
 
-        if (Store.Data.Timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused &&
-            string.Equals(Store.Data.Timer.ProjectId, project.Id, StringComparison.Ordinal))
+        if (TimerReferencesProject(project) && Store.Data.Timer.Phase is (TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused))
         {
             ActionMessage = "Pause or finish this project's timer before archiving it.";
             NotifyChanged();
@@ -144,8 +143,7 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             return;
         }
 
-        if (Store.Data.Timer.Phase is TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused &&
-            string.Equals(Store.Data.Timer.ProjectId, project.Id, StringComparison.Ordinal))
+        if (TimerReferencesProject(project) && Store.Data.Timer.Phase is (TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused))
         {
             ArchiveProjectId = null;
             ActionMessage = "Pause or finish this project's timer before archiving it.";
@@ -154,6 +152,7 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             return;
         }
 
+        ClearIdleTimerSelection(project);
         project.IsArchived = true;
         ArchiveProjectId = null;
         ActionMessage = "Saving project…";
@@ -187,5 +186,25 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
         await Store.SaveAsync();
         ActionMessage = Store.SyncMessage ?? "Project restored.";
         NotifyChanged();
+    }
+
+    private bool TimerReferencesProject(ProjectRecord project)
+    {
+        var timer = Store.Data.Timer;
+        var selectedTask = Store.Task(timer.TaskId);
+
+        return string.Equals(timer.ProjectId, project.Id, StringComparison.Ordinal) ||
+            string.Equals(selectedTask?.ProjectId, project.Id, StringComparison.Ordinal);
+    }
+
+    private void ClearIdleTimerSelection(ProjectRecord project)
+    {
+        var timer = Store.Data.Timer;
+
+        if (timer.Phase == TimerPhase.Idle && TimerReferencesProject(project))
+        {
+            timer.TaskId = null;
+            timer.ProjectId = "";
+        }
     }
 }
