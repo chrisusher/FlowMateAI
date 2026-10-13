@@ -488,6 +488,13 @@ CLI/appsettings.json
 CLI/appsettings.*.json
 !CLI/appsettings.example.json
 
+# Local browser configuration. WASM settings must never contain secrets.
+/Web/wwwroot/appsettings*.json
+!/Web/wwwroot/appsettings.example.json
+
+# Local Auth0 verification screenshots.
+/auth0-*.jpg
+
 .build-obj/
 
 .tmp*

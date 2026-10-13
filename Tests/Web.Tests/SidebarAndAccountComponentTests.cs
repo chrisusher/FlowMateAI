@@ -53,16 +53,14 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
         Assert.That(Navigation.Uri, Does.EndWith("/settings"));
     }
 
-    [TestCase(0, "google-oauth2")]
-    [TestCase(1, "github")]
-    [TestCase(2, "windowslive")]
-    [TestCase(3, "azuread")]
-    public void WorkspaceSignInUsesTheSelectedProvider(int button, string connection)
+    [Test]
+    public void WorkspaceSignInOffersOnlyTheConfiguredGoogleProvider()
     {
         var cut = Render<WorkspaceSignIn>();
-        Assert.That(cut.FindAll(".auth-provider").Count, Is.EqualTo(4));
-        cut.FindAll(".auth-provider")[button].Click();
+        Assert.That(cut.FindAll(".auth-provider").Count, Is.EqualTo(1));
+        Assert.That(Content(cut.Find(".auth-provider")), Is.EqualTo("Continue with Google"));
+        cut.Find(".auth-provider").Click();
         var invocation = AuthModule.Invocations.Where(call => call.Identifier == "login").Single();
-        Assert.That(invocation.Arguments[1], Is.EqualTo(connection));
+        Assert.That(invocation.Arguments[1], Is.EqualTo("google-oauth2"));
     }
 }
