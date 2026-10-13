@@ -4,7 +4,7 @@
 @if (Tasks.DialogOpen)
 {
     <div class="modal-shade" @onclick="Tasks.CloseTaskDialog">
-        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="Tasks.HandleDialogKeyDown">
+        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title" tabindex="-1" autofocus @onclick:stopPropagation="true" @onkeydown="Tasks.HandleDialogKeyDown">
             <div class="dialog-heading">
                 <div>
                     <span class="eyebrow">PLAN YOUR NEXT STEP</span>
