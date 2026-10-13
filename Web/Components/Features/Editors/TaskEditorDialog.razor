@@ -4,7 +4,7 @@
 @if (Tasks.DialogOpen)
 {
     <div class="modal-shade" @onclick="Tasks.CloseTaskDialog">
-        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title" @onclick:stopPropagation="true">
+        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="task-dialog-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="Tasks.HandleDialogKeyDown">
             <div class="dialog-heading">
                 <div>
                     <span class="eyebrow">PLAN YOUR NEXT STEP</span>
@@ -13,14 +13,19 @@
                 <button type="button" class="dialog-close" aria-label="Close task form" @onclick="Tasks.CloseTaskDialog">&#215;</button>
             </div>
             <EditForm Model="Tasks.Draft" OnSubmit="Tasks.SaveTask">
+                @if (!string.IsNullOrWhiteSpace(Tasks.ValidationMessage))
+                {
+                    <p class="field-validation" role="alert">@Tasks.ValidationMessage</p>
+                }
                 <label class="field-label">
                     Task name
-                    <InputText class="field-input" @bind-Value="Tasks.Draft.Title" placeholder="What needs your attention?" />
+                    <InputText class="field-input" maxlength="160" @bind-Value="Tasks.Draft.Title" placeholder="What needs your attention?" />
                 </label>
                 <div class="dialog-fields">
                     <label class="field-label">
                         Project
                         <InputSelect class="field-input" @bind-Value="Tasks.Draft.ProjectId">
+                            <option value="">Choose an active project</option>
                             @foreach (var project in Store.Data.Projects.Where(project => !project.IsArchived || project.Id == Tasks.Draft.ProjectId))
                             {
                                 <option value="@project.Id" disabled="@project.IsArchived">@project.Name@(project.IsArchived ? " (archived)" : "")</option>

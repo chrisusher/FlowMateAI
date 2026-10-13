@@ -22,6 +22,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(Tasks.Editing, Is.True);
         Assert.That(Tasks.DialogOpen, Is.True);
         Assert.That(Tasks.Draft.Title, Is.EqualTo("Take a reset"));
+        Tasks.CloseTaskDialog();
+        cut.FindAll(".check-circle")[1].Click();
+        Assert.That(PlannedTask.IsComplete, Is.False);
     }
 
     [Test]
@@ -66,6 +69,145 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         cut.Find(".dialog-close").Click();
         Assert.That(Tasks.DialogOpen, Is.False);
         Assert.That(cut.FindAll("[role=dialog]"), Is.Empty);
+    }
+
+    [Test]
+    public void TaskEditorDialogValidatesLongAndUnsafeNamesAndClosesOnEscape()
+    {
+        Tasks.AddQuickTask();
+        var cut = Render<TaskEditorDialog>();
+        cut.Find("input.field-input").Change(new string('x', 161));
+        cut.Find("form").Submit();
+
+        Assert.That(Tasks.ValidationMessage, Is.EqualTo("Task names can be up to 160 characters."));
+        Assert.That(Store.Data.Tasks.Count, Is.EqualTo(2));
+
+        cut.Find("input.field-input").Change("Safe name\nwith control");
+        cut.Find("form").Submit();
+        Assert.That(Tasks.ValidationMessage, Is.EqualTo("Task names cannot contain control characters."));
+
+        cut.Find("[role=dialog]").KeyDown("Escape");
+        Assert.That(Tasks.DialogOpen, Is.False);
+    }
+
+    [Test]
+    public void MovingTaskPreservesFocusHistoryAndUpdatesIdleTimerSelection()
+    {
+        var destination = new ProjectRecord { Id = "project-two", Name = "Client work" };
+        Store.Data.Projects.Add(destination);
+        AddSession(25);
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+        var cut = Render<TaskEditorDialog>();
+
+        Tasks.OpenTaskEditor(PlannedTask);
+        cut.Find("select.field-input").Change(destination.Id);
+        cut.Find("form").Submit();
+
+        Assert.That(PlannedTask.ProjectId, Is.EqualTo(destination.Id));
+        Assert.That(Store.Data.Timer.ProjectId, Is.EqualTo(destination.Id));
+        Assert.That(Store.Data.Sessions.Single().TaskId, Is.EqualTo(PlannedTask.Id));
+        Assert.That(Store.Data.Sessions.Single().ProjectId, Is.EqualTo(Project.Id));
+    }
+
+    [Test]
+    public void RemovingTaskRequiresConfirmationAndKeepsFocusHistory()
+    {
+        var removedTask = PlannedTask;
+        AddSession(25);
+        Store.Data.Timer.TaskId = removedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+        var cut = Render<AllTasksCard>();
+
+        cut.Find(".task-remove").Click();
+        cut.WaitForElement("[role=alertdialog]");
+        Assert.That(Store.Data.Tasks, Does.Contain(removedTask));
+        cut.Find("[role=alertdialog] .dialog-actions .timer-primary").Click();
+
+        Assert.That(Store.Data.Tasks, Does.Not.Contain(removedTask));
+        Assert.That(Store.Data.Sessions.Single().TaskId, Is.EqualTo(removedTask.Id));
+        Assert.That(Store.Data.Sessions.Single().ProjectId, Is.EqualTo(Project.Id));
+        Assert.That(Store.Data.Timer.TaskId, Is.Null);
+        Assert.That(Store.Data.Timer.ProjectId, Is.Empty);
+    }
+
+    [Test]
+    public void ActiveTaskCannotBeMovedOrRemovedUntilTimerIsStopped()
+    {
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+        Store.Data.Timer.Phase = TimerPhase.Focus;
+        Store.Data.Projects.Add(new() { Id = "project-two", Name = "Client work" });
+        var editor = Render<TaskEditorDialog>();
+
+        Tasks.OpenTaskEditor(PlannedTask);
+        editor.Find("select.field-input").Change("project-two");
+        editor.Find("form").Submit();
+        Assert.That(PlannedTask.ProjectId, Is.EqualTo(Project.Id));
+        Assert.That(Tasks.ValidationMessage, Does.Contain("Pause or finish"));
+
+        Tasks.CloseTaskDialog();
+        var tasks = Render<AllTasksCard>();
+        tasks.Find(".task-remove").Click();
+        Assert.That(Tasks.RemoveTaskId, Is.Null);
+        Assert.That(Tasks.ActionMessage, Does.Contain("Pause or finish"));
+        Assert.That(Store.Data.Tasks, Does.Contain(PlannedTask));
+    }
+
+    [Test]
+    public void TaskNamesRenderAsTextAndRemovalCanBeCanceled()
+    {
+        PlannedTask.Title = "<img src=x onerror=alert(1)>";
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.FindAll("img"), Is.Empty);
+        Assert.That(cut.Find(".task-title").TextContent, Is.EqualTo(PlannedTask.Title));
+        cut.Find(".task-remove").Click();
+        cut.Find("[role=alertdialog] .text-button").Click();
+
+        Assert.That(Store.Data.Tasks, Does.Contain(PlannedTask));
+        Assert.That(cut.FindAll("[role=alertdialog]"), Is.Empty);
+    }
+
+    [Test]
+    public void TasksWithArchivedOrRemovedProjectsCanBeMovedToAnActiveProject()
+    {
+        var destination = new ProjectRecord { Id = "project-two", Name = "Client work" };
+        Store.Data.Projects.Add(destination);
+        Project.IsArchived = true;
+        var cut = Render<TaskEditorDialog>();
+
+        Tasks.OpenTaskEditor(PlannedTask);
+        cut.Find("select.field-input").Change(destination.Id);
+        cut.Find("form").Submit();
+        Assert.That(PlannedTask.ProjectId, Is.EqualTo(destination.Id));
+
+        PlannedTask.ProjectId = "deleted-project";
+        Tasks.OpenTaskEditor(PlannedTask);
+        cut.Find("select.field-input").Change(destination.Id);
+        cut.Find("form").Submit();
+        Assert.That(PlannedTask.ProjectId, Is.EqualTo(destination.Id));
+    }
+
+    [Test]
+    public void TaskInArchivedProjectCannotBeSelectedForFocus()
+    {
+        Project.IsArchived = true;
+
+        var cut = Render<AllTasksCard>();
+        cut.Find(".task-title").Click();
+
+        Assert.That(Store.Data.Timer.TaskId, Is.Null);
+        Assert.That(Tasks.ActionMessage, Does.Contain("active project"));
+    }
+
+    [Test]
+    public void AllTasksCardShowsAnEmptyWorkspaceMessage()
+    {
+        Store.Data.Tasks.Clear();
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.Find(".empty-state").TextContent, Does.Contain("No tasks yet"));
     }
 
     [Test]

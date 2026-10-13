@@ -3,6 +3,10 @@
 @inject WorkspaceTaskManager Tasks
 
 <article class="panel all-tasks">
+    @if (!string.IsNullOrWhiteSpace(Tasks.ActionMessage))
+    {
+        <p class="task-action-message" role="status">@Tasks.ActionMessage</p>
+    }
     <div class="task-filters">
         <button class="filter-chip active">
             All
@@ -15,6 +19,10 @@
         <span class="filter-spacer"></span>
         <span class="filter-caption">Sorted by priority</span>
     </div>
+    @if (Store.Data.Tasks.Count == 0)
+    {
+        <p class="empty-state">No tasks yet. Add a task to plan your next step.</p>
+    }
     @foreach (var task in Store.Data.Tasks.OrderBy(t => t.IsComplete).ThenByDescending(t => t.Priority))
     {
         <div class="task-row @(task.IsComplete ? "completed" : "")">
@@ -22,11 +30,36 @@
             <button class="task-title" @onclick="() => Tasks.SelectTask(task)">@task.Title</button>
             <span class="task-project">
                 <i class="project-color" style="background:@(Store.Project(task.ProjectId)?.Color ?? "#aaa")"></i>
-                @Store.Project(task.ProjectId)?.Name
+                @(Store.Project(task.ProjectId)?.Name ?? "Project unavailable")
+                @if (Store.Project(task.ProjectId) is { IsArchived: true })
+                {
+                    <span class="archived-task-label">Archived</span>
+                }
             </span>
             <span class="priority priority-@task.Priority.ToString().ToLowerInvariant()">@task.Priority</span>
             <button class="plan-toggle @(task.PlannedToday ? "planned" : "")" @onclick="() => Tasks.TogglePlan(task)">@(task.PlannedToday ? "Planned today" : "+ Plan today")</button>
-            <button class="task-edit" title="Edit task" @onclick="() => Tasks.OpenTaskEditor(task)">&#9998;</button>
+            <button type="button" class="task-edit" aria-label="Edit or move @task.Title" title="Edit or move task" @onclick="() => Tasks.OpenTaskEditor(task)">&#9998;</button>
+            <button type="button" class="task-remove" aria-label="Remove @task.Title" @onclick="() => Tasks.RequestRemoveTask(task)">Remove</button>
         </div>
     }
 </article>
+
+@if (Tasks.RemoveTaskId is { } removeTaskId && Store.Task(removeTaskId) is { } removeTask)
+{
+    <div class="modal-shade" @onclick="Tasks.CloseRemoveTaskDialog">
+        <section class="task-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-task-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="Tasks.HandleDialogKeyDown">
+            <div class="dialog-heading">
+                <div>
+                    <span class="eyebrow">TASK CLEANUP</span>
+                    <h2 id="remove-task-title">Remove @removeTask.Title?</h2>
+                </div>
+                <button type="button" class="dialog-close" aria-label="Cancel task removal" @onclick="Tasks.CloseRemoveTaskDialog">&#215;</button>
+            </div>
+            <p>The task will be removed from your workspace. Existing focus history will be kept.</p>
+            <div class="dialog-actions">
+                <button type="button" class="text-button" @onclick="Tasks.CloseRemoveTaskDialog">Cancel</button>
+                <button type="button" class="timer-primary" @onclick="Tasks.ConfirmRemoveTaskAsync">Remove task</button>
+            </div>
+        </section>
+    </div>
+}
