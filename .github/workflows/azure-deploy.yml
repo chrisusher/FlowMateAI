@@ -110,18 +110,18 @@ jobs:
           sku: flexconsumption
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
 
-  deploy-mcp:
-    needs: build
-    runs-on: ubuntu-latest
-    environment: Test
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: functions-mcp
-          path: artifacts/mcp
+  # deploy-mcp:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   environment: Test
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: functions-mcp
+  #         path: artifacts/mcp
 
-      - uses: Azure/functions-action@v1
-        with:
-          app-name: ${{ vars.AZURE_MCP_FUNCTIONAPP_NAME }}
-          package: artifacts/mcp
-          publish-profile: ${{ secrets.AZURE_MCP_FUNCTIONAPP_PUBLISH_PROFILE }}
+  #     - uses: Azure/functions-action@v1
+  #       with:
+  #         app-name: ${{ vars.AZURE_MCP_FUNCTIONAPP_NAME }}
+  #         package: artifacts/mcp
+  #         publish-profile: ${{ secrets.AZURE_MCP_FUNCTIONAPP_PUBLISH_PROFILE }}
