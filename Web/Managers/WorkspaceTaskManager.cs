@@ -135,7 +135,7 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
 
     public async Task SaveTask(EditContext _)
     {
-        var title = Draft.Title.Trim();
+        var title = (Draft.Title ?? string.Empty).Trim();
 
         if (title.Length == 0 || title.Length > 160 || title.Any(char.IsControl))
         {
