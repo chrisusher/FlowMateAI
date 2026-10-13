@@ -47,9 +47,11 @@ jobs:
           $indexPath = 'Web/wwwroot/index.html'
           $index = Get-Content -LiteralPath $indexPath -Raw
           $frontendBase = '<base href="/frontend/" />'
+          
           if (-not $index.Contains($frontendBase)) {
             throw "Expected base href '$frontendBase' in $indexPath before publishing."
           }
+          
           $index.Replace($frontendBase, '<base href="/" />') | Set-Content -LiteralPath $indexPath -Encoding utf8NoBOM
 
           dotnet publish Web/Web.csproj -c Release --no-restore -o artifacts/web-publish
