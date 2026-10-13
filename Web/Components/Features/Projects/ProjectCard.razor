@@ -4,7 +4,13 @@
 <article class="panel project-card">
     <div class="project-card-head">
         <span class="project-square" style="background:@Project.Color">@Project.Name[..1]</span>
-        <span class="project-menu">&#8942;</span>
+        <details class="project-menu">
+            <summary aria-label="Actions for @Project.Name" title="Project actions">&#8942;</summary>
+            <div class="project-menu-actions">
+                <button type="button" aria-label="Rename @Project.Name" @onclick="() => Projects.EditProject(Project)">Rename</button>
+                <button type="button" aria-label="Archive @Project.Name" @onclick="() => Projects.RequestArchive(Project)">Archive</button>
+            </div>
+        </details>
     </div>
     <h3>@Project.Name</h3>
     <p>@ProjectTasks.Count(t => !t.IsComplete) active tasks</p>

@@ -2,6 +2,7 @@ using Shared.Enums;
 using Web.Components.Features.Editors;
 using Web.Components.Features.Projects;
 using Web.Components.Features.Tasks;
+using Web.Components.Pages;
 
 namespace Web.Tests;
 
@@ -110,6 +111,129 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Projects.AddProject();
         cut.WaitForElement(".dialog-close").Click();
         Assert.That(Store.Data.Projects.Count, Is.EqualTo(2));
+        Assert.That(Projects.DialogOpen, Is.False);
+    }
+
+    [Test]
+    public void ProjectCardMenuOpensRenameAndArchiveActions()
+    {
+        var cut = Render<ProjectCard>(p => p.Add(c => c.Project, Project));
+
+        Assert.That(cut.Find(".project-menu summary").GetAttribute("aria-label"), Is.EqualTo("Actions for Personal"));
+        cut.Find(".project-menu-actions button").Click();
+
+        Assert.That(Projects.DialogOpen, Is.True);
+        Assert.That(Projects.EditingProjectId, Is.EqualTo(Project.Id));
+        Assert.That(Projects.DraftName, Is.EqualTo("Personal"));
+    }
+
+    [Test]
+    public async Task ProjectCanBeRenamedWithoutChangingTasksOrFocusHistory()
+    {
+        AddSession(20);
+        var cut = Render<ProjectEditorDialog>();
+        Projects.EditProject(Project);
+        cut.WaitForElement("input").Change("  Client work  ");
+        cut.Find("form").Submit();
+
+        Assert.That(Project.Name, Is.EqualTo("Client work"));
+        Assert.That(Store.Data.Tasks.Select(task => task.ProjectId), Is.All.EqualTo(Project.Id));
+        Assert.That(Store.Data.Sessions.Single().ProjectId, Is.EqualTo(Project.Id));
+        Assert.That(cut.FindAll("[role=dialog]"), Is.Empty);
+    }
+
+    [Test]
+    public async Task ProjectCanBeArchivedAndRestoredWithoutLosingRelatedRecords()
+    {
+        AddSession(20);
+        var cut = Render<ProjectsPage>();
+        Projects.RequestArchive(Project);
+        cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Archive Personal?")));
+        cut.Find(".dialog-actions .timer-primary").Click();
+
+        Assert.That(Project.IsArchived, Is.True);
+        Assert.That(Store.Data.Tasks.Count(task => task.ProjectId == Project.Id), Is.EqualTo(2));
+        Assert.That(Store.Data.Sessions.Single().ProjectId, Is.EqualTo(Project.Id));
+        Assert.That(cut.Find(".archived-projects").TextContent, Does.Contain("20 min focused"));
+
+        cut.Find(".archived-projects button").Click();
+        Assert.That(Project.IsArchived, Is.False);
+        Assert.That(cut.FindAll(".archived-projects").Count, Is.Zero);
+    }
+
+    [Test]
+    public void ProjectCannotBeArchivedWhileItsTimerIsActive()
+    {
+        Store.Data.Timer.Phase = TimerPhase.Focus;
+        Store.Data.Timer.ProjectId = Project.Id;
+
+        Projects.RequestArchive(Project);
+
+        Assert.That(Project.IsArchived, Is.False);
+        Assert.That(Projects.ArchiveProjectId, Is.Null);
+        Assert.That(Projects.ActionMessage, Does.Contain("Pause or finish"));
+    }
+
+    [Test]
+    public async Task ArchivingSelectedProjectClearsIdleTimerSelection()
+    {
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+
+        Projects.RequestArchive(Project);
+        await Projects.ConfirmArchiveAsync();
+
+        Assert.That(Store.Data.Timer.TaskId, Is.Null);
+        Assert.That(Store.Data.Timer.ProjectId, Is.Empty);
+    }
+
+    [Test]
+    public async Task StartingFocusRejectsAnArchivedProjectSelectionAndDoesNotSelectItsTasks()
+    {
+        Project.IsArchived = true;
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+
+        await Timer.StartFocus();
+
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Focus));
+        Assert.That(Store.Data.Timer.TaskId, Is.Null);
+        Assert.That(Store.Data.Timer.ProjectId, Is.Empty);
+        Assert.That(Stats.PlannedTasks, Is.Empty);
+    }
+
+    [Test]
+    public async Task ArchivedProjectFreesAnActiveSlotAndInvalidNamesAreRejected()
+    {
+        Store.Data.Projects.AddRange(Enumerable.Range(2, 2).Select(i => new ProjectRecord { Id = $"project-{i}", Name = $"Project {i}" }));
+        Projects.RequestArchive(Project);
+        await Projects.ConfirmArchiveAsync();
+        await Projects.AddProject();
+        Projects.DraftName = "   ";
+        await Projects.SaveProject();
+
+        Assert.That(Projects.DialogOpen, Is.True);
+        Assert.That(Projects.ValidationMessage, Is.EqualTo("Enter a project name."));
+        Projects.DraftName = new string('x', 81);
+        await Projects.SaveProject();
+        Assert.That(Projects.ValidationMessage, Is.EqualTo("Project names can be up to 80 characters."));
+        Projects.DraftName = "Invalid\nname";
+        await Projects.SaveProject();
+        Assert.That(Projects.ValidationMessage, Is.EqualTo("Project names cannot contain control characters."));
+        Projects.DraftName = "Replacement";
+        await Projects.SaveProject();
+
+        Assert.That(Projects.ActiveProjectCount, Is.EqualTo(3));
+        Assert.That(Store.Data.Projects.Count, Is.EqualTo(4));
+    }
+
+    [Test]
+    public void ProjectDialogClosesOnEscape()
+    {
+        var cut = Render<ProjectEditorDialog>();
+        Projects.AddProject();
+        cut.WaitForElement("[role=dialog]").KeyDown("Escape");
+
         Assert.That(Projects.DialogOpen, Is.False);
     }
 

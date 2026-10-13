@@ -59,7 +59,7 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
     public string Greeting => UserNow.Hour < 12 ? "GOOD MORNING" : UserNow.Hour < 18 ? "GOOD AFTERNOON" : "GOOD EVENING";
 
-    public IEnumerable<TaskRecord> PlannedTasks => Store.Data.Tasks.Where(t => t.PlannedToday);
+    public IEnumerable<TaskRecord> PlannedTasks => Store.Data.Tasks.Where(t => t.PlannedToday && Store.Project(t.ProjectId)?.IsArchived != true);
 
     public IEnumerable<TaskRecord> DoneTasks => PlannedTasks.Where(t => t.IsComplete);
 

@@ -949,8 +949,50 @@ a {
 }
 
 .project-menu {
+    position: relative;
     font-size: 17px;
     color: #999
+}
+
+.project-menu summary {
+    cursor: pointer;
+    list-style: none;
+    min-width: 28px;
+    text-align: center
+}
+
+.project-menu summary::-webkit-details-marker {
+    display: none
+}
+
+.project-menu-actions {
+    position: absolute;
+    z-index: 2;
+    top: 100%;
+    right: 0;
+    min-width: 130px;
+    padding: 5px;
+    display: grid;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    box-shadow: 0 8px 24px #0002
+}
+
+.project-menu-actions button {
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 9px;
+    color: var(--text);
+    background: transparent;
+    text-align: left;
+    font: inherit;
+    font-size: 11px
+}
+
+.project-menu-actions button:hover,
+.project-menu-actions button:focus-visible {
+    background: var(--accent-soft)
 }
 
 .project-card h3 {
@@ -997,6 +1039,84 @@ a {
     justify-content: space-between;
     color: #999;
     font-size: 9px
+}
+
+.project-capacity,
+.project-action-message {
+    margin: -8px 0 14px;
+    color: var(--muted);
+    font-size: 11px
+}
+
+.project-action-message {
+    color: var(--accent)
+}
+
+.project-empty {
+    margin-top: 14px;
+    padding: 22px
+}
+
+.project-empty h2,
+.archived-projects h2 {
+    font: 650 14px Manrope;
+    margin: 0 0 5px
+}
+
+.project-empty p,
+.archived-projects>p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 11px
+}
+
+.archived-projects {
+    margin-top: 24px
+}
+
+.archived-projects ul {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden
+}
+
+.archived-projects li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line)
+}
+
+.archived-projects li:last-child {
+    border-bottom: 0
+}
+
+.archived-project-name {
+    font-size: 11px;
+    font-weight: 600
+}
+
+.archived-project-history {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 10px
+}
+
+.field-hint {
+    display: block;
+    color: var(--muted);
+    font-size: 10px
+}
+
+.field-error {
+    margin: 8px 0 0;
+    color: #b13c48;
+    font-size: 11px
 }
 
 .project-tip {

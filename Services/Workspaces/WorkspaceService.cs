@@ -32,11 +32,16 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
         var plan = BillingPlanExtensions.ParseOrFree(entitlement.Plan);
         var projectLimit = plan == BillingPlan.Pro ? 25 : 3;
-        var existingProjectIds = current.Projects.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
-        var newProjects = request.Workspace.Projects.Count(p => !existingProjectIds.Contains(p.Id));
-        var availableSlots = Math.Max(0, projectLimit - current.Projects.Count);
+        var existingActiveProjectIds = current.Projects
+            .Where(project => !project.IsArchived)
+            .Select(project => project.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var requestedActiveProjects = request.Workspace.Projects.Where(project => !project.IsArchived).ToArray();
+        var retainedActiveProjectCount = requestedActiveProjects.Count(project => existingActiveProjectIds.Contains(project.Id));
+        var newActiveProjectCount = requestedActiveProjects.Count(project => !existingActiveProjectIds.Contains(project.Id));
+        var availableSlots = Math.Max(0, projectLimit - retainedActiveProjectCount);
 
-        if (newProjects > availableSlots)
+        if (newActiveProjectCount > availableSlots)
         {
             return new(null, WorkspaceSaveErrorCode.ProjectLimit, $"The {plan} plan includes up to {projectLimit} projects. Existing projects are kept when your plan changes.");
         }

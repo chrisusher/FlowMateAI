@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Components.Web;
+
 namespace Web.Components.Pages;
 
 public partial class ProjectsPage
@@ -6,5 +8,13 @@ public partial class ProjectsPage
     {
         base.OnInitialized();
         Observe(Projects);
+    }
+
+    private void HandleArchiveKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            Projects.CloseArchiveDialog();
+        }
     }
 }

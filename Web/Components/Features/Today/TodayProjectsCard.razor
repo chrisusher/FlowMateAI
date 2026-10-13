@@ -9,7 +9,7 @@
         </div>
         <button class="text-button" @onclick='() => Go("reports")'>Report &rarr;</button>
     </div>
-    @foreach (var project in Store.Data.Projects.Take(3))
+    @foreach (var project in Store.Data.Projects.Where(project => !project.IsArchived).Take(3))
     {
         var mins = Stats.ProjectTodayMinutes(project.Id);
         <div class="project-meter-row">

@@ -3,6 +3,7 @@
 @layout WorkspaceLayout
 @inherits WorkspaceComponentBase
 @inject WorkspaceProjectManager Projects
+@inject WorkspaceStatistics Stats
 
 <PageTitle>Projects &#8212; FlowMate</PageTitle>
 
@@ -14,10 +15,59 @@
     </div>
     <button class="quiet-button" @onclick="Projects.AddProject">+ New project</button>
 </div>
+<p class="project-capacity">@Projects.ActiveProjectCount of @Projects.ProjectLimit active projects</p>
+@if (!string.IsNullOrWhiteSpace(Projects.ActionMessage))
+{
+    <p class="project-action-message" role="status" aria-live="polite">@Projects.ActionMessage</p>
+}
 <div class="project-grid">
-    @foreach (var project in Store.Data.Projects)
+    @foreach (var project in Store.Data.Projects.Where(project => !project.IsArchived))
     {
         <ProjectCard @key="project.Id" Project="project" />
     }
 </div>
+@if (!Store.Data.Projects.Any(project => !project.IsArchived))
+{
+    <section class="project-empty panel">
+        <h2>No active projects</h2>
+        <p>Restore an archived project or create a new one to give your work a home.</p>
+    </section>
+}
+@if (Store.Data.Projects.Any(project => project.IsArchived))
+{
+    <section class="archived-projects" aria-labelledby="archived-projects-title">
+        <h2 id="archived-projects-title">Archived projects</h2>
+        <p>Archived projects keep their tasks and focus history and do not use an active project slot.</p>
+        <ul>
+            @foreach (var project in Store.Data.Projects.Where(project => project.IsArchived))
+            {
+                <li @key="project.Id">
+                    <span class="project-color-dot" style="background:@project.Color"></span>
+                    <span class="archived-project-name">@project.Name</span>
+                    <span class="archived-project-history">@Store.Data.Tasks.Count(task => task.ProjectId == project.Id) tasks · @Stats.ProjectMinutes(project.Id) min focused</span>
+                    <button type="button" class="text-button" @onclick="() => Projects.RestoreProjectAsync(project)">Restore</button>
+                </li>
+            }
+        </ul>
+    </section>
+}
+@if (Projects.ArchiveProjectId is { } archiveId && Store.Project(archiveId) is { } archiveProject)
+{
+    <div class="modal-shade" @onclick="Projects.CloseArchiveDialog">
+        <section class="task-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-project-title" tabindex="-1" @onkeydown="HandleArchiveKeyDown" @onclick:stopPropagation="true">
+            <div class="dialog-heading">
+                <div>
+                    <span class="eyebrow">PROJECT SETTINGS</span>
+                    <h2 id="archive-project-title">Archive @archiveProject.Name?</h2>
+                </div>
+                <button type="button" class="dialog-close" aria-label="Close archive confirmation" @onclick="Projects.CloseArchiveDialog">&#215;</button>
+            </div>
+            <p>The project will leave your active list. Its tasks and focus history stay in your workspace, and you can restore it later.</p>
+            <div class="dialog-actions">
+                <button type="button" class="text-button" @onclick="Projects.CloseArchiveDialog">Cancel</button>
+                <button type="button" class="timer-primary" @onclick="Projects.ConfirmArchiveAsync">Archive project</button>
+            </div>
+        </section>
+    </div>
+}
 <ProjectTipCard />

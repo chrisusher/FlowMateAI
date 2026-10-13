@@ -65,7 +65,7 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
 
     public Task AddQuickTask()
     {
-        var project = Store.Data.Projects.FirstOrDefault();
+        var project = Store.Data.Projects.FirstOrDefault(project => !project.IsArchived);
         Draft = new()
         {
             ProjectId = project?.Id ?? "",
