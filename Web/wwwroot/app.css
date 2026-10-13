@@ -2306,6 +2306,31 @@ a {
     padding: 5px
 }
 
+.task-remove {
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 10px;
+    padding: 5px
+}
+
+.task-remove:hover,
+.task-edit:hover {
+    color: var(--accent)
+}
+
+.task-action-message {
+    margin: 0 0 12px;
+    color: var(--accent);
+    font-size: 11px
+}
+
+.archived-task-label {
+    margin-left: 4px;
+    color: var(--muted);
+    font-size: 9px
+}
+
 .chat-panel {
     min-height: 505px
 }
