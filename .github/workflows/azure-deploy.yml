@@ -41,12 +41,20 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           dotnet restore Web/Web.csproj --configfile NuGet.config
+
+          # The source app runs under /frontend/ in Aspire. Rewrite the base path before publish
+          # so the generated .br and .gz index files match the plain index.html.
+          $indexPath = 'Web/wwwroot/index.html'
+          $index = Get-Content -LiteralPath $indexPath -Raw
+          $frontendBase = '<base href="/frontend/" />'
+          if (-not $index.Contains($frontendBase)) {
+            throw "Expected base href '$frontendBase' in $indexPath before publishing."
+          }
+          $index.Replace($frontendBase, '<base href="/" />') | Set-Content -LiteralPath $indexPath -Encoding utf8NoBOM
+
           dotnet publish Web/Web.csproj -c Release --no-restore -o artifacts/web-publish
           New-Item -ItemType Directory -Path 'artifacts/web' -Force | Out-Null
           Get-ChildItem -LiteralPath 'artifacts/web-publish/wwwroot' -Force | Copy-Item -Destination 'artifacts/web' -Recurse -Force
-          $indexPath = 'artifacts/web/index.html'
-          $index = Get-Content -LiteralPath $indexPath -Raw
-          $index.Replace('<base href="/frontend/" />', '<base href="/" />') | Set-Content -LiteralPath $indexPath -Encoding utf8NoBOM -NoNewline
 
       - name: Publish Azure Functions API
         run: |
