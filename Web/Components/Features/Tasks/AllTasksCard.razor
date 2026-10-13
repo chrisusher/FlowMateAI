@@ -47,7 +47,7 @@
 @if (Tasks.RemoveTaskId is { } removeTaskId && Store.Task(removeTaskId) is { } removeTask)
 {
     <div class="modal-shade" @onclick="Tasks.CloseRemoveTaskDialog">
-        <section class="task-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-task-title" tabindex="-1" @onclick:stopPropagation="true" @onkeydown="Tasks.HandleDialogKeyDown">
+        <section class="task-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-task-title" tabindex="-1" autofocus @onclick:stopPropagation="true" @onkeydown="Tasks.HandleDialogKeyDown">
             <div class="dialog-heading">
                 <div>
                     <span class="eyebrow">TASK CLEANUP</span>
