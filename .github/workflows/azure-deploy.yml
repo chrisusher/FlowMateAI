@@ -67,12 +67,14 @@ jobs:
           $publishedIndexPath = 'artifacts/web-publish/wwwroot/index.html'
           $publishedIndex = Get-Content -LiteralPath $publishedIndexPath -Raw
           $loaderName = [regex]::Match($publishedIndex, '_framework/(blazor[.]webassembly[.][^" ]+[.]js)').Groups[1].Value
+
           if ([string]::IsNullOrWhiteSpace($loaderName) -or -not (Test-Path -LiteralPath "artifacts/web-publish/wwwroot/_framework/$loaderName")) {
             throw 'Published index.html does not reference an existing fingerprinted Blazor WebAssembly loader.'
           }
           if (-not $publishedIndex.Contains('<script type="importmap">')) {
             throw 'Published index.html is missing the import map required by fingerprinted .NET 10 assets.'
           }
+          
           New-Item -ItemType Directory -Path 'artifacts/web' -Force | Out-Null
           Get-ChildItem -LiteralPath 'artifacts/web-publish/wwwroot' -Force | Copy-Item -Destination 'artifacts/web' -Recurse -Force
 
