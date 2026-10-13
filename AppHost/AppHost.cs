@@ -1,5 +1,6 @@
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Foundry;
+using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -7,6 +8,7 @@ builder.Environment.ApplicationName = "FlowMate AI";
 
 // Parameters
 var environment = builder.AddParameter("environment", false);
+var auth0Authority = builder.AddParameter("auth0-authority");
 
 var cache = builder.AddRedis("cache");
 
@@ -111,7 +113,6 @@ var cliAssemblyPath = Path.GetFullPath(Path.Combine(
     AppContext.BaseDirectory, "..", "..", "..", "..", "CLI", "bin", buildConfiguration, "net10.0", "CLI.dll"));
 
 var cliWorkingDirectory = Path.GetDirectoryName(cliAssemblyPath)!;
-var auth0Authority = builder.Configuration["Auth0:Authority"];
 var auth0ClientId = builder.Configuration["Auth0:ManagementClientId"];
 var auth0ClientSecret = builder.Configuration["Auth0:ManagementClientSecret"];
 
@@ -121,6 +122,7 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
     string? storageConnection,
     string? keyVaultUri,
     string? runtimeEnvironment,
+    string? auth0Issuer,
     bool includeStorageSettings,
     bool includeAuth0Settings,
     bool includeKeyVaultSettings)
@@ -145,9 +147,9 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
 
     if (includeAuth0Settings)
     {
-        if (!string.IsNullOrWhiteSpace(auth0Authority))
+        if (!string.IsNullOrWhiteSpace(auth0Issuer))
         {
-            environmentVariables["Auth0__Authority"] = auth0Authority;
+            environmentVariables["Auth0__Authority"] = auth0Issuer;
         }
 
         if (!string.IsNullOrWhiteSpace(auth0ClientId))
@@ -181,8 +183,11 @@ async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
         : null;
 
     var configuredEnvironment = await environment.Resource.GetValueAsync(cancellationToken);
+    var auth0Issuer = includeAuth0Settings
+        ? await auth0Authority.Resource.GetValueAsync(cancellationToken)
+        : null;
 
-    return BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, configuredEnvironment, includeStorageSettings, includeAuth0Settings, includeKeyVaultSettings);
+    return BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, configuredEnvironment, auth0Issuer, includeStorageSettings, includeAuth0Settings, includeKeyVaultSettings);
 }
 
 cli.WithProcessCommand(
@@ -365,8 +370,13 @@ var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithEnvironment("ApiBaseUrl", api.GetEndpoint("http"))
     .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"));
 
+api.WithEnvironment("Auth0__Authority", auth0Authority)
+    .WithEnvironment("Auth0__Audience", builder.Configuration["Auth0:Audience"]);
+
 var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WaitFor(api)
+    .WithEndpoint("http", endpoint => endpoint.Port = builder.Configuration.GetValue<int?>("Frontend:HttpPort"))
+    .WithEndpoint("https", endpoint => endpoint.Port = builder.Configuration.GetValue<int?>("Frontend:HttpsPort"))
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/frontend/")
     .WithBlazorClientApp(frontend);

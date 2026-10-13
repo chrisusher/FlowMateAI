@@ -5,6 +5,29 @@ FlowMate uses Auth0 for sign-in and as the issuer of access tokens for the Funct
 - The GitHub Actions workflow embeds the public SPA settings into the Blazor WebAssembly files when it builds the frontend.
 - The Function App reads its issuer, audience, and allowed frontend origin from application settings at runtime.
 
+## Local configuration and public repository files
+
+Commit `Web/wwwroot/appsettings.example.json` only. Copy it to `Web/wwwroot/appsettings.json` and fill in your public SPA domain, client ID, and API audience. An optional `appsettings.Development.json` can override development values. Both runtime files are ignored by Git. Everything served from `wwwroot` is public to browser users, so never put a client secret, API key, or other credential in either file.
+
+```powershell
+Copy-Item Web/wwwroot/appsettings.example.json Web/wwwroot/appsettings.json
+```
+
+The deployment workflow reads the committed example, writes the actual `appsettings.json` using GitHub Actions variables, and then publishes it. A clean checkout does not need local settings files for CI deployment.
+
+Aspire declares the issuer as the `auth0-authority` parameter and passes it to the API and administrative CLI as `Auth0__Authority`. Set its value in AppHost user secrets or provide it through Aspire parameter configuration:
+
+```powershell
+dotnet user-secrets set "Parameters:auth0-authority" "https://YOUR_TENANT.us.auth0.com/" --project AppHost/AppHost.csproj
+dotnet user-secrets set "Auth0:Audience" "https://api.example.com" --project AppHost/AppHost.csproj
+```
+
+Use the same API audience in the browser and API. The audience is the API identifier, not an Auth0 dashboard resource ID. Management API credentials remain server-side.
+
+The local Aspire gateway uses HTTPS port `7237` and HTTP port `5133`, configured by `Frontend:HttpsPort` and `Frontend:HttpPort` in `AppHost/appsettings.Development.json`. Open `https://localhost:7237/frontend/`. Register the exact callback/logout URLs under `/frontend/` for the routes `/`, `/today`, `/projects`, `/tasks`, `/reports`, `/coach`, `/pricing`, and `/settings`. Use origins without paths in Allowed Web Origins. Additional gateway hostnames need their own allowlist entries. The AppHost dashboard URL is not the frontend URL.
+
+The sign-in screen offers Google only. Configure and verify GitHub or Microsoft connections before adding their buttons back.
+
 ## 1. Create the Auth0 API
 
 In the Auth0 Dashboard, open **Applications → APIs → Create API**. Choose a name such as `FlowMate API`, set an identifier (for example `https://api.flowmate.ai`), and select **RS256** as the signing algorithm. Save the identifier: it is the audience used by both the SPA and API. The identifier is a value you choose; it does not need to resolve as a website.
@@ -27,7 +50,7 @@ The app sends the current browser URL (`origin + pathname`) as both its callback
 
 ## 3. Configure social connections
 
-The sign-in screen offers four providers. Create/configure the corresponding Auth0 connections, enable each one for the SPA application in its **Connections** tab, and set up provider credentials/consent as required by each identity provider.
+The sign-in screen currently offers Google. To add other providers later, create/configure the corresponding Auth0 connections, enable each one for the SPA application in its **Connections** tab, and set up provider credentials/consent as required by each identity provider before adding its button. The retained connection configuration uses these names:
 
 | Sign-in option | Connection name sent by FlowMate |
 | --- | --- |
@@ -36,7 +59,7 @@ The sign-in screen offers four providers. Create/configure the corresponding Aut
 | Microsoft personal account | `windowslive` |
 | Microsoft work or school | `azuread` |
 
-Connection names are Auth0 identifiers and must match exactly. If your Auth0 tenant uses different names, update the `Auth0:Connections` values in `Web/appsettings.json` before the workflow builds the site. This configuration is public and ships with the frontend.
+Connection names are Auth0 identifiers and must match exactly. If your Auth0 tenant uses different names, update the `Auth0:Connections` values in `Web/wwwroot/appsettings.json` before the workflow builds the site. This configuration is public and ships with the frontend.
 
 ## 4. Configure GitHub Actions for the frontend
 
