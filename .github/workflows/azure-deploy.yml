@@ -42,19 +42,37 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           dotnet restore Web/Web.csproj --configfile NuGet.config
 
-          # The source app runs under /frontend/ in Aspire. Rewrite the base path before publish
-          # so the generated .br and .gz index files match the plain index.html.
+          # Keep the source app under /frontend/ in Aspire. Prepare the deployment copy of index.html
+          # before publish so compressed variants and .NET 10 fingerprinting use the deployed paths.
           $indexPath = 'Web/wwwroot/index.html'
           $index = Get-Content -LiteralPath $indexPath -Raw
           $frontendBase = '<base href="/frontend/" />'
+          $blazorScript = '<script src="_framework/blazor.webassembly.js" autostart="false"></script>'
           
-          if (-not $index.Contains($frontendBase)) {
-            throw "Expected base href '$frontendBase' in $indexPath before publishing."
+          if (-not $index.Contains($frontendBase) -or -not $index.Contains($blazorScript)) {
+            throw "Expected the Aspire base path and Blazor script tag in $indexPath before publishing."
           }
           
-          $index.Replace($frontendBase, '<base href="/" />') | Set-Content -LiteralPath $indexPath -Encoding utf8NoBOM
+          $index = $index.Replace($frontendBase, '<base href="/" />')
+          $index = $index.Replace($blazorScript, '<script src="_framework/blazor.webassembly#[.{fingerprint}].js" autostart="false"></script>')
+          if (-not $index.Contains('<script type="importmap"></script>')) {
+            if (-not $index.Contains('</head>')) {
+              throw "Expected a closing head tag in $indexPath before publishing."
+            }
+            $index = $index.Replace('</head>', ('    <script type="importmap"></script>' + [Environment]::NewLine + '</head>'))
+          }
+          $index | Set-Content -LiteralPath $indexPath -Encoding utf8NoBOM
 
           dotnet publish Web/Web.csproj -c Release --no-restore -o artifacts/web-publish
+          $publishedIndexPath = 'artifacts/web-publish/wwwroot/index.html'
+          $publishedIndex = Get-Content -LiteralPath $publishedIndexPath -Raw
+          $loaderName = [regex]::Match($publishedIndex, '_framework/(blazor[.]webassembly[.][^" ]+[.]js)').Groups[1].Value
+          if ([string]::IsNullOrWhiteSpace($loaderName) -or -not (Test-Path -LiteralPath "artifacts/web-publish/wwwroot/_framework/$loaderName")) {
+            throw 'Published index.html does not reference an existing fingerprinted Blazor WebAssembly loader.'
+          }
+          if (-not $publishedIndex.Contains('<script type="importmap">')) {
+            throw 'Published index.html is missing the import map required by fingerprinted .NET 10 assets.'
+          }
           New-Item -ItemType Directory -Path 'artifacts/web' -Force | Out-Null
           Get-ChildItem -LiteralPath 'artifacts/web-publish/wwwroot' -Force | Copy-Item -Destination 'artifacts/web' -Recurse -Force
 
