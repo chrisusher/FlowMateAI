@@ -15,6 +15,7 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: Test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -77,6 +78,7 @@ jobs:
   deploy-web:
     needs: build
     runs-on: ubuntu-latest
+    environment: Test
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -93,6 +95,7 @@ jobs:
   deploy-api:
     needs: build
     runs-on: ubuntu-latest
+    environment: Test
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -108,6 +111,7 @@ jobs:
   deploy-mcp:
     needs: build
     runs-on: ubuntu-latest
+    environment: Test
     steps:
       - uses: actions/download-artifact@v4
         with:
