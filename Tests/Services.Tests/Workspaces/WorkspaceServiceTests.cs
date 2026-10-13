@@ -151,6 +151,30 @@ public sealed class WorkspaceServiceTests
         Assert.That(repository.SaveCount, Is.Zero);
     }
 
+    [Test]
+    public async Task DowngradedOverLimitWorkspaceCannotReplaceAnArchivedProjectWithANewActiveProject()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        repository.Seed("user", new WorkspaceSnapshot
+        {
+            Projects =
+            [
+                new() { Id = "one", Name = "One" },
+                new() { Id = "two", Name = "Two" },
+                new() { Id = "three", Name = "Three" },
+                new() { Id = "four", Name = "Four" }
+            ]
+        }, "revision-1");
+        var request = repository.Read("user");
+        request.Projects.Single(project => project.Id == "four").IsArchived = true;
+        request.Projects.Add(new() { Id = "new", Name = "New project" });
+
+        var result = await CreateService(repository).SaveAsync("user", new(request, "revision-1"));
+
+        Assert.That(result.ErrorCode, Is.EqualTo(WorkspaceSaveErrorCode.ProjectLimit));
+        Assert.That(repository.SaveCount, Is.Zero);
+    }
+
     private static WorkspaceService CreateService(IWorkspaceRepository repository) =>
         new(repository, new EmptyActivityArchiveRepository(), new FreeBillingRepository());
 
