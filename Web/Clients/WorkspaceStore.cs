@@ -29,6 +29,8 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public WorkspaceSyncState SyncState { get; private set; } = WorkspaceSyncState.Saved;
     public string? SyncMessage { get; private set; }
     public bool HasConflict => _remoteConflict is not null;
+    public CoachFailureCode? LastCoachFailure { get; private set; }
+    public string? LastCoachFailureMessage { get; private set; }
     public bool RequiresRemoteReload => _remoteLoadFailed;
     public event Action? Changed;
     private TimeSpan _serverClockOffset;
@@ -609,42 +611,104 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public async Task<CoachResponse?> AskCoachAsync(string prompt, string? conversationId, CancellationToken cancellationToken = default)
     {
         BindAccount();
+        LastCoachFailure = null;
+        LastCoachFailureMessage = null;
         var accountId = auth.Session.Sub ?? "local";
         var accessToken = auth.Session.AccessToken;
 
         if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(accessToken) ||
             !string.Equals(_storageAccountId, accountId, StringComparison.Ordinal))
         {
+            SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Sign in again before asking the focus coach.");
             return null;
         }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/coach")
         {
             Content = JsonContent.Create(new CoachRequest(prompt, conversationId), options: SharedCommon.JsonOptions)
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
 
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
         {
+            response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            SetCoachFailure(CoachFailureCode.Timeout, "The focus coach took too long to respond. Try again.");
             return null;
         }
-        var result = await response.Content.ReadFromJsonAsync<CoachResponse>(SharedCommon.JsonOptions, cancellationToken);
-
-        if (result is not null)
+        catch (HttpRequestException)
         {
-            if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+            SetCoachFailure(CoachFailureCode.ProviderUnavailable, "The focus coach could not be reached. Try again in a moment.");
+            return null;
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
             {
+                ApiError? error = null;
+                try
+                {
+                    error = await response.Content.ReadFromJsonAsync<ApiError>(SharedCommon.JsonOptions, cancellationToken);
+                }
+                catch (JsonException) { }
+
+                var failure = response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Unauthorized => CoachFailureCode.AuthenticationExpired,
+                    System.Net.HttpStatusCode.TooManyRequests => CoachFailureCode.QuotaReached,
+                    System.Net.HttpStatusCode.Conflict => CoachFailureCode.SyncConflict,
+                    System.Net.HttpStatusCode.GatewayTimeout => CoachFailureCode.Timeout,
+                    _ => CoachFailureCode.ProviderUnavailable
+                };
+                var failureMessage = error?.Message;
+                if (failure == CoachFailureCode.AuthenticationExpired
+                    && !string.IsNullOrWhiteSpace(failureMessage)
+                    && !failureMessage.Contains("session expired", StringComparison.OrdinalIgnoreCase))
+                {
+                    failureMessage = $"Your session expired. {failureMessage} Sign in again and retry.";
+                }
+                SetCoachFailure(failure, failureMessage);
                 return null;
             }
 
-            _revision = result.Revision;
-            Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
-            Data.Conversations.Insert(0, result.Conversation);
-            await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
-            Changed?.Invoke();
-        }
+            var result = await response.Content.ReadFromJsonAsync<CoachResponse>(SharedCommon.JsonOptions, cancellationToken);
 
-        return result;
+            if (result is not null)
+            {
+                if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+                {
+                    SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Your account changed while the coach was replying. Sign in again before continuing.");
+                    return null;
+                }
+
+                _revision = result.Revision;
+                Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
+                Data.Conversations.Insert(0, result.Conversation);
+                await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
+                Changed?.Invoke();
+            }
+
+            return result;
+        }
+    }
+
+    private void SetCoachFailure(CoachFailureCode failure, string? message)
+    {
+        LastCoachFailure = failure;
+        LastCoachFailureMessage = string.IsNullOrWhiteSpace(message)
+            ? failure switch
+            {
+                CoachFailureCode.QuotaReached => "You've used all your monthly coach prompts.",
+                CoachFailureCode.AuthenticationExpired => "Your session expired. Sign in again and retry.",
+                CoachFailureCode.SyncConflict => "Your workspace changed on another device. Reload and try again.",
+                CoachFailureCode.Timeout => "The focus coach took too long to respond. Try again.",
+                _ => "I couldn't reach the focus coach just now. Please try again."
+            }
+            : message;
     }
 
     private void RecoverTimer()

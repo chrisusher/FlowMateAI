@@ -32,77 +32,86 @@ public sealed class FoundryFocusCoachService(
             throw new InvalidOperationException("The Azure AI Foundry coach is not configured.");
         }
 
-        var (allowed, used, limit) = await billing.ConsumePromptAsync(userId, cancellationToken);
+        var month = DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        var (allowed, used, limit) = await billing.ConsumePromptAsync(userId, month, cancellationToken);
 
         if (!allowed)
         {
             throw new CoachQuotaExceededException(used, limit);
         }
 
-        var result = await workspaces.GetAsync(userId, cancellationToken);
-        var workspace = result.Workspace;
-        var now = DateTimeOffset.UtcNow;
-        var recent = workspace.Sessions.Where(s => s.EndedAt >= now.AddDays(-31)).ToList();
-        var context = new
+        try
         {
-            localDate = LocalDate(now, workspace.TimeZone),
-            timeZone = workspace.TimeZone,
-            projects = workspace.Projects.Select(p => new
+            var result = await workspaces.GetAsync(userId, cancellationToken);
+            var workspace = result.Workspace;
+            var now = DateTimeOffset.UtcNow;
+            var recent = workspace.Sessions.Where(s => s.EndedAt >= now.AddDays(-31)).ToList();
+            var context = new
             {
-                p.Name,
-                tasks = workspace.Tasks.Where(t => t.ProjectId == p.Id).Select(t => new
+                localDate = LocalDate(now, workspace.TimeZone),
+                timeZone = workspace.TimeZone,
+                projects = workspace.Projects.Select(p => new
                 {
-                    t.Title,
-                    priority = t.Priority.ToString(),
-                    t.IsComplete,
-                    t.PlannedToday,
-                    dueDate = t.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-                })
-            }),
-            focusMinutesToday = MinutesForLocalDay(recent, now, workspace.TimeZone),
-            focusMinutesLast7Days = recent.Where(s => s.EndedAt >= now.AddDays(-7)).Sum(s => s.FocusMinutes),
-            focusMinutesLast30Days = recent.Sum(s => s.FocusMinutes)
-        };
+                    p.Name,
+                    tasks = workspace.Tasks.Where(t => t.ProjectId == p.Id).Select(t => new
+                    {
+                        t.Title,
+                        priority = t.Priority.ToString(),
+                        t.IsComplete,
+                        t.PlannedToday,
+                        dueDate = t.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                    })
+                }),
+                focusMinutesToday = MinutesForLocalDay(recent, now, workspace.TimeZone),
+                focusMinutesLast7Days = recent.Where(s => s.EndedAt >= now.AddDays(-7)).Sum(s => s.FocusMinutes),
+                focusMinutesLast30Days = recent.Sum(s => s.FocusMinutes)
+            };
 
-        var url = $"{endpoint}/openai/deployments/{Uri.EscapeDataString(deployment)}/chat/completions?api-version={Uri.EscapeDataString(apiVersion)}";
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.TryAddWithoutValidation("api-key", key);
-        var messages = new List<object>
-        {
-            new
+            var url = $"{endpoint}/openai/deployments/{Uri.EscapeDataString(deployment)}/chat/completions?api-version={Uri.EscapeDataString(apiVersion)}";
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Headers.TryAddWithoutValidation("api-key", key);
+            var messages = new List<object>
             {
-                role = "system",
-                content = "You are FlowMate, a thoughtful, practical focus coach. Use only the user's supplied projects, tasks and focus totals. You may suggest priorities and reflect on day/week/month results, but you must never claim to edit or change data. Keep replies warm, concise, and grounded in the supplied context. If the context lacks information, say so. The last user message contains the current workspace context."
+                new
+                {
+                    role = "system",
+                    content = "You are FlowMate, a thoughtful, practical focus coach. Use only the user's supplied projects, tasks and focus totals. You may suggest priorities and reflect on day/week/month results, but you must never claim to edit or change data. Keep replies warm, concise, and grounded in the supplied context. If the context lacks information, say so. The last user message contains the current workspace context."
+                }
+            };
+            messages.AddRange(history.TakeLast(10).Where(m => m.Role is ChatMessageRole.User or ChatMessageRole.Assistant).Select(m => (object)new
+            {
+                role = m.Role.ToWireValue(),
+                content = m.Text
+            }));
+            messages.Add(new
+            {
+                role = "user",
+                content = $"Workspace context (JSON): {JsonSerializer.Serialize(context)}\n\nUser message: {prompt}"
+            });
+            var completionRequest = new
+            {
+                temperature = 0.35,
+                max_tokens = 500,
+                messages
+            };
+            request.Content = new StringContent(JsonSerializer.Serialize(completionRequest), Encoding.UTF8, "application/json");
+            using var response = await clients.CreateClient().SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            var text = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                throw new HttpRequestException("Foundry returned an empty coach response.");
             }
-        };
-        messages.AddRange(history.TakeLast(10).Where(m => m.Role is ChatMessageRole.User or ChatMessageRole.Assistant).Select(m => (object)new
-        {
-            role = m.Role.ToWireValue(),
-            content = m.Text
-        }));
-        messages.Add(new
-        {
-            role = "user",
-            content = $"Workspace context (JSON): {JsonSerializer.Serialize(context)}\n\nUser message: {prompt}"
-        });
-        var completionRequest = new
-        {
-            temperature = 0.35,
-            max_tokens = 500,
-            messages
-        };
-        request.Content = new StringContent(JsonSerializer.Serialize(completionRequest), Encoding.UTF8, "application/json");
-        using var response = await clients.CreateClient().SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
-        var text = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
 
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            throw new HttpRequestException("Foundry returned an empty coach response.");
+            return new(text.Trim(), used, limit, month);
         }
-
-        return new(text.Trim(), used, limit);
+        catch
+        {
+            await billing.ReleasePromptAsync(userId, month, CancellationToken.None);
+            throw;
+        }
     }
 
     private static string LocalDate(DateTimeOffset instant, string timeZone)

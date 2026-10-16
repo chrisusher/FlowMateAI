@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Services.Database;
+using Shared.Enums;
 
 namespace Services.Repositories;
 
@@ -33,10 +34,82 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
             existing.SubscriptionStatus = entitlement.SubscriptionStatus;
             existing.TrialUsed = entitlement.TrialUsed;
             existing.PeriodEndsAt = entitlement.PeriodEndsAt;
-            existing.PromptMonth = entitlement.PromptMonth;
-            existing.PromptCount = entitlement.PromptCount;
+            // Prompt usage is changed only through the atomic reservation/release methods below.
         }
         await database.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<(bool Allowed, int Used, int Limit)> TryConsumePromptAsync(
+        string userId, string month, int freeLimit, int proLimit, CancellationToken cancellationToken = default)
+    {
+        await EnsureCreatedAsync(cancellationToken);
+
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            var entitlement = await database.BillingEntitlements.FirstOrDefaultAsync(
+                x => x.Id == "billing" && x.UserId == userId, cancellationToken)
+                ?? new BillingEntitlementDocument { UserId = userId };
+            var isNew = database.Entry(entitlement).State == EntityState.Detached;
+            var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
+            var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? proLimit : freeLimit;
+
+            if (used >= limit)
+            {
+                return (false, used, limit);
+            }
+
+            entitlement.PromptMonth = month;
+            entitlement.PromptCount = used + 1;
+
+            if (isNew)
+            {
+                database.BillingEntitlements.Add(entitlement);
+            }
+
+            try
+            {
+                await database.SaveChangesAsync(cancellationToken);
+                return (true, entitlement.PromptCount, limit);
+            }
+            catch (DbUpdateException) when (attempt < 7)
+            {
+                database.Entry(entitlement).State = EntityState.Detached;
+            }
+        }
+
+        throw new DbUpdateException("The prompt allowance changed repeatedly. Retry the request.");
+    }
+
+    public async Task ReleasePromptAsync(string userId, string month, CancellationToken cancellationToken = default)
+    {
+        await EnsureCreatedAsync(cancellationToken);
+
+        for (var attempt = 0; attempt < 8; attempt++)
+        {
+            var entitlement = await database.BillingEntitlements.FirstOrDefaultAsync(
+                x => x.Id == "billing" && x.UserId == userId, cancellationToken);
+
+            if (entitlement is null
+                || !string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal)
+                || entitlement.PromptCount <= 0)
+            {
+                return;
+            }
+
+            entitlement.PromptCount--;
+
+            try
+            {
+                await database.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateException) when (attempt < 7)
+            {
+                database.Entry(entitlement).State = EntityState.Detached;
+            }
+        }
+
+        throw new DbUpdateException("The prompt allowance changed repeatedly. Retry the request.");
     }
 
     public async Task<bool> HasProcessedEventAsync(string eventId, CancellationToken cancellationToken = default)

@@ -85,13 +85,7 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
         {
             if (auth.Session.SignedIn)
             {
-                CoachResponse? saved = null;
-
-                try
-                {
-                    saved = await Store.AskCoachAsync(text, conversation.Id);
-                }
-                catch (HttpRequestException) { }
+                var saved = await Store.AskCoachAsync(text, conversation.Id);
 
                 if (saved is not null)
                 {
@@ -117,11 +111,12 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
             conversation.Messages.Add(new()
             {
                 Role = ChatMessageRole.Assistant,
-                Text = auth.IsSessionExpired
-                    ? "Your session expired before the coach could reply. Your message is saved locally; sign in again and try once more."
-                    : auth.Session.SignedIn
-                        ? "I couldn't reach the focus coach just now. Please try again."
-                        : CoachReply(text)
+                Text = Store.LastCoachFailureMessage
+                    ?? (auth.IsSessionExpired
+                        ? "Your session expired before the coach could reply. Your message is saved locally; sign in again and try once more."
+                        : auth.Session.SignedIn
+                            ? "I couldn't reach the focus coach just now. Please try again."
+                            : CoachReply(text))
             });
             await Store.SaveAsync();
 

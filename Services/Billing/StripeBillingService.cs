@@ -23,39 +23,19 @@ public sealed class StripeBillingService(
     {
         var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
         var month = DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
-
-        if (entitlement.PromptMonth != month)
-        {
-            entitlement.PromptMonth = month;
-            entitlement.PromptCount = 0;
-            await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-        }
-
-        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt,
-            entitlement.PromptCount, BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10);
-    }
-
-    public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, CancellationToken cancellationToken = default)
-    {
-        var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
-        var month = DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
-
-        if (entitlement.PromptMonth != month)
-        {
-            entitlement.PromptMonth = month;
-            entitlement.PromptCount = 0;
-        }
+        var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
         var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
 
-        if (entitlement.PromptCount >= limit)
-        {
-            return (false, entitlement.PromptCount, limit);
-        }
-        entitlement.PromptCount++;
-        await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-
-        return (true, entitlement.PromptCount, limit);
+        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit);
     }
+
+    public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, string month, CancellationToken cancellationToken = default)
+    {
+        return await repository.TryConsumePromptAsync(userId, month, freeLimit: 10, proLimit: 100, cancellationToken: cancellationToken);
+    }
+
+    public Task ReleasePromptAsync(string userId, string month, CancellationToken cancellationToken = default) =>
+        repository.ReleasePromptAsync(userId, month, cancellationToken);
 
     public async Task<IReadOnlyList<BillingPrice>> GetPricesAsync(CancellationToken cancellationToken = default)
     {

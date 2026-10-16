@@ -1,3 +1,3 @@
 namespace Services.Coach;
 
-public sealed record FocusCoachAnswer(string Text, int PromptsUsed, int PromptLimit);
+public sealed record FocusCoachAnswer(string Text, int PromptsUsed, int PromptLimit, string PromptMonth);
