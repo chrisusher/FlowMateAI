@@ -80,6 +80,8 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
         }
     }
 
+    public DateTime UserNow => DateData.GetUserNow(Store.Data.TimeZone);
+
     public DateTime PeriodStart => Period switch
     {
         ReportPeriod.Day => DateData.GetUserNow(Store.Data.TimeZone).Date,
