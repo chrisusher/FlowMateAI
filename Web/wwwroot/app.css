@@ -2585,3 +2585,119 @@ h6,
         flex-direction: column;
     }
 }
+
+
+.onboarding-guide {
+    display: grid;
+    gap: 20px;
+    margin-bottom: 24px
+}
+
+.onboarding-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px
+}
+
+.onboarding-heading h2 {
+    margin: 4px 0 6px;
+    font: 700 20px Manrope, sans-serif
+}
+
+.onboarding-heading p,
+.onboarding-steps p,
+.onboarding-footer p {
+    margin: 0;
+    color: var(--muted)
+}
+
+.onboarding-heading p {
+    max-width: 74ch
+}
+
+.onboarding-dismiss {
+    flex: none
+}
+
+.onboarding-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none
+}
+
+.onboarding-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+    padding: 15px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-soft)
+}
+
+.onboarding-step-number {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 27px;
+    height: 27px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 700
+}
+
+.onboarding-steps li.complete .onboarding-step-number {
+    background: var(--green);
+    color: var(--surface)
+}
+
+.onboarding-steps li > div {
+    display: grid;
+    justify-items: start;
+    gap: 8px
+}
+
+.onboarding-steps strong {
+    font: 700 14px Manrope, sans-serif
+}
+
+.onboarding-status {
+    color: var(--green);
+    font-weight: 600
+}
+
+.onboarding-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    padding-top: 15px;
+    border-top: 1px solid var(--line)
+}
+
+.onboarding-footer p {
+    flex-basis: 100%
+}
+
+.onboarding-footer a {
+    color: var(--accent);
+    font-weight: 600
+}
+
+@media (max-width: 900px) {
+    .onboarding-steps {
+        grid-template-columns: 1fr
+    }
+}
+
+@media (max-width: 560px) {
+    .onboarding-heading {
+        flex-direction: column
+    }
+}
