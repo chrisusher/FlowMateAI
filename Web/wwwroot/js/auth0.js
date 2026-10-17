@@ -18,7 +18,12 @@ async function challenge(verifier) {
 function authority(domain) {
   return domain.startsWith("https://") ? domain.replace(/\/$/, "") : `https://${domain.replace(/\/$/, "")}`;
 }
-function redirectUri() { return `${location.origin}${location.pathname}`; }
+function redirectUri() {
+  const path = location.pathname;
+  const basePath = new URL(document.baseURI).pathname;
+  const callbackPath = basePath.endsWith("/") && path === basePath.slice(0, -1) ? basePath : path;
+  return `${location.origin}${callbackPath}`;
+}
 
 export async function initialize(config) {
   if (!config?.domain || !config?.clientId || !config?.audience) return { configured: false };

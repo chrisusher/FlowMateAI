@@ -138,7 +138,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 response.EnsureSuccessStatusCode();
                 var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
-                if (remote is not null && remote.Workspace is not null && !string.IsNullOrWhiteSpace(remote.Revision))
+                if (IsLoadableWorkspace(remote))
                 {
                     CalibrateClock(response);
                     Data = remote.Workspace;
@@ -425,7 +425,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
             var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
-            if (remote is null || remote.Workspace is null || string.IsNullOrWhiteSpace(remote.Revision))
+            if (!IsLoadableWorkspace(remote))
             {
                 SetSyncState(WorkspaceSyncState.Failed, "The server returned an incomplete workspace. Your local draft is still available; retry loading.");
 
@@ -885,6 +885,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         return intervals;
     }
+
+    // GET returns an empty revision when this account has not saved a workspace yet.
+    // Missing revisions and whitespace are still invalid; PUT must return a saved revision.
+    private static bool IsLoadableWorkspace([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] WorkspaceResponse? response) =>
+        response?.Workspace is not null && (response.Revision == "" || !string.IsNullOrWhiteSpace(response.Revision));
 
     private void CalibrateClock(HttpResponseMessage response)
     {

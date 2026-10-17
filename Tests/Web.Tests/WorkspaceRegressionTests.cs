@@ -17,6 +17,81 @@ namespace Web.Tests;
 public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 {
     [Test]
+    public async Task NewAccountLoadsAnUnversionedWorkspaceAndSavesItsFirstRevision()
+    {
+        await SignInAsync();
+        WorkspaceSaveRequest? firstSave = null;
+        Api.Respond = async (request, _) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(new(), ""), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            firstSave = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(firstSave!.Workspace, "first-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.InitialiseAsync();
+
+        Assert.That(firstSave, Is.Not.Null);
+        Assert.That(firstSave!.Revision, Is.EqualTo(""));
+        Assert.That(firstSave.Workspace.FirstRunState, Is.EqualTo(OnboardingState.InProgress));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
+        Assert.That(Store.RequiresRemoteReload, Is.False);
+    }
+
+    [Test]
+    public async Task ReloadAfterAnOutageAcceptsANewWorkspaceWithoutARevision()
+    {
+        await SignInAsync();
+        await Store.InitialiseAsync();
+        Assert.That(Store.RequiresRemoteReload, Is.True);
+
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new WorkspaceResponse(new(), ""), options: SharedCommon.JsonOptions)
+        });
+
+        await Store.RetrySaveAsync();
+
+        Assert.That(Store.RequiresRemoteReload, Is.False);
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
+        Assert.That(Api.Paths.Count, Is.EqualTo(2));
+    }
+
+    [TestCase("{}")]
+    [TestCase("{\"workspace\":{},\"revision\":null}")]
+    [TestCase("{\"workspace\":{},\"revision\":\" \"}")]
+    [TestCase("{\"workspace\":null,\"revision\":\"\"}")]
+    public async Task IncompleteWorkspaceResponsesStillProtectLocalDataOnLoadAndRetry(string json)
+    {
+        await SignInAsync();
+        var local = Store.Data;
+        WorkspaceModule.Setup<string?>("read", args => Equals(args.Arguments[0], "flowmate.workspace.v1.test-user"))
+            .SetResult(JsonSerializer.Serialize(local, SharedCommon.JsonOptions));
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+        });
+
+        await Store.InitialiseAsync();
+        await Store.RetrySaveAsync();
+
+        Assert.That(Store.RequiresRemoteReload, Is.True);
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Failed));
+        Assert.That(Store.Data.Tasks.Select(task => task.Id), Is.EqualTo(local.Tasks.Select(task => task.Id)));
+        Assert.That(Api.Paths.Count, Is.EqualTo(2));
+    }
+
+    [Test]
     public async Task PausedFocusIntervalsAccumulateMinutesInsteadOfRoundingEachIntervalDown()
     {
         var now = DateTimeOffset.UtcNow;

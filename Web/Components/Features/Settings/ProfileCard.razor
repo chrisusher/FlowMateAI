@@ -19,11 +19,10 @@
     <label class="field-label">
         Time zone
         <select class="field-input" @bind="Store.Data.TimeZone">
-            <option>Europe/London</option>
-            <option>America/New_York</option>
-            <option>America/Los_Angeles</option>
-            <option>Europe/Paris</option>
-            <option>Asia/Tokyo</option>
+            @foreach (var timeZone in _timeZones)
+            {
+                <option value="@timeZone">@timeZone</option>
+            }
         </select>
         <small>Used to split focus time across calendar days.</small>
     </label>

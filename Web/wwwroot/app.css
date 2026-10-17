@@ -168,6 +168,13 @@ a {
     margin-top: auto
 }
 
+/* These cards keep their pale backgrounds in both themes. */
+.upgrade-card,
+.coach-card {
+    --text: #242723;
+    color: var(--text)
+}
+
 .upgrade-card {
     position: relative;
     padding: 16px 14px 14px;
@@ -2590,6 +2597,7 @@ h6,
 .onboarding-guide {
     display: grid;
     gap: 20px;
+    padding: 24px;
     margin-bottom: 24px
 }
 
@@ -2685,9 +2693,12 @@ h6,
     flex-basis: 100%
 }
 
-.onboarding-footer a {
-    color: var(--accent);
-    font-weight: 600
+.onboarding-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    width: 100%
 }
 
 @media (max-width: 900px) {
@@ -2697,6 +2708,10 @@ h6,
 }
 
 @media (max-width: 560px) {
+    .onboarding-guide {
+        padding: 18px
+    }
+
     .onboarding-heading {
         flex-direction: column
     }
