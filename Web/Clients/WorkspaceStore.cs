@@ -146,17 +146,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             }
         }
 
-        if (!Data.OnboardingStarted && !Data.OnboardingDismissed)
+        if (Data.FirstRunState == OnboardingState.NotStarted)
         {
-            if (Data.Projects.Count > 0 || Data.Tasks.Count > 0)
-            {
-                // Existing workspaces should not be interrupted by a first-run guide.
-                Data.OnboardingDismissed = true;
-            }
-            else
-            {
-                Data.OnboardingStarted = true;
-            }
+            Data.FirstRunState = Data.Projects.Count > 0 || Data.Tasks.Count > 0
+                ? OnboardingState.Dismissed
+                : OnboardingState.InProgress;
         }
 
         if (string.IsNullOrWhiteSpace(Data.DisplayName) || string.Equals(Data.DisplayName, "Alex Morgan", StringComparison.Ordinal))
