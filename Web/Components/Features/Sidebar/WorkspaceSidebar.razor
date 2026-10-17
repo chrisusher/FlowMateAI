@@ -23,7 +23,7 @@
     <div class="sidebar-bottom">
         <UpgradeCard />
         <a class="profile-link" href="settings" aria-label="Account settings for @Store.Data.DisplayName">
-            <span class="avatar" aria-hidden="true">AM</span>
+            <span class="avatar" aria-hidden="true">@ProfileInitials</span>
             <span class="profile-copy">
                 <strong>@Store.Data.DisplayName</strong>
                 <small>@Store.Data.Plan plan</small>
@@ -32,3 +32,21 @@
         </a>
     </div>
 </aside>
+
+
+@code {
+    private string ProfileInitials
+    {
+        get
+        {
+            var parts = Store.Data.DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            return parts.Length switch
+            {
+                0 => "FM",
+                1 => char.ToUpperInvariant(parts[0][0]).ToString(),
+                _ => $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}"
+            };
+        }
+    }
+}
