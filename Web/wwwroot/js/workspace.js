@@ -6,6 +6,10 @@ export function write(key, value) {
   localStorage.setItem(key, value);
 }
 
+export function getTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 export function getClientId() {
   let id = sessionStorage.getItem("flowmate.tab.id");
 
