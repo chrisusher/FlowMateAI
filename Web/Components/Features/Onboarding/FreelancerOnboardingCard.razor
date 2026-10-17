@@ -3,7 +3,7 @@
 @inject WorkspaceTaskManager Tasks
 @inject WorkspaceTimerManager Timer
 
-@if (Store.Data.OnboardingStarted && !Store.Data.OnboardingDismissed)
+@if (Store.Data.FirstRunState == OnboardingState.InProgress)
 {
     <article class="panel onboarding-guide" aria-labelledby="onboarding-title">
         <div class="onboarding-heading">
@@ -98,7 +98,7 @@
 
     private async Task DismissAsync()
     {
-        Store.Data.OnboardingDismissed = true;
+        Store.Data.FirstRunState = OnboardingState.Dismissed;
         await Store.SaveAsync();
     }
 }
