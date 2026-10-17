@@ -1,8 +1,4 @@
-using System.Net;
-using System.Net.Http.Json;
 using Microsoft.JSInterop;
-using Shared.Contracts;
-using Shared.Enums;
 
 namespace Web.Clients;
 

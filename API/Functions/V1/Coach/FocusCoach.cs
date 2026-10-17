@@ -1,17 +1,13 @@
 using API.Security;
 using ChrisUsher.Core.Shared;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Coach;
+using Services.Billing;
 using Services.Workspaces;
-using Shared.Contracts;
-using Shared.Enums;
-using Shared.Exceptions;
-using Shared.Models;
+using Shared.Models.Coach;
 
 namespace API.Functions.V1.Coach;
 
-public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces)
+public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces, IBillingService billing)
 {
 
     [Function("FocusCoach")]
@@ -58,6 +54,10 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         {
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.ServiceUnavailable, "coach_unavailable", "The focus coach is not configured yet.", cancellationToken);
         }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return await HttpFunction.ErrorAsync(request, HttpStatusCode.GatewayTimeout, "coach_timeout", "The focus coach took too long to respond. Try again.", cancellationToken);
+        }
         catch (HttpRequestException)
         {
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.ServiceUnavailable, "coach_unavailable", "The focus coach could not be reached. Try again in a moment.", cancellationToken);
@@ -87,10 +87,22 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         workspace.Workspace.Conversations.Remove(conversation);
         workspace.Workspace.Conversations.Insert(0, conversation);
 
-        var saved = await workspaces.SaveAsync(userId, new WorkspaceSaveRequest(workspace.Workspace, workspace.Revision), cancellationToken);
+        WorkspaceSaveResult saved;
+
+        try
+        {
+            saved = await workspaces.SaveAsync(userId, new WorkspaceSaveRequest(workspace.Workspace, workspace.Revision), cancellationToken);
+        }
+        catch
+        {
+            await billing.ReleasePromptAsync(userId, answer.PromptMonth, CancellationToken.None);
+            throw;
+        }
 
         if (!saved.Succeeded)
         {
+            await billing.ReleasePromptAsync(userId, answer.PromptMonth, CancellationToken.None);
+
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.Conflict, "workspace_conflict", "Your workspace changed on another device. Reload and try again.", cancellationToken);
         }
 

@@ -1,6 +1,4 @@
 using Microsoft.AspNetCore.Components;
-using Shared.Enums;
-using Shared.Models;
 using Web.Clients;
 
 namespace Web.Managers;
