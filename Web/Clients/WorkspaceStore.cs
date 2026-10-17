@@ -146,33 +146,39 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             }
         }
 
-        if (Data.Projects.Count == 0 && !auth.IsSessionExpired)
+        if (!Data.OnboardingStarted && !Data.OnboardingDismissed)
         {
-            Data.Projects =
-            [
-                new()
-                {
-                    Name = "Personal",
-                    Color = "#5b68e8"
-                }
-            ];
-            Data.Tasks =
-            [
-                new()
-                {
-                    Title = "Choose one thing to focus on",
-                    ProjectId = Data.Projects[0].Id,
-                    Priority = TaskPriority.High,
-                    PlannedToday = true
-                },
-                new()
-                {
-                    Title = "Take a short reset",
-                    ProjectId = Data.Projects[0].Id,
-                    Priority = TaskPriority.Medium,
-                    PlannedToday = true
-                }
-            ];
+            if (Data.Projects.Count > 0 || Data.Tasks.Count > 0)
+            {
+                // Existing workspaces should not be interrupted by a first-run guide.
+                Data.OnboardingDismissed = true;
+            }
+            else
+            {
+                Data.OnboardingStarted = true;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(Data.DisplayName) || string.Equals(Data.DisplayName, "Alex Morgan", StringComparison.Ordinal))
+        {
+            Data.DisplayName = string.IsNullOrWhiteSpace(auth.Session.Name) ? "FlowMate user" : auth.Session.Name.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(Data.TimeZone))
+        {
+            try
+            {
+                Data.TimeZone = await module.InvokeAsync<string>("getTimeZone");
+            }
+            catch (JSException)
+            {
+                Data.TimeZone = TimeZoneInfo.Local.Id;
+            }
+
+            if (string.IsNullOrWhiteSpace(Data.TimeZone))
+            {
+                Data.TimeZone = "UTC";
+            }
         }
 
         Data.ClientId = ClientId;
