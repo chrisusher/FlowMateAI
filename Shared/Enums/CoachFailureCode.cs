@@ -2,9 +2,18 @@ namespace Shared.Enums;
 
 public enum CoachFailureCode
 {
-    QuotaReached,
-    AuthenticationExpired,
-    SyncConflict,
-    ProviderUnavailable,
-    Timeout
+    [JsonStringEnumMemberName("quota-reached")]
+    QuotaReached = 0,
+
+    [JsonStringEnumMemberName("authentication-expired")]
+    AuthenticationExpired = 1,
+
+    [JsonStringEnumMemberName("sync-conflict")]
+    SyncConflict = 2,
+
+    [JsonStringEnumMemberName("provider-unavailable")]
+    ProviderUnavailable = 3,
+
+    [JsonStringEnumMemberName("timeout")]
+    Timeout = 4
 }
