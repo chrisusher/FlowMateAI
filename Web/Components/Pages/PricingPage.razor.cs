@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Components;
-using Shared.Enums;
 
 namespace Web.Components.Pages;
 

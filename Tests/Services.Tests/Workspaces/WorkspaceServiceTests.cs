@@ -2,6 +2,7 @@ using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Services.Database;
 using Services.Repositories;
+using Services.Tests.Doubles;
 using Services.Workspaces;
 
 namespace Services.Tests.Workspaces;
@@ -176,7 +177,7 @@ public sealed class WorkspaceServiceTests
     }
 
     private static WorkspaceService CreateService(IWorkspaceRepository repository) =>
-        new(repository, new EmptyActivityArchiveRepository(), new FreeBillingRepository());
+        new(repository, new EmptyActivityArchiveRepository(), new StubBillingRepository());
 
     private sealed class InMemoryWorkspaceRepository : IWorkspaceRepository
     {
@@ -221,15 +222,5 @@ public sealed class WorkspaceServiceTests
     {
         public Task ArchiveAsync(string ownerId, IReadOnlyCollection<FocusSessionRecord> sessions, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
-    }
-
-    private sealed class FreeBillingRepository : IBillingRepository
-    {
-        public Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new BillingEntitlementDocument { UserId = userId, Plan = BillingPlan.Free.ToString() });
-
-        public Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<bool> HasProcessedEventAsync(string eventId, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task MarkEventProcessedAsync(string eventId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

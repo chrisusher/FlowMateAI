@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
-using Shared.Enums;
-using Shared.Models;
 using Web.Clients;
 
 namespace Web.Managers;

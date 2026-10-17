@@ -1,3 +1,5 @@
+using Shared.Models.Coach;
+
 namespace Services.Coach;
 
 public interface IFocusCoachService

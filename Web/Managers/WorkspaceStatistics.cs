@@ -1,5 +1,4 @@
-using Shared.Enums;
-using Shared.Models;
+using Shared.Data;
 using Web.Clients;
 
 namespace Web.Managers;
@@ -14,7 +13,7 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
     // Invalidate date-based cards when the displayed hour changes.
     public void RefreshTime()
     {
-        var now = UserNow;
+        var now = DateData.GetUserNow(Store.Data.TimeZone);
         var hour = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0);
 
         if (hour == _lastDisplayedHour)
@@ -43,35 +42,31 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
     public string FirstName => Store.Data.DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "there";
 
-    public DateTime UserNow
+    public DateOnly TodayDate => DateOnly.FromDateTime(DateData.GetUserNow(Store.Data.TimeZone));
+
+    public string Greeting => DateData.GetUserNow(Store.Data.TimeZone).Hour < 12 ? "GOOD MORNING" : DateData.GetUserNow(Store.Data.TimeZone).Hour < 18 ? "GOOD AFTERNOON" : "GOOD EVENING";
+
+    public IEnumerable<TaskRecord> PlannedTasks => Store.Data.Tasks.Where(t => t.PlannedToday && Store.Project(t.ProjectId) is
     {
-        get
-        {
-            try
-            {
-                return TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(Store.Data.TimeZone)).DateTime;
-            }
-            catch { return DateTime.Now; }
-        }
-    }
-
-    public DateOnly TodayDate => DateOnly.FromDateTime(UserNow);
-
-    public string Greeting => UserNow.Hour < 12 ? "GOOD MORNING" : UserNow.Hour < 18 ? "GOOD AFTERNOON" : "GOOD EVENING";
-
-    public IEnumerable<TaskRecord> PlannedTasks => Store.Data.Tasks.Where(t => t.PlannedToday && Store.Project(t.ProjectId) is { IsArchived: false });
+        IsArchived: false
+    });
 
     public IEnumerable<TaskRecord> DoneTasks => PlannedTasks.Where(t => t.IsComplete);
 
-    public int TodayMinutes => Store.Data.Sessions.Where(s => LocalDate(s.StartedAt) == TodayDate).Sum(s => s.FocusMinutes);
+    public int TodayMinutes => Store.Data.Sessions
+        .Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate)
+        .Sum(s => s.FocusMinutes);
 
-    public int TodaySessions => Store.Data.Sessions.Count(s => LocalDate(s.StartedAt) == TodayDate);
+    public int TodaySessions => Store.Data.Sessions.Count(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate);
 
     public int FocusStreak
     {
         get
         {
-            var focusDays = Store.Data.Sessions.Select(session => LocalDate(session.StartedAt)).ToHashSet();
+            var focusDays = Store.Data.Sessions
+                .Select(session => DateData.LocalDate(session.StartedAt, Store.Data.TimeZone))
+                .ToHashSet();
+
             var day = focusDays.Contains(TodayDate) ? TodayDate : TodayDate.AddDays(-1);
             var streak = 0;
 
@@ -87,21 +82,21 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
     public DateTime PeriodStart => Period switch
     {
-        ReportPeriod.Day => UserNow.Date,
-        ReportPeriod.Month => new(UserNow.Year, UserNow.Month, 1),
-        _ => UserNow.Date.AddDays(-(((int)UserNow.DayOfWeek + 6) % 7))
+        ReportPeriod.Day => DateData.GetUserNow(Store.Data.TimeZone).Date,
+        ReportPeriod.Month => new(DateData.GetUserNow(Store.Data.TimeZone).Year, DateData.GetUserNow(Store.Data.TimeZone).Month, 1),
+        _ => DateData.GetUserNow(Store.Data.TimeZone).Date.AddDays(-(((int)DateData.GetUserNow(Store.Data.TimeZone).DayOfWeek + 6) % 7))
     };
 
     public DateTime PeriodEnd => Period switch
     {
-        ReportPeriod.Day => UserNow.Date.AddDays(1),
+        ReportPeriod.Day => DateData.GetUserNow(Store.Data.TimeZone).Date.AddDays(1),
         ReportPeriod.Month => PeriodStart.AddMonths(1),
         _ => PeriodStart.AddDays(7)
     };
 
     public IEnumerable<FocusSessionRecord> PeriodRecords => Store.Data.Sessions.Where(session =>
     {
-        var date = LocalDate(session.StartedAt).ToDateTime(TimeOnly.MinValue);
+        var date = DateData.LocalDate(session.StartedAt, Store.Data.TimeZone).ToDateTime(TimeOnly.MinValue);
 
         return date >= PeriodStart && date < PeriodEnd;
     });
@@ -117,9 +112,14 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
         _ => $"{PeriodStart:d MMM} to {PeriodEnd.AddDays(-1):d MMM}"
     };
 
-    public string TopProjectName => Store.Data.Projects.OrderByDescending(p => PeriodProjectMinutes(p.Id)).FirstOrDefault()?.Name ?? "No projects yet";
+    public string TopProjectName => Store.Data.Projects
+        .OrderByDescending(p => PeriodProjectMinutes(p.Id))
+        .FirstOrDefault()?.Name ?? "No projects yet";
 
-    public int TopProjectMinutes => Store.Data.Projects.Select(p => PeriodProjectMinutes(p.Id)).DefaultIfEmpty().Max();
+    public int TopProjectMinutes => Store.Data.Projects
+        .Select(p => PeriodProjectMinutes(p.Id))
+        .DefaultIfEmpty()
+        .Max();
 
     public List<(string Label, int Minutes)> ChartDays
     {
@@ -128,10 +128,12 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
             var start = PeriodStart;
             var end = PeriodEnd;
 
-            return Enumerable.Range(0, Math.Clamp((int)(end - start).TotalDays, 1, 31)).Select(i =>
+            return Enumerable
+                .Range(0, Math.Clamp((int)(end - start).TotalDays, 1, 31))
+                .Select(i =>
             {
                 var date = start.AddDays(i);
-                var minutes = PeriodRecords.Where(s => LocalDate(s.StartedAt) == DateOnly.FromDateTime(date)).Sum(s => s.FocusMinutes);
+                var minutes = PeriodRecords.Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == DateOnly.FromDateTime(date)).Sum(s => s.FocusMinutes);
                 var label = Period == ReportPeriod.Month ? date.ToString("d") : date.ToString("ddd")[..1];
 
                 return (label, minutes);
@@ -139,20 +141,19 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
         }
     }
 
-    public int ProjectTodayMinutes(string id) => Store.Data.Sessions.Where(s => s.ProjectId == id && LocalDate(s.StartedAt) == TodayDate).Sum(s => s.FocusMinutes);
+    public int ProjectTodayMinutes(string id) => Store.Data.Sessions
+        .Where(s => s.ProjectId == id && DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate)
+        .Sum(s => s.FocusMinutes);
 
-    public int TaskTodayMinutes(string id) => Store.Data.Sessions.Where(s => s.TaskId == id && LocalDate(s.StartedAt) == TodayDate).Sum(s => s.FocusMinutes);
+    public int TaskTodayMinutes(string id) => Store.Data.Sessions
+        .Where(s => s.TaskId == id && DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate)
+        .Sum(s => s.FocusMinutes);
 
-    public int ProjectMinutes(string id) => Store.Data.Sessions.Where(s => s.ProjectId == id).Sum(s => s.FocusMinutes);
+    public int ProjectMinutes(string id) => Store.Data.Sessions
+        .Where(s => s.ProjectId == id)
+        .Sum(s => s.FocusMinutes);
 
-    public int PeriodProjectMinutes(string id) => PeriodRecords.Where(s => s.ProjectId == id).Sum(s => s.FocusMinutes);
-
-    public DateOnly LocalDate(DateTimeOffset instant)
-    {
-        try
-        {
-            return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(Store.Data.TimeZone)).DateTime);
-        }
-        catch { return DateOnly.FromDateTime(instant.LocalDateTime); }
-    }
+    public int PeriodProjectMinutes(string id) => PeriodRecords
+        .Where(s => s.ProjectId == id)
+        .Sum(s => s.FocusMinutes);
 }

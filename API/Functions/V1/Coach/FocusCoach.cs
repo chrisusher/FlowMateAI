@@ -1,14 +1,9 @@
 using API.Security;
 using ChrisUsher.Core.Shared;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Coach;
 using Services.Billing;
 using Services.Workspaces;
-using Shared.Contracts;
-using Shared.Enums;
-using Shared.Exceptions;
-using Shared.Models;
+using Shared.Models.Coach;
 
 namespace API.Functions.V1.Coach;
 
@@ -93,6 +88,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         workspace.Workspace.Conversations.Insert(0, conversation);
 
         WorkspaceSaveResult saved;
+
         try
         {
             saved = await workspaces.SaveAsync(userId, new WorkspaceSaveRequest(workspace.Workspace, workspace.Revision), cancellationToken);
@@ -106,6 +102,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         if (!saved.Succeeded)
         {
             await billing.ReleasePromptAsync(userId, answer.PromptMonth, CancellationToken.None);
+
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.Conflict, "workspace_conflict", "Your workspace changed on another device. Reload and try again.", cancellationToken);
         }
 

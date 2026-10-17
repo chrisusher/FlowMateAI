@@ -1,13 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Services.Database;
-using Shared.Enums;
 
 namespace Services.Repositories;
 
 public sealed class BillingRepository(DatabaseContext database) : IBillingRepository
 {
-    private static readonly SemaphoreSlim InitializationLock = new(1, 1);
-    private static bool _initialized;
+    private static readonly SemaphoreSlim _initialisationLock = new(1, 1);
+    private static bool _initialised;
 
     public async Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default)
     {
@@ -48,7 +47,11 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
         {
             var entitlement = await database.BillingEntitlements.FirstOrDefaultAsync(
                 x => x.Id == "billing" && x.UserId == userId, cancellationToken)
-                ?? new BillingEntitlementDocument { UserId = userId };
+                ?? new BillingEntitlementDocument
+                {
+                    UserId = userId
+                };
+
             var isNew = database.Entry(entitlement).State == EntityState.Detached;
             var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
             var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? proLimit : freeLimit;
@@ -69,6 +72,7 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
             try
             {
                 await database.SaveChangesAsync(cancellationToken);
+
                 return (true, entitlement.PromptCount, limit);
             }
             catch (DbUpdateException) when (attempt < 7)
@@ -101,6 +105,7 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
             try
             {
                 await database.SaveChangesAsync(cancellationToken);
+
                 return;
             }
             catch (DbUpdateException) when (attempt < 7)
@@ -132,26 +137,26 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
 
     private async Task EnsureCreatedAsync(CancellationToken cancellationToken)
     {
-        if (_initialized)
+        if (_initialised)
         {
             return;
         }
 
-        await InitializationLock.WaitAsync(cancellationToken);
+        await _initialisationLock.WaitAsync(cancellationToken);
 
         try
         {
-            if (_initialized)
+            if (_initialised)
             {
                 return;
             }
 
             await database.Database.EnsureCreatedAsync(cancellationToken);
-            _initialized = true;
+            _initialised = true;
         }
         finally
         {
-            InitializationLock.Release();
+            _initialisationLock.Release();
         }
     }
 }

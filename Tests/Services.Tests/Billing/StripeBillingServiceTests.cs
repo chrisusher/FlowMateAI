@@ -1,6 +1,4 @@
 using System.Text;
-using System.Text.Json;
-using Microsoft.Extensions.Configuration;
 using Services.Billing;
 using Services.Database;
 using Services.Repositories;
@@ -8,18 +6,26 @@ using Services.Coach;
 using Services.Workspaces;
 using Shared.Contracts;
 using Shared.Models;
+using Services.Tests.Doubles;
 
 namespace Services.Tests.Billing;
 
 [TestFixture]
 public sealed class StripeBillingServiceTests
 {
+    private StubBillingRepository? _repository;
+
+    [SetUp]
+    public void SetupEachTest()
+    {
+        _repository = new StubBillingRepository();
+    }
+
     [Test]
     public async Task RepeatedCheckoutReusesOpenSessionAndStableIdempotencyKey()
     {
         var handler = new StripeHandler();
-        var repository = new StubBillingRepository();
-        var service = CreateService(handler, repository);
+        var service = CreateService(handler, _repository!);
 
         var first = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
         var retry = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
@@ -35,7 +41,7 @@ public sealed class StripeBillingServiceTests
     public async Task CheckoutDoesNotReuseOpenSessionForDifferentPrice()
     {
         var handler = new StripeHandler();
-        var service = CreateService(handler, new StubBillingRepository());
+        var service = CreateService(handler, _repository!);
 
         var monthly = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
         var annual = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", true);
@@ -54,7 +60,7 @@ public sealed class StripeBillingServiceTests
     {
         var handler = new StripeHandler();
         handler.OpenCheckoutSessions.Add(new StripeHandler.OpenCheckoutSession("payment", "price_monthly", "https://checkout.example.test/wrong-mode"));
-        var service = CreateService(handler, new StubBillingRepository());
+        var service = CreateService(handler, _repository!);
 
         var result = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
 
@@ -88,7 +94,10 @@ public sealed class StripeBillingServiceTests
     [Test]
     public async Task StripeConfirmedSubscriptionIsSentToBillingPortalWhenWebhookIsDelayed()
     {
-        var handler = new StripeHandler { SubscriptionStatus = "active" };
+        var handler = new StripeHandler
+        {
+            SubscriptionStatus = "active"
+        };
         var repository = new StubBillingRepository
         {
             Entitlement = new BillingEntitlementDocument
@@ -110,14 +119,13 @@ public sealed class StripeBillingServiceTests
     [Test]
     public async Task ConcurrentPromptReservationsNeverExceedTheServerPlanLimit()
     {
-        var repository = new StubBillingRepository();
-        var service = CreateService(new StripeHandler(), repository);
+        var service = CreateService(new StripeHandler(), _repository!);
 
         var reservations = await Task.WhenAll(Enumerable.Range(0, 20)
             .Select(_ => service.ConsumePromptAsync("user", "2026-10")));
 
         Assert.That(reservations.Count(reservation => reservation.Allowed), Is.EqualTo(10));
-        Assert.That(repository.Entitlement.PromptCount, Is.EqualTo(10));
+        Assert.That(_repository!.Entitlement.PromptCount, Is.EqualTo(10));
         Assert.That(reservations.Where(reservation => reservation.Allowed).All(reservation => reservation.Limit == 10), Is.True);
     }
 
@@ -147,29 +155,29 @@ public sealed class StripeBillingServiceTests
     [Test]
     public async Task ReleasingFailedPromptReservationRestoresMonthlyUsage()
     {
-        var repository = new StubBillingRepository();
-        var service = CreateService(new StripeHandler(), repository);
+        var service = CreateService(new StripeHandler(), _repository!);
 
         var reservation = await service.ConsumePromptAsync("user", "2026-10");
         await service.ReleasePromptAsync("user", "2026-10");
         var retry = await service.ConsumePromptAsync("user", "2026-10");
 
         Assert.That(reservation.Allowed, Is.True);
-        Assert.That(repository.Entitlement.PromptCount, Is.EqualTo(1));
+        Assert.That(_repository!.Entitlement.PromptCount, Is.EqualTo(1));
         Assert.That(retry.Allowed, Is.True);
     }
 
     [Test]
     public async Task ProviderFailureReleasesReservedPromptUsage()
     {
-        var repository = new StubBillingRepository();
-        var billing = CreateService(new StripeHandler(), repository);
+        var billing = CreateService(new StripeHandler(), _repository!);
+
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Foundry:Endpoint"] = "https://foundry.example.test",
             ["Foundry:Deployment"] = "coach",
             ["Foundry:ApiKey"] = "placeholder"
         }).Build();
+
         var coach = new FoundryFocusCoachService(
             configuration,
             new TestHttpClientFactory(new StripeHandler()),
@@ -177,7 +185,7 @@ public sealed class StripeBillingServiceTests
             billing);
 
         Assert.ThrowsAsync<HttpRequestException>(() => coach.AskAsync("user", "Help me choose a task.", []));
-        Assert.That(repository.Entitlement.PromptCount, Is.Zero);
+        Assert.That(_repository!.Entitlement.PromptCount, Is.Zero);
     }
 
     private static StripeBillingService CreateService(StripeHandler handler, IBillingRepository repository)
@@ -202,8 +210,14 @@ public sealed class StripeBillingServiceTests
     {
         public List<string> Requests { get; } = [];
         public List<string> CheckoutIdempotencyKeys { get; } = [];
-        public int CheckoutSessionCreations { get; private set; }
-        public string? SubscriptionStatus { get; init; }
+        public int CheckoutSessionCreations
+        {
+            get; private set;
+        }
+        public string? SubscriptionStatus
+        {
+            get; init;
+        }
         public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -230,10 +244,25 @@ public sealed class StripeBillingServiceTests
                 {
                     mode = session.Mode,
                     url = session.Url,
-                    line_items = new { data = new[] { new { price = new { id = session.PriceId } } } }
+                    line_items = new
+                    {
+                        data = new[]
+                        {
+                            new
+                            {
+                                price = new
+                                {
+                                    id = session.PriceId 
+                                } 
+                            } 
+                        }
+                    }
                 });
 
-                return JsonResponse(JsonSerializer.Serialize(new { data = sessions }));
+                return JsonResponse(JsonSerializer.Serialize(new
+                {
+                    data = sessions
+                }));
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal))
@@ -245,7 +274,11 @@ public sealed class StripeBillingServiceTests
                 var url = $"https://checkout.example.test/session/{priceId}";
                 OpenCheckoutSessions.Add(new OpenCheckoutSession("subscription", priceId, url));
 
-                return JsonResponse(JsonSerializer.Serialize(new { id = "cs_test", url }));
+                return JsonResponse(JsonSerializer.Serialize(new
+                {
+                    id = "cs_test",
+                    url
+                }));
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/billing_portal/sessions", StringComparison.Ordinal))
@@ -277,66 +310,5 @@ public sealed class StripeBillingServiceTests
 
         public Task<WorkspaceSaveResult> SaveAsync(string ownerId, WorkspaceSaveRequest request, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
-    }
-
-    private sealed class StubBillingRepository : IBillingRepository
-    {
-        private readonly SemaphoreSlim _promptGate = new(1, 1);
-        public BillingEntitlementDocument Entitlement { get; init; } = new() { UserId = "user" };
-
-        public async Task<(bool Allowed, int Used, int Limit)> TryConsumePromptAsync(
-            string userId, string month, int freeLimit, int proLimit, CancellationToken cancellationToken = default)
-        {
-            await _promptGate.WaitAsync(cancellationToken);
-
-            try
-            {
-                var used = string.Equals(Entitlement.PromptMonth, month, StringComparison.Ordinal) ? Entitlement.PromptCount : 0;
-                var limit = string.Equals(Entitlement.Plan, "Pro", StringComparison.Ordinal) ? proLimit : freeLimit;
-
-                if (used >= limit)
-                {
-                    return (false, used, limit);
-                }
-
-                Entitlement.PromptMonth = month;
-                Entitlement.PromptCount = used + 1;
-                return (true, Entitlement.PromptCount, limit);
-            }
-            finally
-            {
-                _promptGate.Release();
-            }
-        }
-
-        public async Task ReleasePromptAsync(string userId, string month, CancellationToken cancellationToken = default)
-        {
-            await _promptGate.WaitAsync(cancellationToken);
-
-            try
-            {
-                if (string.Equals(Entitlement.PromptMonth, month, StringComparison.Ordinal) && Entitlement.PromptCount > 0)
-                {
-                    Entitlement.PromptCount--;
-                }
-            }
-            finally
-            {
-                _promptGate.Release();
-            }
-        }
-
-        public Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(Entitlement);
-
-        public Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default)
-        {
-            Entitlement.StripeCustomerId = entitlement.StripeCustomerId;
-
-            return Task.CompletedTask;
-        }
-
-        public Task<bool> HasProcessedEventAsync(string eventId, CancellationToken cancellationToken = default) => Task.FromResult(false);
-
-        public Task MarkEventProcessedAsync(string eventId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

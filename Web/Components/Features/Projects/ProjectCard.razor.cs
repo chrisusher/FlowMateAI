@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Components;
-using Shared.Models;
 using Web.Managers;
 
 namespace Web.Components.Features.Projects;

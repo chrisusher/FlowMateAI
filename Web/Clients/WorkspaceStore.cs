@@ -1,20 +1,16 @@
 using System.Net.Http.Headers;
-using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Microsoft.JSInterop;
-using Shared.Contracts;
-using Shared.Enums;
-using Shared.Models;
 
 namespace Web.Clients;
 
 public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client auth)
 {
-    private const string StoragePrefix = "flowmate.workspace.v1.";
+    private const string STORAGE_PREFIX = "flowmate.workspace.v1.";
     private IJSObjectReference? _module;
     private string _storageAccountId = "local";
     private bool _accountBound;
-    private string StorageKey => StoragePrefix + Uri.EscapeDataString(_storageAccountId);
+    private string StorageKey => STORAGE_PREFIX + Uri.EscapeDataString(_storageAccountId);
     private string PendingStorageKey => StorageKey + ".pending";
     private string RevisionStorageKey => StorageKey + ".revision";
     private string? _revision;
@@ -23,14 +19,37 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private bool _pendingSync;
     private bool _invalidPendingDraft;
     private bool _remoteLoadFailed;
-    public WorkspaceSnapshot Data { get; private set; } = new();
+
+    public WorkspaceSnapshot Data
+    {
+        get; private set;
+    } = new();
+
     public string ClientId { get; private set; } = "";
+
     public DateTimeOffset UtcNow => DateTimeOffset.UtcNow + _serverClockOffset;
-    public WorkspaceSyncState SyncState { get; private set; } = WorkspaceSyncState.Saved;
-    public string? SyncMessage { get; private set; }
+
+    public WorkspaceSyncState SyncState
+    {
+        get; private set;
+    } = WorkspaceSyncState.Saved;
+
+    public string? SyncMessage
+    {
+        get; private set;
+    }
     public bool HasConflict => _remoteConflict is not null;
-    public CoachFailureCode? LastCoachFailure { get; private set; }
-    public string? LastCoachFailureMessage { get; private set; }
+
+    public CoachFailureCode? LastCoachFailure
+    {
+        get; private set;
+    }
+
+    public string? LastCoachFailureMessage
+    {
+        get; private set;
+    }
+
     public bool RequiresRemoteReload => _remoteLoadFailed;
     public event Action? Changed;
     private TimeSpan _serverClockOffset;
@@ -38,6 +57,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public async Task InitialiseAsync()
     {
         BindAccount();
+
         var module = await ModuleAsync();
         ClientId = await module.InvokeAsync<string>("getClientId");
         var json = await module.InvokeAsync<string?>("read", StorageKey);
@@ -254,6 +274,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
             var sentWorkspace = JsonSerializer.Deserialize<WorkspaceSnapshot>(JsonSerializer.Serialize(Data, SharedCommon.JsonOptions), SharedCommon.JsonOptions) ?? new();
             var sentJson = JsonSerializer.Serialize(sentWorkspace, SharedCommon.JsonOptions);
+
             SetSyncState(WorkspaceSyncState.Saving, "Saving your workspace…");
             using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/workspace")
             {
@@ -273,7 +294,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
+            if (response.StatusCode == HttpStatusCode.Unauthorized || auth.IsSessionExpired)
             {
                 SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
             }
@@ -305,12 +326,12 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     SetSyncState(WorkspaceSyncState.Failed, "The server response was incomplete. Your local draft is safe; try saving again.");
                 }
             }
-            else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+            else if (response.StatusCode == HttpStatusCode.Conflict)
             {
                 var error = await response.Content.ReadFromJsonAsync<ApiError>(SharedCommon.JsonOptions);
                 await LoadConflictAsync(error?.Code, requestAccountId, accessToken);
             }
-            else if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired)
+            else if (response.StatusCode == HttpStatusCode.PaymentRequired)
             {
                 var error = await response.Content.ReadFromJsonAsync<ApiError>(SharedCommon.JsonOptions);
                 SetSyncState(WorkspaceSyncState.Rejected, error?.Message ?? "This change exceeds your plan limits. Your local draft is safe; remove a project or upgrade, then retry.");
@@ -388,7 +409,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
 
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
+            if (response.StatusCode == HttpStatusCode.Unauthorized || auth.IsSessionExpired)
             {
                 SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Sign in again to load and sync the latest workspace.");
 
@@ -521,7 +542,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         refresh.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var latest = await auth.SendAsync(http, refresh, requiresAuthentication: true);
 
-        if (latest.StatusCode == System.Net.HttpStatusCode.Unauthorized || auth.IsSessionExpired)
+        if (latest.StatusCode == HttpStatusCode.Unauthorized || auth.IsSessionExpired)
         {
             SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
 
@@ -550,6 +571,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private async Task PersistLocalAsync()
     {
         var json = JsonSerializer.Serialize(new WorkspaceCacheRecord(_storageAccountId, _revision, _pendingSync, Data, DateTimeOffset.UtcNow, _serverClockOffset), SharedCommon.JsonOptions);
+
         await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
     }
 
@@ -620,6 +642,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             !string.Equals(_storageAccountId, accountId, StringComparison.Ordinal))
         {
             SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Sign in again before asking the focus coach.");
+
             return null;
         }
 
@@ -630,6 +653,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         HttpResponseMessage response;
+
         try
         {
             response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
@@ -637,11 +661,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             SetCoachFailure(CoachFailureCode.Timeout, "The focus coach took too long to respond. Try again.");
+
             return null;
         }
         catch (HttpRequestException)
         {
             SetCoachFailure(CoachFailureCode.ProviderUnavailable, "The focus coach could not be reached. Try again in a moment.");
+
             return null;
         }
 
@@ -650,6 +676,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             if (!response.IsSuccessStatusCode)
             {
                 ApiError? error = null;
+
                 try
                 {
                     error = await response.Content.ReadFromJsonAsync<ApiError>(SharedCommon.JsonOptions, cancellationToken);
@@ -658,13 +685,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
                 var failure = response.StatusCode switch
                 {
-                    System.Net.HttpStatusCode.Unauthorized => CoachFailureCode.AuthenticationExpired,
-                    System.Net.HttpStatusCode.TooManyRequests => CoachFailureCode.QuotaReached,
-                    System.Net.HttpStatusCode.Conflict => CoachFailureCode.SyncConflict,
-                    System.Net.HttpStatusCode.GatewayTimeout => CoachFailureCode.Timeout,
+                    HttpStatusCode.Unauthorized => CoachFailureCode.AuthenticationExpired,
+                    HttpStatusCode.TooManyRequests => CoachFailureCode.QuotaReached,
+                    HttpStatusCode.Conflict => CoachFailureCode.SyncConflict,
+                    HttpStatusCode.GatewayTimeout => CoachFailureCode.Timeout,
                     _ => CoachFailureCode.ProviderUnavailable
                 };
                 var failureMessage = error?.Message;
+
                 if (failure == CoachFailureCode.AuthenticationExpired
                     && !string.IsNullOrWhiteSpace(failureMessage)
                     && !failureMessage.Contains("session expired", StringComparison.OrdinalIgnoreCase))
@@ -672,6 +700,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     failureMessage = $"Your session expired. {failureMessage} Sign in again and retry.";
                 }
                 SetCoachFailure(failure, failureMessage);
+
                 return null;
             }
 
@@ -682,12 +711,14 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
                 {
                     SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Your account changed while the coach was replying. Sign in again before continuing.");
+
                     return null;
                 }
 
                 _revision = result.Revision;
                 Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
                 Data.Conversations.Insert(0, result.Conversation);
+
                 await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
                 Changed?.Invoke();
             }
@@ -815,7 +846,15 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     }
                     else
                     {
-                        sessionRecords.Add(sessionId, new() { Id = sessionId, StartedAt = cursor, EndedAt = segmentEnd, FocusMinutes = segmentMinutes, TaskId = taskId, ProjectId = projectId });
+                        sessionRecords.Add(sessionId, new()
+                        {
+                            Id = sessionId,
+                            StartedAt = cursor,
+                            EndedAt = segmentEnd,
+                            FocusMinutes = segmentMinutes,
+                            TaskId = taskId,
+                            ProjectId = projectId
+                        });
                     }
                 }
                 assignedMinutes = cumulativeMinutes;
@@ -837,7 +876,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         if (timer.StartedAt is { } started && end > started)
         {
-            intervals.Add(new() { StartedAt = started, EndedAt = end });
+            intervals.Add(new()
+            {
+                StartedAt = started,
+                EndedAt = end
+            });
         }
 
         return intervals;

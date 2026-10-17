@@ -1,12 +1,9 @@
-using System.Globalization;
-using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
-using Microsoft.Extensions.Configuration;
 using Services.Billing;
 using Services.Workspaces;
-using Shared.Enums;
+using Shared.Data;
 using Shared.Exceptions;
+using Shared.Models.Coach;
 
 namespace Services.Coach;
 
@@ -45,10 +42,14 @@ public sealed class FoundryFocusCoachService(
             var result = await workspaces.GetAsync(userId, cancellationToken);
             var workspace = result.Workspace;
             var now = DateTimeOffset.UtcNow;
-            var recent = workspace.Sessions.Where(s => s.EndedAt >= now.AddDays(-31)).ToList();
+
+            var recent = workspace.Sessions
+                .Where(s => s.EndedAt >= now.AddDays(-31))
+                .ToList();
+
             var context = new
             {
-                localDate = LocalDate(now, workspace.TimeZone),
+                localDate = DateData.LocalDate(now, workspace.TimeZone),
                 timeZone = workspace.TimeZone,
                 projects = workspace.Projects.Select(p => new
                 {
@@ -62,14 +63,19 @@ public sealed class FoundryFocusCoachService(
                         dueDate = t.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                     })
                 }),
-                focusMinutesToday = MinutesForLocalDay(recent, now, workspace.TimeZone),
-                focusMinutesLast7Days = recent.Where(s => s.EndedAt >= now.AddDays(-7)).Sum(s => s.FocusMinutes),
+                focusMinutesToday = DateData.MinutesForLocalDay(recent, now, workspace.TimeZone),
+
+                focusMinutesLast7Days = recent
+                    .Where(s => s.EndedAt >= now.AddDays(-7))
+                    .Sum(s => s.FocusMinutes),
+
                 focusMinutesLast30Days = recent.Sum(s => s.FocusMinutes)
             };
 
             var url = $"{endpoint}/openai/deployments/{Uri.EscapeDataString(deployment)}/chat/completions?api-version={Uri.EscapeDataString(apiVersion)}";
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.TryAddWithoutValidation("api-key", key);
+
             var messages = new List<object>
             {
                 new
@@ -78,16 +84,22 @@ public sealed class FoundryFocusCoachService(
                     content = "You are FlowMate, a thoughtful, practical focus coach. Use only the user's supplied projects, tasks and focus totals. You may suggest priorities and reflect on day/week/month results, but you must never claim to edit or change data. Keep replies warm, concise, and grounded in the supplied context. If the context lacks information, say so. The last user message contains the current workspace context."
                 }
             };
-            messages.AddRange(history.TakeLast(10).Where(m => m.Role is ChatMessageRole.User or ChatMessageRole.Assistant).Select(m => (object)new
-            {
-                role = m.Role.ToWireValue(),
-                content = m.Text
-            }));
+
+            messages
+                .AddRange(history.TakeLast(10)
+                    .Where(m => m.Role is ChatMessageRole.User or ChatMessageRole.Assistant)
+                    .Select(m => (object)new
+                    {
+                        role = m.Role.ToWireValue(),
+                        content = m.Text
+                    }));
+
             messages.Add(new
             {
                 role = "user",
                 content = $"Workspace context (JSON): {JsonSerializer.Serialize(context)}\n\nUser message: {prompt}"
             });
+
             var completionRequest = new
             {
                 temperature = 0.35,
@@ -95,6 +107,7 @@ public sealed class FoundryFocusCoachService(
                 messages
             };
             request.Content = new StringContent(JsonSerializer.Serialize(completionRequest), Encoding.UTF8, "application/json");
+
             using var response = await clients.CreateClient().SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
             using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
@@ -112,24 +125,5 @@ public sealed class FoundryFocusCoachService(
             await billing.ReleasePromptAsync(userId, month, CancellationToken.None);
             throw;
         }
-    }
-
-    private static string LocalDate(DateTimeOffset instant, string timeZone)
-    {
-        try
-        {
-            return TimeZoneInfo.ConvertTime(instant, TimeZoneInfo.FindSystemTimeZoneById(timeZone)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        }
-        catch
-        {
-            return instant.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        }
-    }
-
-    private static int MinutesForLocalDay(IEnumerable<Shared.Models.FocusSessionRecord> sessions, DateTimeOffset now, string timeZone)
-    {
-        var day = LocalDate(now, timeZone);
-
-        return sessions.Where(s => LocalDate(s.StartedAt, timeZone) == day).Sum(s => s.FocusMinutes);
     }
 }
