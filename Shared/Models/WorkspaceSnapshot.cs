@@ -10,8 +10,8 @@ public sealed class WorkspaceSnapshot
     public BillingPlan Plan { get; set; } = BillingPlan.Free;
     public string ClientId { get; set; } = "";
     public bool Muted { get; set; }
-    public bool OnboardingStarted { get; set; }
-    public bool OnboardingDismissed { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter<OnboardingState>))]
+    public OnboardingState FirstRunState { get; set; } = OnboardingState.NotStarted;
     public List<ProjectRecord> Projects { get; set; } = [];
     public List<TaskRecord> Tasks { get; set; } = [];
     public List<FocusSessionRecord> Sessions { get; set; } = [];
