@@ -11,7 +11,7 @@
     <small class="trial-copy">Payment method required at signup. No charge for 14 days; your selected plan is charged after the trial unless you cancel.</small>
     @if (Billing.BillingState?.Status == "trialing" && Billing.BillingState.PeriodEndsAt is { } trialEnd)
     {
-        <p class="trial-copy">Your trial ends @trialEnd.ToLocalTime().ToString("d"). Cancel before then to avoid the @((Billing.Annual ? "annual" : "monthly")) charge. Your workspace data remains available on Free after expiry.</p>
+        <p class="trial-copy">Your trial ends @trialEnd.ToLocalTime().ToString("d"). Cancel before then to avoid the @((Billing.Annual ? "annual" : "monthly")) charge. After the trial, Free includes 3 projects and 10 coach prompts per month; your workspace data stays available.</p>
     }
     <button class="checkout-button" disabled="@((!Billing.HasSelectedPrice && !Billing.HasEntitledSubscription) || Billing.CheckoutInProgress)" @onclick="Billing.BuyPro">@(Billing.HasEntitledSubscription ? "Manage subscription" : Billing.CheckoutInProgress ? "Opening checkout…" : Billing.HasSelectedPrice ? $"Subscribe {(Billing.Annual ? "annually" : "monthly")}" : "Pricing unavailable")</button>
     <ul>
