@@ -1,0 +1,106 @@
+@inherits WorkspaceComponentBase
+@inject WorkspaceProjectManager Projects
+@inject WorkspaceTaskManager Tasks
+@inject WorkspaceTimerManager Timer
+
+@if (Store.Data.FirstRunState == OnboardingState.InProgress)
+{
+    <article class="panel onboarding-guide" aria-labelledby="onboarding-title">
+        <div class="onboarding-heading">
+            <div>
+                <span class="eyebrow">A GOOD PLACE TO START</span>
+                <h2 id="onboarding-title">Make FlowMate yours</h2>
+                <p>Start building your workspace, one project at a time. You can dismiss this guide whenever you like.</p>
+            </div>
+            <button type="button" class="text-button onboarding-dismiss" @onclick="DismissAsync">Dismiss guide</button>
+        </div>
+
+        <ol class="onboarding-steps">
+            <li class="@(HasProject ? "complete" : "")">
+                <span class="onboarding-step-number" aria-hidden="true">1</span>
+                <div>
+                    <strong>Create a project</strong>
+                    <p>Give the work you want to focus on a home.</p>
+                    @if (HasProject)
+                    {
+                        <span class="onboarding-status">Project added</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="quiet-button" @onclick="Projects.AddProject">Create a project</button>
+                    }
+                </div>
+            </li>
+            <li class="@(HasTodayTask ? "complete" : "")">
+                <span class="onboarding-step-number" aria-hidden="true">2</span>
+                <div>
+                    <strong>Choose today's priority</strong>
+                    <p>Add a task, set its priority, and keep it planned for today.</p>
+                    @if (HasTodayTask)
+                    {
+                        <span class="onboarding-status">Today's task is ready</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="quiet-button" disabled="@(!HasProject)" @onclick="Tasks.AddQuickTask">Add a task for today</button>
+                    }
+                </div>
+            </li>
+            <li class="@(HasFocusSession ? "complete" : "")">
+                <span class="onboarding-step-number" aria-hidden="true">3</span>
+                <div>
+                    <strong>Make time for one thing</strong>
+                    <p>Start a 25-minute focus session with your planned task.</p>
+                    @if (HasFocusSession)
+                    {
+                        <span class="onboarding-status">Focus session completed</span>
+                    }
+                    else if (IsTimerActive)
+                    {
+                        <span class="onboarding-status">Your focus session is underway</span>
+                    }
+                    else
+                    {
+                        <button type="button" class="timer-primary" disabled="@(!HasTodayTask)" @onclick="Timer.StartFocus">Start a focus session</button>
+                    }
+                </div>
+            </li>
+        </ol>
+
+        <div class="onboarding-footer">
+            <p>The coach can help you choose a next task and reflect on your focus. Free includes up to 3 active projects and 10 coach prompts each month; Pro includes up to 25 projects, 100 prompts, and one year of reports.</p>
+            <div class="onboarding-actions">
+                <button type="button" class="quiet-button" @onclick='() => Go("coach")'>Meet your focus coach</button>
+                <button type="button" class="quiet-button" @onclick='() => Go("pricing")'>Compare Free and Pro</button>
+            </div>
+        </div>
+    </article>
+}
+
+@code {
+    private bool HasProject => Store.Data.Projects.Any(project => !project.IsArchived);
+
+    private bool HasTodayTask => Store.Data.Tasks.Any(task =>
+        task.PlannedToday &&
+        !task.IsComplete &&
+        Store.Project(task.ProjectId) is { IsArchived: false });
+
+    private bool HasFocusSession => Store.Data.Sessions.Any(session => session.FocusMinutes > 0);
+
+    private bool IsTimerActive => Store.Data.Timer.Phase is
+        TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Observe(Projects);
+        Observe(Tasks);
+        Observe(Timer);
+    }
+
+    private async Task DismissAsync()
+    {
+        Store.Data.FirstRunState = OnboardingState.Dismissed;
+        await Store.SaveAsync();
+    }
+}

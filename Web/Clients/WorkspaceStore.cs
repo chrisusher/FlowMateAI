@@ -138,7 +138,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 response.EnsureSuccessStatusCode();
                 var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
-                if (remote is not null && remote.Workspace is not null && !string.IsNullOrWhiteSpace(remote.Revision))
+                if (IsLoadableWorkspace(remote))
                 {
                     CalibrateClock(response);
                     Data = remote.Workspace;
@@ -168,33 +168,33 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             }
         }
 
-        if (Data.Projects.Count == 0 && !auth.IsSessionExpired)
+        if (Data.FirstRunState == OnboardingState.NotStarted)
         {
-            Data.Projects =
-            [
-                new()
-                {
-                    Name = "Personal",
-                    Color = "#5b68e8"
-                }
-            ];
-            Data.Tasks =
-            [
-                new()
-                {
-                    Title = "Choose one thing to focus on",
-                    ProjectId = Data.Projects[0].Id,
-                    Priority = TaskPriority.High,
-                    PlannedToday = true
-                },
-                new()
-                {
-                    Title = "Take a short reset",
-                    ProjectId = Data.Projects[0].Id,
-                    Priority = TaskPriority.Medium,
-                    PlannedToday = true
-                }
-            ];
+            Data.FirstRunState = Data.Projects.Count > 0 || Data.Tasks.Count > 0
+                ? OnboardingState.Dismissed
+                : OnboardingState.InProgress;
+        }
+
+        if (string.IsNullOrWhiteSpace(Data.DisplayName) || string.Equals(Data.DisplayName, "Alex Morgan", StringComparison.Ordinal))
+        {
+            Data.DisplayName = string.IsNullOrWhiteSpace(auth.Session.Name) ? "FlowMate user" : auth.Session.Name.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(Data.TimeZone))
+        {
+            try
+            {
+                Data.TimeZone = await module.InvokeAsync<string>("getTimeZone");
+            }
+            catch (JSException)
+            {
+                Data.TimeZone = TimeZoneInfo.Local.Id;
+            }
+
+            if (string.IsNullOrWhiteSpace(Data.TimeZone))
+            {
+                Data.TimeZone = "UTC";
+            }
         }
 
         Data.ClientId = ClientId;
@@ -425,7 +425,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
             var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
 
-            if (remote is null || remote.Workspace is null || string.IsNullOrWhiteSpace(remote.Revision))
+            if (!IsLoadableWorkspace(remote))
             {
                 SetSyncState(WorkspaceSyncState.Failed, "The server returned an incomplete workspace. Your local draft is still available; retry loading.");
 
@@ -885,6 +885,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         return intervals;
     }
+
+    // GET returns an empty revision when this account has not saved a workspace yet.
+    // Missing revisions and whitespace are still invalid; PUT must return a saved revision.
+    private static bool IsLoadableWorkspace([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] WorkspaceResponse? response) =>
+        response?.Workspace is not null && (response.Revision == "" || !string.IsNullOrWhiteSpace(response.Revision));
 
     private void CalibrateClock(HttpResponseMessage response)
     {

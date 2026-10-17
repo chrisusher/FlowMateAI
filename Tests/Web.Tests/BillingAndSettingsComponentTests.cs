@@ -172,6 +172,30 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(AuthModule.Invocations.Any(call => call.Identifier == "logout"), Is.True);
     }
 
+    [TestCase("America/Chicago")]
+    [TestCase("Asia/Kolkata")]
+    [TestCase("Australia/Sydney")]
+    [TestCase("UTC")]
+    [TestCase("Europe/London")]
+    public void ProfileCardDisplaysAndRetainsSavedTimeZoneAfterChangingSelection(string timeZone)
+    {
+        Store.Data.TimeZone = timeZone;
+        var cut = Render<ProfileCard>();
+
+        Assert.That(cut.Find("select").GetAttribute("value"), Is.EqualTo(timeZone));
+        Assert.That(cut.FindAll($"option[value='{timeZone}']"), Has.Count.EqualTo(1));
+
+        cut.Find("select").Change("Asia/Tokyo");
+        Assert.That(Store.Data.TimeZone, Is.EqualTo("Asia/Tokyo"));
+        Assert.That(cut.FindAll($"option[value='{timeZone}']"), Has.Count.EqualTo(1));
+
+        cut.Find("select").Change(timeZone);
+        cut.Find(".quiet-button").Click();
+        Assert.That(Store.Data.TimeZone, Is.EqualTo(timeZone));
+        Assert.That(cut.Find("select").GetAttribute("value"), Is.EqualTo(timeZone));
+        Assert.That(WorkspaceModule.Invocations.Any(call => call.Identifier == "write"), Is.True);
+    }
+
     [Test]
     public void PreferencesCardTogglesThemeAndSoundsUsingExistingStorageKey()
     {
