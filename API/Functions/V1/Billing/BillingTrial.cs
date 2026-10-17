@@ -1,7 +1,9 @@
 using API.Security;
+using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
+using Shared.Contracts;
 
 namespace API.Functions.V1.Billing;
 
@@ -17,7 +19,23 @@ public sealed class BillingTrial(Auth0TokenValidator tokens, IBillingService bil
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
         }
 
-        var result = await billing.StartTrialAsync(userId, email, cancellationToken);
+        CheckoutRequest? body;
+
+        try
+        {
+            body = await JsonSerializer.DeserializeAsync<CheckoutRequest>(request.Body, SharedCommon.JsonOptions, cancellationToken);
+        }
+        catch (JsonException)
+        {
+            body = null;
+        }
+
+        if (body is null)
+        {
+            return await HttpFunction.ErrorAsync(request, HttpStatusCode.BadRequest, "invalid_request", "Choose monthly or annual billing.", cancellationToken);
+        }
+
+        var result = await billing.StartTrialAsync(userId, email, body.Annual, cancellationToken);
         var response = request.CreateResponse(result.Succeeded ? HttpStatusCode.OK : HttpStatusCode.BadRequest);
         await response.WriteAsJsonAsync(result, cancellationToken);
 

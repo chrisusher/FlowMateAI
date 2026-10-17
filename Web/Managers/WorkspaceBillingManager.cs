@@ -6,7 +6,6 @@ namespace Web.Managers;
 public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient client, Auth0Client auth, NavigationManager navigation) : WorkspaceManager
 {
     private WorkspaceStore Store => store;
-
     private bool _initialized;
     private bool _annual;
     private bool _checkoutInProgress;
@@ -70,7 +69,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
     public string PriceLabel => Prices.FirstOrDefault(p => p.Interval == (Annual ? "year" : "month"))?.Display ?? "Pricing unavailable";
 
-    public void ShowCheckoutReturn(CheckoutOutcome outcome)
+    public async Task ShowCheckoutReturn(CheckoutOutcome outcome)
     {
         switch (outcome)
         {
@@ -84,12 +83,32 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
                 _checkoutPending = false;
                 BillingMessage = "Checkout was canceled. No subscription was started.";
                 break;
+            case CheckoutOutcome.TrialReturn:
+                _checkoutPending = !HasEntitledSubscription;
+                BillingMessage = _checkoutPending
+                    ? "Your trial is being set up. Pro access will appear once Stripe confirms your subscription."
+                    : $"Your 14-day Pro trial is active{TrialEndMessage()}. No charge is due until the trial ends.";
+                break;
+            case CheckoutOutcome.TrialCancelled:
+                _checkoutPending = false;
+                BillingMessage = "Trial checkout was canceled. No trial or subscription was started.";
+                break;
             default:
                 return;
         }
 
+        if ((outcome is CheckoutOutcome.Return or CheckoutOutcome.TrialReturn) && BillingState is not null)
+        {
+            Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState.Plan);
+            await Store.SaveAsync();
+        }
+
         NotifyChanged();
     }
+
+    private string TrialEndMessage() => BillingState?.PeriodEndsAt is { } end
+        ? $" until {end.ToLocalTime():d}"
+        : "";
 
     public async Task RefreshSubscriptionStatusAsync()
     {
@@ -113,9 +132,17 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
     public async Task StartTrial()
     {
+        if (_checkoutInProgress || !HasSelectedPrice || BillingState?.TrialUsed == true || HasEntitledSubscription)
+        {
+            return;
+        }
+
+        _checkoutInProgress = true;
+        NotifyChanged();
+
         try
         {
-            var result = await client.StartTrialAsync();
+            var result = await client.StartTrialAsync(Annual);
 
             if (!result.Succeeded)
             {
@@ -131,13 +158,14 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
                 return;
             }
 
-            BillingState = await client.GetSummaryAsync();
-            Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState?.Plan);
-            await Store.SaveAsync();
             BillingMessage = result.Message;
         }
         catch (HttpRequestException) { BillingMessage = "Billing is temporarily unavailable."; }
-        finally { NotifyChanged(); }
+        finally
+        {
+            _checkoutInProgress = false;
+            NotifyChanged();
+        }
     }
 
     public async Task BuyPro()
