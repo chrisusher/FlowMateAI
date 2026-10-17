@@ -7,6 +7,9 @@ public partial class PricingPage
     [SupplyParameterFromQuery(Name = "checkout")]
     public string? CheckoutResult { get; set; }
 
+    [SupplyParameterFromQuery(Name = "annual")]
+    public bool? AnnualTrial { get; set; }
+
     private CheckoutOutcome? _handledCheckoutOutcome;
 
     protected override void OnInitialized()
@@ -21,6 +24,8 @@ public partial class PricingPage
         {
             "return" => CheckoutOutcome.Return,
             "cancelled" => CheckoutOutcome.Cancelled,
+            "trial-return" => CheckoutOutcome.TrialReturn,
+            "trial-cancelled" => CheckoutOutcome.TrialCancelled,
             _ => (CheckoutOutcome?)null
         };
 
@@ -30,7 +35,11 @@ public partial class PricingPage
         }
 
         _handledCheckoutOutcome = outcome;
+        if (outcome is CheckoutOutcome.TrialReturn or CheckoutOutcome.TrialCancelled)
+        {
+            Billing.Annual = AnnualTrial == true;
+        }
         await Billing.InitializeAsync();
-        Billing.ShowCheckoutReturn(outcome.Value);
+        await Billing.ShowCheckoutReturn(outcome.Value);
     }
 }
