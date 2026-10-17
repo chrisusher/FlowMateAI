@@ -1,5 +1,4 @@
 using Microsoft.JSInterop;
-using Shared.Enums;
 
 namespace Web.Managers;
 

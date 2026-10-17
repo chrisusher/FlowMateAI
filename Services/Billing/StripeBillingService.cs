@@ -1,14 +1,9 @@
-using System.Globalization;
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using ChrisUsher.Core.Shared.Currency;
 using ChrisUsher.Core.Shared.Enums;
-using Microsoft.Extensions.Configuration;
 using Services.Database;
 using Services.Repositories;
-using Shared.Contracts;
-using Shared.Enums;
 
 namespace Services.Billing;
 
@@ -17,45 +12,25 @@ public sealed class StripeBillingService(
     IHttpClientFactory clients,
     IBillingRepository repository) : IBillingService
 {
-    private const string StripeApi = "https://api.stripe.com/v1/";
+    private const string STRIPE_API = "https://api.stripe.com/v1/";
 
     public async Task<BillingSummary> GetSummaryAsync(string userId, CancellationToken cancellationToken = default)
     {
         var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
         var month = DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
-
-        if (entitlement.PromptMonth != month)
-        {
-            entitlement.PromptMonth = month;
-            entitlement.PromptCount = 0;
-            await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-        }
-
-        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt,
-            entitlement.PromptCount, BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10);
-    }
-
-    public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, CancellationToken cancellationToken = default)
-    {
-        var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
-        var month = DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
-
-        if (entitlement.PromptMonth != month)
-        {
-            entitlement.PromptMonth = month;
-            entitlement.PromptCount = 0;
-        }
+        var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
         var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
 
-        if (entitlement.PromptCount >= limit)
-        {
-            return (false, entitlement.PromptCount, limit);
-        }
-        entitlement.PromptCount++;
-        await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-
-        return (true, entitlement.PromptCount, limit);
+        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit);
     }
+
+    public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, string month, CancellationToken cancellationToken = default)
+    {
+        return await repository.TryConsumePromptAsync(userId, month, freeLimit: 10, proLimit: 100, cancellationToken: cancellationToken);
+    }
+
+    public Task ReleasePromptAsync(string userId, string month, CancellationToken cancellationToken = default) =>
+        repository.ReleasePromptAsync(userId, month, cancellationToken);
 
     public async Task<IReadOnlyList<BillingPrice>> GetPricesAsync(CancellationToken cancellationToken = default)
     {
@@ -78,13 +53,16 @@ public sealed class StripeBillingService(
                 continue;
             }
             using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+
             var root = document.RootElement;
             var currency = root.GetProperty("currency").GetString() ?? "gbp";
             var amount = root.GetProperty("unit_amount").GetInt64();
             var actualInterval = root.GetProperty("recurring").GetProperty("interval").GetString() ?? interval;
+
             var currencyCode = Enum.TryParse<CurrencyCode>(currency, true, out var parsedCurrency)
                 ? parsedCurrency
                 : CurrencyCode.Unknown;
+
             var display = CurrencyLogic.FormatPrice(amount / 100m, currencyCode);
             prices.Add(new(actualInterval, currency, amount, $"{display} / {(actualInterval == "year" ? "year" : "month")}"));
         }
@@ -140,6 +118,7 @@ public sealed class StripeBillingService(
             entitlement.StripeSubscriptionId = subscription.RootElement.GetProperty("id").GetString() ?? "";
             entitlement.SubscriptionStatus = subscription.RootElement.GetProperty("status").GetString() ?? "trialing";
             entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
+
             entitlement.TrialUsed = true;
             entitlement.PeriodEndsAt = UnixTime(subscription.RootElement, "current_period_end");
 
@@ -407,7 +386,7 @@ public sealed class StripeBillingService(
         {
             throw new HttpRequestException("Stripe secret key is missing.");
         }
-        using var request = new HttpRequestMessage(method, StripeApi + path);
+        using var request = new HttpRequestMessage(method, STRIPE_API + path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(secret + ":")));
 
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
@@ -429,7 +408,11 @@ public sealed class StripeBillingService(
         {
             return false;
         }
-        var values = header.Split(',').Select(part => part.Split('=', 2)).Where(part => part.Length == 2).ToArray();
+        var values = header.Split(',')
+            .Select(part => part.Split('=', 2))
+            .Where(part => part.Length == 2)
+            .ToArray();
+
         var timestampText = values.FirstOrDefault(part => part[0] == "t")?[1];
 
         if (!long.TryParse(timestampText, out var timestamp) || Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - timestamp) > 300)
