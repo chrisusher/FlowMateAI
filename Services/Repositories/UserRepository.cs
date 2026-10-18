@@ -5,8 +5,8 @@ namespace Services.Repositories;
 
 public sealed class UserRepository(DatabaseContext database) : IUserRepository
 {
-    private bool _initialised;
-    private readonly SemaphoreSlim _initialisationLock = new(1, 1);
+    private static readonly SemaphoreSlim InitialisationLock = new(1, 1);
+    private static bool _initialised;
 
     public async Task EnsureRegisteredAsync(string userId, string email, CancellationToken cancellationToken = default)
     {
@@ -20,7 +20,7 @@ public sealed class UserRepository(DatabaseContext database) : IUserRepository
 
         if (document is null)
         {
-            database.Users.Add(new UserDocument
+            var newDocument = new UserDocument
             {
                 Id = userId,
                 UserId = userId,
@@ -28,14 +28,30 @@ public sealed class UserRepository(DatabaseContext database) : IUserRepository
                 NormalisedEmail = NormaliseEmail(email),
                 CreatedAt = now,
                 UpdatedAt = now
-            });
+            };
+            database.Users.Add(newDocument);
+
+            try
+            {
+                await database.SaveChangesAsync(cancellationToken);
+
+                return;
+            }
+            catch (DbUpdateException)
+            {
+                database.Entry(newDocument).State = EntityState.Detached;
+                document = await database.Users.FirstOrDefaultAsync(user => user.UserId == userId, cancellationToken);
+
+                if (document is null)
+                {
+                    throw;
+                }
+            }
         }
-        else
-        {
-            document.Email = email.Trim();
-            document.NormalisedEmail = NormaliseEmail(email);
-            document.UpdatedAt = now;
-        }
+
+        document.Email = email.Trim();
+        document.NormalisedEmail = NormaliseEmail(email);
+        document.UpdatedAt = now;
 
         await database.SaveChangesAsync(cancellationToken);
     }
@@ -63,7 +79,7 @@ public sealed class UserRepository(DatabaseContext database) : IUserRepository
             return;
         }
 
-        await _initialisationLock.WaitAsync(cancellationToken);
+        await InitialisationLock.WaitAsync(cancellationToken);
 
         try
         {
@@ -77,7 +93,7 @@ public sealed class UserRepository(DatabaseContext database) : IUserRepository
         }
         finally
         {
-            _initialisationLock.Release();
+            InitialisationLock.Release();
         }
     }
 }

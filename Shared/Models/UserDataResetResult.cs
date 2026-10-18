@@ -4,5 +4,6 @@ public sealed record UserDataResetResult(int WorkspaceDocuments, int WorkspaceRe
 {
     public int McpKeys { get; init; }
     public int McpUsageRecords { get; init; }
+    public int UserRecords { get; init; }
     public static UserDataResetResult Empty { get; } = new(0, 0, 0, 0);
 }

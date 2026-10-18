@@ -37,6 +37,15 @@ public sealed class UserDataResetRepository(DatabaseContext database, IConfigura
         return matches.Count;
     }
 
+    public async Task<int> DeleteUserRecordsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var matches = await ReadOrEmptyAsync(() => database.Users.Where(item => item.UserId == userId).ToListAsync(cancellationToken));
+        database.Users.RemoveRange(matches);
+        await database.SaveChangesAsync(cancellationToken);
+
+        return matches.Count;
+    }
+
     public async Task<int> DeleteMcpUsageAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (cosmos is null)

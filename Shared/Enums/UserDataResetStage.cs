@@ -19,5 +19,8 @@ public enum UserDataResetStage
     McpKeys = 4,
     
     [JsonStringEnumMemberName("mcp-usage")]
-    McpUsage = 5
+    McpUsage = 5,
+
+    [JsonStringEnumMemberName("user-record")]
+    UserRecord = 6
 }
