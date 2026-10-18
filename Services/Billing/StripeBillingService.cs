@@ -22,7 +22,11 @@ public sealed class StripeBillingService(
         var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
         var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
 
-        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit, entitlement.SubscriptionInterval, entitlement.CancelAtPeriodEnd);
+        var isManualGrant = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro
+            && SubscriptionStatusExtensions.FromProviderStatus(entitlement.SubscriptionStatus) == SubscriptionStatus.Active
+            && string.IsNullOrWhiteSpace(entitlement.StripeSubscriptionId);
+
+        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit, entitlement.SubscriptionInterval, entitlement.CancelAtPeriodEnd, isManualGrant);
     }
 
     public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, string month, CancellationToken cancellationToken = default)

@@ -102,6 +102,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
     {
         SubscriptionStatus.None => "Free",
         SubscriptionStatus.Active when BillingState?.CancelAtPeriodEnd == true => "Cancellation scheduled",
+        SubscriptionStatus.Active when BillingState?.IsManualGrant == true => "Preview access",
         SubscriptionStatus.Active => "Paid",
         SubscriptionStatus.Trialing when BillingState?.CancelAtPeriodEnd == true => "Trial ending",
         SubscriptionStatus.Trialing => "Trial",
@@ -118,6 +119,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
     {
         SubscriptionStatus.None => "You're on Free. Your existing workspace stays available.",
         SubscriptionStatus.Active when BillingState?.CancelAtPeriodEnd == true => EndDateMessage("Your Pro access ends"),
+        SubscriptionStatus.Active when BillingState?.IsManualGrant == true => "Your Pro preview access was granted manually. It has no automatic renewal date.",
         SubscriptionStatus.Active => EndDateMessage("Next renewal"),
         SubscriptionStatus.Trialing when BillingState?.CancelAtPeriodEnd == true => EndDateMessage("Your trial and Pro access are scheduled to end"),
         SubscriptionStatus.Trialing => TrialStatusDetail(),

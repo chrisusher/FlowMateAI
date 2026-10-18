@@ -15,17 +15,19 @@ public sealed class UserRepository(DatabaseContext database) : IUserRepository
 
         await EnsureCreatedAsync(cancellationToken);
 
-        var now = DateTimeOffset.UtcNow;
+        var trimmedEmail = email.Trim();
+        var normalisedEmail = NormaliseEmail(email);
         var document = await database.Users.FirstOrDefaultAsync(user => user.UserId == userId, cancellationToken);
 
         if (document is null)
         {
+            var now = DateTimeOffset.UtcNow;
             var newDocument = new UserDocument
             {
                 Id = userId,
                 UserId = userId,
-                Email = email.Trim(),
-                NormalisedEmail = NormaliseEmail(email),
+                Email = trimmedEmail,
+                NormalisedEmail = normalisedEmail,
                 CreatedAt = now,
                 UpdatedAt = now
             };
@@ -49,9 +51,15 @@ public sealed class UserRepository(DatabaseContext database) : IUserRepository
             }
         }
 
-        document.Email = email.Trim();
-        document.NormalisedEmail = NormaliseEmail(email);
-        document.UpdatedAt = now;
+        if (string.Equals(document.Email, trimmedEmail, StringComparison.Ordinal)
+            && string.Equals(document.NormalisedEmail, normalisedEmail, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        document.Email = trimmedEmail;
+        document.NormalisedEmail = normalisedEmail;
+        document.UpdatedAt = DateTimeOffset.UtcNow;
 
         await database.SaveChangesAsync(cancellationToken);
     }
