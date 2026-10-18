@@ -164,7 +164,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
 
         await Billing.InitialiseAsync();
         await Billing.ShowCheckoutReturn(outcome);
-        
+
         Assert.That(Billing.CheckoutPending, Is.True);
         Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
 
@@ -390,7 +390,16 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         {
             "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new[] { new BillingPrice("month", "gbp", 1000, "£10 / month") })
+                Content = JsonContent.Create(new[]
+                {
+                    new BillingPrice
+                    (
+                        "month",
+                        "gbp",
+                        1000,
+                        "£10 / month"
+                    )
+                })
             },
             "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
             {

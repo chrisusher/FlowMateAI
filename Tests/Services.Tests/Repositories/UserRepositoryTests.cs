@@ -80,15 +80,29 @@ public sealed class UserRepositoryTests
     {
         await using var database = CreateDatabase();
         database.Users.AddRange(
-            new UserDocument { Id = "user-1", UserId = "user-1", Email = "one@example.test" },
-            new UserDocument { Id = "user-2", UserId = "user-2", Email = "two@example.test" });
+            new UserDocument
+            {
+                Id = "user-1",
+                UserId = "user-1",
+                Email = "one@example.test"
+            },
+            new UserDocument
+            {
+                Id = "user-2",
+                UserId = "user-2",
+                Email = "two@example.test"
+            });
+
         await database.SaveChangesAsync();
         var repository = new UserDataResetRepository(database, new ConfigurationBuilder().Build());
 
         var deleted = await repository.DeleteUserRecordsAsync("user-1");
 
         Assert.That(deleted, Is.EqualTo(1));
-        Assert.That(await database.Users.AsNoTracking().Select(user => user.UserId).ToListAsync(), Is.EqualTo(new[] { "user-2" }));
+        Assert.That(await database.Users.AsNoTracking().Select(user => user.UserId).ToListAsync(), Is.EqualTo(new[]
+        {
+            "user-2"
+        }));
     }
 
     [Test]
@@ -98,8 +112,15 @@ public sealed class UserRepositoryTests
         var entity = database.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(UserDocument))!;
 
         Assert.That(entity.GetContainer(), Is.EqualTo("Users"));
-        Assert.That(entity.FindPrimaryKey()!.Properties.Select(property => property.Name), Is.EqualTo(new[] { nameof(UserDocument.Id) }));
-        Assert.That(entity.GetPartitionKeyPropertyNames(), Is.EqualTo(new[] { nameof(UserDocument.UserId) }));
+        Assert.That(entity.FindPrimaryKey()!.Properties.Select(property => property.Name), Is.EqualTo(new[]
+        {
+            nameof(UserDocument.Id)
+        }));
+
+        Assert.That(entity.GetPartitionKeyPropertyNames(), Is.EqualTo(new[]
+        {
+            nameof(UserDocument.UserId)
+        }));
     }
 
     private static DatabaseContext CreateDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()
@@ -112,7 +133,10 @@ public sealed class UserRepositoryTests
 
     private sealed class CountingContext(DbContextOptions<DatabaseContext> options) : DatabaseContext(options)
     {
-        public int SaveChangesCalls { get; set; }
+        public int SaveChangesCalls
+        {
+            get; set;
+        }
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
@@ -125,16 +149,21 @@ public sealed class UserRepositoryTests
     private sealed class ConflictInjectingContext(string databaseName, InMemoryDatabaseRoot root)
         : DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(databaseName, root).Options)
     {
-        public bool ConflictWasInjected { get; private set; }
+        public bool ConflictWasInjected
+        {
+            get; private set;
+        }
 
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             if (!ConflictWasInjected)
             {
                 ConflictWasInjected = true;
+
                 await using var competingRequest = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
                     .UseInMemoryDatabase(databaseName, root)
                     .Options);
+
                 competingRequest.Users.Add(new UserDocument
                 {
                     Id = "auth0|user-1",

@@ -11,13 +11,13 @@ using Microsoft.Extensions.Configuration;
 using API.Functions.V1;
 using Services.Users;
 
-namespace Tests.API.Tests;
+namespace API.Tests;
 
 [TestFixture]
 public sealed class Auth0TokenValidatorTests
 {
-    private const string Authority = "https://flowmate-test.eu.auth0.com/";
-    private const string Audience = "https://api.flowmate.test";
+    private const string AUTHORITY = "https://flowmate-test.eu.auth0.com/";
+    private const string AUDIENCE = "https://api.flowmate.test";
 
     [Test]
     public void EveryApplicationFunctionExceptHealthAndStripeWebhookInjectsTokenValidator()
@@ -211,8 +211,8 @@ public sealed class Auth0TokenValidatorTests
 
         if (includeConfiguration)
         {
-            settings["Auth0:Authority"] = Authority;
-            settings["Auth0:Audience"] = Audience;
+            settings["Auth0:Authority"] = AUTHORITY;
+            settings["Auth0:Audience"] = AUDIENCE;
         }
 
         var configuration = new ConfigurationBuilder()
@@ -261,9 +261,9 @@ public sealed class Auth0TokenValidatorTests
     private static string CreateToken(
         RSA key,
         string subject = "auth0|customer-1",
-        string audience = Audience,
+        string audience = AUDIENCE,
         bool includeExpiry = true,
-        string issuer = Authority,
+        string issuer = AUTHORITY,
         string keyId = "test-key",
         long? expiresAt = null,
         long? notBefore = null,

@@ -1,4 +1,4 @@
-namespace Tests.API.Tests;
+namespace API.Tests;
 
 [TestFixture]
 public sealed class BillingSummarySchemaTests
