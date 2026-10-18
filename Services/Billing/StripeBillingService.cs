@@ -343,7 +343,7 @@ public sealed class StripeBillingService(
     {
         entitlement.StripeSubscriptionId = subscription.GetProperty("id").GetString() ?? "";
         entitlement.StripeCustomerId = subscription.GetProperty("customer").GetString() ?? entitlement.StripeCustomerId;
-        entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "canceled";
+        entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "cancelled";
         entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
         entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number;
         entitlement.PeriodEndsAt = UnixTime(subscription, "current_period_end");

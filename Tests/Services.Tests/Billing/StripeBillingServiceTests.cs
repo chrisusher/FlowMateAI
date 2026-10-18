@@ -242,12 +242,18 @@ public sealed class StripeBillingServiceTests
     {
         public List<string> Requests { get; } = [];
         public List<string> CheckoutIdempotencyKeys { get; } = [];
+
         public int CheckoutSessionCreations
         {
             get; private set;
         }
+
         public string SubscriptionsJson { get; init; } = "{\"data\":[]}";
-        public Action? BeforePortalCreation { get; set; }
+        public Action? BeforePortalCreation
+        {
+            get; set;
+        }
+
         public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -280,9 +286,9 @@ public sealed class StripeBillingServiceTests
                             {
                                 price = new
                                 {
-                                    id = session.PriceId 
-                                } 
-                            } 
+                                    id = session.PriceId
+                                }
+                            }
                         }
                     }
                 });

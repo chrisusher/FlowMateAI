@@ -6,7 +6,9 @@ namespace Services.Tests.Doubles;
 public class StubBillingRepository : IBillingRepository
 {
     private readonly SemaphoreSlim _promptGate = new(1, 1);
+    
     public List<BillingEntitlementDocument> SavedEntitlements { get; } = [];
+
     public BillingEntitlementDocument Entitlement
     {
         get; init;
