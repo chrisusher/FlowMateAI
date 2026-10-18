@@ -22,6 +22,7 @@ public sealed class UserDataResetException(
         UserDataResetStage.ArchivedBlob => "archived blob",
         UserDataResetStage.McpKeys => "MCP keys",
         UserDataResetStage.McpUsage => "MCP usage",
+        UserDataResetStage.UserRecord => "user record",
         _ => throw new ArgumentOutOfRangeException(nameof(stage), stage, null)
     };
 }

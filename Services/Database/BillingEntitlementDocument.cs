@@ -12,6 +12,7 @@ public sealed class BillingEntitlementDocument
     public string SubscriptionStatus { get; set; } = "none";
     public bool TrialUsed { get; set; }
     public DateTimeOffset? PeriodEndsAt { get; set; }
+    public bool CancelAtPeriodEnd { get; set; }
     public BillingInterval? SubscriptionInterval { get; set; }
     public string PromptMonth { get; set; } = "";
     public int PromptCount { get; set; }

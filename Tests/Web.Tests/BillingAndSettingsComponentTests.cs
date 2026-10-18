@@ -17,6 +17,31 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Content(cut.Find(".price")), Does.Contain("£0"));
         Assert.That(cut.FindAll("li").Count, Is.EqualTo(5));
         Assert.That(cut.Find("button").HasAttribute("disabled"), Is.True);
+        Assert.That(Content(cut.Find("button")), Is.EqualTo("Checking plan…"));
+    }
+
+    [Test]
+    public async Task FreePlanCardDoesNotCallFreeTheCurrentPlanForAProCustomer()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "active", false, null, 0, 100))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
+
+        var cut = Render<FreePlanCard>();
+
+        Assert.That(Content(cut.Find("button")), Is.EqualTo("Included in Pro"));
+        Assert.That(cut.Find("button").HasAttribute("disabled"), Is.True);
     }
 
     [Test]
@@ -139,7 +164,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
 
         await Billing.InitialiseAsync();
         await Billing.ShowCheckoutReturn(outcome);
-        
+
         Assert.That(Billing.CheckoutPending, Is.True);
         Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
 
@@ -289,18 +314,146 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(cut.Markup, Does.Contain("25 minutes"));
     }
 
-    [TestCase(BillingPlan.Free, "3", "10")]
-    [TestCase(BillingPlan.Pro, "25", "100")]
-    public void BillingCardDisplaysPlanLimitsAndRequestsThePortal(BillingPlan plan, string projects, string prompts)
+    [TestCase("none", false, "Free", "You're on Free")]
+    [TestCase("active", false, "Paid", "Next renewal")]
+    [TestCase("active", true, "Cancellation scheduled", "Your Pro access ends")]
+    [TestCase("trialing", false, "Trial", "Your trial ends")]
+    [TestCase("trialing", true, "Trial ending", "Your trial and Pro access are scheduled to end")]
+    [TestCase("past_due", false, "Payment past due", "Update your payment method")]
+    [TestCase("canceled", false, "Cancelled", "Your Pro subscription has ended")]
+    public async Task BillingCardDisplaysConfirmedSubscriptionStatusAndRelevantAction(string status, bool cancelAtPeriodEnd, string label, string detail)
     {
-        Store.Data.Plan = plan;
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary(status is "active" or "trialing" ? "Pro" : "Free", status, false, status == "canceled" ? null : DateTimeOffset.UtcNow.AddDays(5), 0, 10, null, cancelAtPeriodEnd))
+            },
+            "/api/v1/billing/portal" => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
         var cut = Render<BillingCard>();
 
-        Assert.That(Content(cut.Find(".setting-row")), Does.Contain($"Up to {projects} projects"));
-        Assert.That(Content(cut.Find(".setting-row")), Does.Contain($"{prompts} coach prompts"));
+        Assert.That(Content(cut.Find(".plan-status")), Is.EqualTo(label));
+        Assert.That(Content(cut.Find(".billing-status-copy")), Does.Contain(detail));
         Assert.That(cut.Find("article").Id, Is.EqualTo("billing"));
 
-        cut.Find("button").Click();
-        Assert.That(Billing.BillingMessage, Is.EqualTo("Portal unavailable"));
+        if (status == "none" || status == "canceled")
+        {
+            Assert.That(cut.Find("a[href='pricing']").TextContent, Does.Contain("Pro"));
+        }
+        else
+        {
+            Assert.That(Content(cut.Find("button")), Is.EqualTo("Manage billing"));
+        }
+    }
+
+    [Test]
+    public async Task ManualPreviewGrantDoesNotShowBillingPortalAction()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(5), 0, 100, IsManualGrant: true))
+            },
+            "/api/v1/billing/portal" => new HttpResponseMessage(HttpStatusCode.BadRequest),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<BillingCard>();
+
+        Assert.That(Billing.CanManageSubscription, Is.False);
+        Assert.That(Content(cut.Find(".plan-status")), Is.EqualTo("Preview access"));
+        Assert.That(Content(cut.Find(".billing-status-copy")), Does.Contain("no automatic renewal date"));
+        Assert.That(Content(cut.Find(".settings-heading button")), Is.EqualTo("Refresh status"));
+        Assert.That(Api.Paths, Does.Not.Contain("/api/v1/billing/portal"));
+    }
+
+    [Test]
+    public async Task ManualPreviewGrantKeepsTrialDisabledAndDoesNotRouteCheckoutThroughPortal()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new BillingPrice
+                    (
+                        "month",
+                        "gbp",
+                        1000,
+                        "£10 / month"
+                    )
+                })
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(5), 0, 100, IsManualGrant: true))
+            },
+            "/api/v1/billing/checkout" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingActionResponse(false, null, BillingActionCode.RequestFailed, "Checkout unavailable."))
+            },
+            "/api/v1/billing/portal" => new HttpResponseMessage(HttpStatusCode.BadRequest),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<ProPlanCard>();
+
+        Assert.That(cut.Find(".plan-button").HasAttribute("disabled"), Is.True);
+        Assert.That(Content(cut.Find(".plan-button")), Is.EqualTo("Pro preview access active"));
+        Assert.That(Content(cut.Find(".checkout-button")), Is.EqualTo("Subscribe monthly"));
+
+        cut.Find(".checkout-button").Click();
+        cut.WaitForAssertion(() => Assert.That(Api.Paths, Does.Contain("/api/v1/billing/checkout")));
+        Assert.That(Api.Paths, Does.Not.Contain("/api/v1/billing/portal"));
+    }
+
+    [Test]
+    public async Task BillingCardRefreshShowsAChangedStripeStatus()
+    {
+        await SignInAsync();
+        var status = "active";
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary(status == "active" ? "Pro" : "Free", status, false, DateTimeOffset.UtcNow.AddDays(5), 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
+        var cut = Render<BillingCard>();
+        Assert.That(Content(cut.Find(".plan-status")), Is.EqualTo("Paid"));
+
+        status = "past_due";
+        await Billing.RefreshSubscriptionStatusAsync();
+        cut.WaitForAssertion(() => Assert.That(Content(cut.Find(".plan-status")), Is.EqualTo("Payment past due")));
+        Assert.That(Content(cut.Find(".billing-status-copy")), Does.Contain("Update your payment method"));
+
+        status = "canceled";
+        await Billing.RefreshSubscriptionStatusAsync();
+        cut.WaitForAssertion(() => Assert.That(Content(cut.Find(".plan-status")), Is.EqualTo("Cancelled")));
+        Assert.That(Content(cut.Find(".billing-status-copy")), Does.Contain("Your existing workspace stays available"));
     }
 }

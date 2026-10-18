@@ -314,6 +314,54 @@ public sealed class StripeBillingServiceTests
     }
 
     [Test]
+    public async Task SubscriptionWebhookPersistsScheduledCancellationForBillingSummary()
+    {
+        var service = CreateService(new StripeHandler(), _repository!);
+
+        var payload = """
+            {"id":"evt_subscription_cancel","type":"customer.subscription.updated","data":{"object":{
+                "id":"sub_confirmed","customer":"cus_existing","metadata":{"user_id":"user"},
+                "status":"active","cancel_at_period_end":true,"current_period_end":1792329600,
+                "items":{"data":[{"price":{"recurring":{"interval":"month","interval_count":1}}}]}
+            }}}
+            """;
+
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var digest = HMACSHA256.HashData(Encoding.UTF8.GetBytes("whsec_test_placeholder"), Encoding.UTF8.GetBytes($"{timestamp}.{payload}"));
+
+        var accepted = await service.ProcessWebhookAsync(payload, $"t={timestamp},v1={Convert.ToHexString(digest)}");
+        var summary = await service.GetSummaryAsync("user");
+
+        Assert.That(accepted, Is.True);
+        Assert.That(summary.CancelAtPeriodEnd, Is.True);
+        Assert.That(_repository!.SavedEntitlements.Single().CancelAtPeriodEnd, Is.True);
+    }
+
+    [TestCase("Pro", "active", "", true)]
+    [TestCase("Pro", "active", "sub_stripe", false)]
+    [TestCase("Free", "active", "", false)]
+    [TestCase("Pro", "trialing", "", false)]
+    public async Task SummaryMarksOnlyActiveProEntitlementsWithoutStripeSubscriptionsAsManualGrants(
+        string plan, string status, string stripeSubscriptionId, bool expectedManualGrant)
+    {
+        var repository = new StubBillingRepository
+        {
+            Entitlement = new BillingEntitlementDocument
+            {
+                UserId = "user",
+                Plan = plan,
+                SubscriptionStatus = status,
+                StripeSubscriptionId = stripeSubscriptionId
+            }
+        };
+        var service = CreateService(new StripeHandler(), repository);
+
+        var summary = await service.GetSummaryAsync("user");
+
+        Assert.That(summary.IsManualGrant, Is.EqualTo(expectedManualGrant));
+    }
+
+    [Test]
     public async Task ConcurrentPromptReservationsNeverExceedTheServerPlanLimit()
     {
         var service = CreateService(new StripeHandler(), _repository!);
@@ -404,6 +452,15 @@ public sealed class StripeBillingServiceTests
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
+    private sealed class StubWorkspaceService : IWorkspaceService
+    {
+        public Task<WorkspaceResponse> GetAsync(string ownerId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkspaceResponse(new WorkspaceSnapshot(), "revision"));
+
+        public Task<WorkspaceSaveResult> SaveAsync(string ownerId, WorkspaceSaveRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class StripeHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, (string Form, string Url)> _checkoutRequests = [];
@@ -422,8 +479,14 @@ public sealed class StripeBillingServiceTests
         }
 
         public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
-        public Func<CancellationToken, Task>? BeforeCheckoutCreation { get; init; }
-        public string? LastCheckoutCancelUrl { get; private set; }
+        public Func<CancellationToken, Task>? BeforeCheckoutCreation
+        {
+            get; init;
+        }
+        public string? LastCheckoutCancelUrl
+        {
+            get; private set;
+        }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -447,7 +510,10 @@ public sealed class StripeBillingServiceTests
                 {
                     mode = session.Mode,
                     url = session.Url,
-                    metadata = new { flowmate_trial = session.Trial ? "true" : "false" },
+                    metadata = new
+                    {
+                        flowmate_trial = session.Trial ? "true" : "false"
+                    },
                     line_items = new
                     {
                         data = new[]
@@ -487,7 +553,10 @@ public sealed class StripeBillingServiceTests
                     if (_checkoutRequests.TryGetValue(key, out var previous))
                     {
                         return previous.Form == form
-                            ? JsonResponse(JsonSerializer.Serialize(new { url = previous.Url }))
+                            ? JsonResponse(JsonSerializer.Serialize(new
+                            {
+                                url = previous.Url
+                            }))
                             : new HttpResponseMessage(HttpStatusCode.BadRequest)
                             {
                                 Content = new StringContent("{\"error\":{\"message\":\"Idempotency key reused with different parameters.\"}}")
@@ -502,7 +571,11 @@ public sealed class StripeBillingServiceTests
                     OpenCheckoutSessions.Add(new OpenCheckoutSession("subscription", priceId, url, trial));
                     _checkoutRequests.Add(key, (form, url));
 
-                    return JsonResponse(JsonSerializer.Serialize(new { id = "cs_test", url }));
+                    return JsonResponse(JsonSerializer.Serialize(new
+                    {
+                        id = "cs_test",
+                        url
+                    }));
                 }
             }
 
@@ -516,26 +589,29 @@ public sealed class StripeBillingServiceTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
-        private static string? FormValue(string body, string key) => body.Split('&')
-            .Select(pair => pair.Split('=', 2))
-            .Where(pair => pair.Length == 2 && Uri.UnescapeDataString(pair[0]) == key)
-            .Select(pair => Uri.UnescapeDataString(pair[1]))
-            .FirstOrDefault();
-
         private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
 
+        private static string? FormValue(string form, string key)
+        {
+            foreach (var pair in form.Split('&'))
+            {
+                var parts = pair.Split('=', 2);
+                var name = Uri.UnescapeDataString(parts[0].Replace('+', ' '));
+
+                if (name == key)
+                {
+                    return parts.Length == 2
+                        ? Uri.UnescapeDataString(parts[1].Replace('+', ' '))
+                        : string.Empty;
+                }
+            }
+
+            return null;
+        }
+
         public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url, bool Trial = false);
-    }
-
-    private sealed class StubWorkspaceService : IWorkspaceService
-    {
-        public Task<WorkspaceResponse> GetAsync(string ownerId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new WorkspaceResponse(new WorkspaceSnapshot(), "revision"));
-
-        public Task<WorkspaceSaveResult> SaveAsync(string ownerId, WorkspaceSaveRequest request, CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
     }
 }

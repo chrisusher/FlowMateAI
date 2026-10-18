@@ -113,6 +113,7 @@ public static class Services
         services.AddScoped<IBillingRepository, BillingRepository>();
         services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
         services.
         AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
@@ -126,6 +127,7 @@ public static class Services
         #region EF Core Services
         services.AddScoped<IBillingService, StripeBillingService>();
         services.AddScoped<IUserDataResetService, UserDataResetService>();
+        services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
         #endregion

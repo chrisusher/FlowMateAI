@@ -3,18 +3,19 @@ using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Workspaces;
+using Services.Users;
 using Shared.Contracts;
 using Shared.Enums;
 
 namespace API.Functions.V1.Workspace;
 
-public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService workspaces)
+public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService workspaces, IUserService users)
 {
 
     [Function("Workspace")]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", "put", Route = "v1/workspace")] HttpRequestData request, CancellationToken cancellationToken)
     {
-        var (ownerId, _) = await HttpFunction.UserAsync(request, tokens, cancellationToken);
+        var (ownerId, _) = await HttpFunction.UserAsync(request, tokens, users, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(ownerId))
         {

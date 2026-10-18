@@ -7,13 +7,16 @@
     <h2>Make focus a practice.</h2>
     <div class="price">@Billing.PriceLabel</div>
     <p>More history, more insight, and space for every project.</p>
-    <button class="plan-button primary" disabled="@(Billing.BillingState?.TrialUsed == true || Billing.HasEntitledSubscription || Billing.CheckoutInProgress || !Billing.HasSelectedPrice)" @onclick="Billing.StartTrial">@(Billing.HasEntitledSubscription ? "Pro subscription active" : Billing.BillingState?.TrialUsed == true ? "Trial already used" : Billing.CheckoutInProgress ? "Opening checkout…" : Billing.HasSelectedPrice ? $"Try Pro for 14 days ({(Billing.Annual ? "annual" : "monthly")})" : "Pricing unavailable")</button>
-    <small class="trial-copy">Payment method required at signup. No charge for 14 days; your selected plan is charged after the trial unless you cancel.</small>
-    @if (Billing.BillingState?.Status == "trialing" && Billing.BillingState.PeriodEndsAt is { } trialEnd)
+    <button class="plan-button primary" disabled="@(Billing.BillingState is null || Billing.HasEntitledSubscription || Billing.CanManageSubscription || Billing.BillingState?.TrialUsed == true || Billing.CheckoutInProgress || !Billing.HasSelectedPrice)" @onclick="Billing.StartTrial">@(Billing.BillingState?.IsManualGrant == true ? "Pro preview access active" : Billing.HasEntitledSubscription ? "Pro subscription active" : Billing.CanManageSubscription ? "Subscription already exists" : Billing.BillingState?.TrialUsed == true ? "Trial already used" : Billing.CheckoutInProgress ? "Opening checkout…" : Billing.HasSelectedPrice ? $"Try Pro for 14 days ({(Billing.Annual ? "annual" : "monthly")})" : "Pricing unavailable")</button>
+    @if (!Billing.HasEntitledSubscription && !Billing.CanManageSubscription)
+    {
+        <small class="trial-copy">Payment method required at signup. No charge for 14 days; your selected plan is charged after the trial unless you cancel.</small>
+    }
+    @if (Billing.CurrentSubscriptionStatus == SubscriptionStatus.Trialing && Billing.BillingState?.PeriodEndsAt is { } trialEnd)
     {
         <p class="trial-copy">Your trial ends @trialEnd.ToLocalTime().ToString("d"). Cancel before then to avoid the @Billing.RenewalChargeLabel charge. After the trial, Free includes 3 projects and 10 coach prompts per month; your workspace data stays available.</p>
     }
-    <button class="checkout-button" disabled="@((!Billing.HasSelectedPrice && !Billing.HasEntitledSubscription) || Billing.CheckoutInProgress)" @onclick="Billing.BuyPro">@(Billing.HasEntitledSubscription ? "Manage subscription" : Billing.CheckoutInProgress ? "Opening checkout…" : Billing.HasSelectedPrice ? $"Subscribe {(Billing.Annual ? "annually" : "monthly")}" : "Pricing unavailable")</button>
+    <button class="checkout-button" disabled="@((!Billing.HasSelectedPrice && !Billing.CanManageSubscription) || Billing.CheckoutInProgress || Billing.BillingState is null)" @onclick="Billing.BuyPro">@(Billing.CurrentSubscriptionStatus is SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid ? "Resolve payment" : Billing.CanManageSubscription ? "Manage subscription" : Billing.CheckoutInProgress ? "Opening checkout…" : Billing.HasSelectedPrice ? $"Subscribe {(Billing.Annual ? "annually" : "monthly")}" : "Pricing unavailable")</button>
     <ul>
         <li>&#10003; Up to 25 projects</li>
         <li>&#10003; One year of report history</li>

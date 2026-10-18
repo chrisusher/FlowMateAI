@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http.Json;
+using Shared.Contracts;
 using Web.Components.Features.Account;
 using Web.Components.Features.Sidebar;
 
@@ -6,11 +9,48 @@ namespace Web.Tests;
 public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
 {
     [Test]
-    public void UpgradeCardLinksToPricing()
+    public async Task UpgradeCardLinksToPricing()
     {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
         var cut = Render<UpgradeCard>();
         Assert.That(cut.Markup, Does.Contain("Make room for more"));
         Assert.That(cut.Find("a").GetAttribute("href"), Is.EqualTo("pricing"));
+    }
+
+    [Test]
+    public async Task UpgradeCardIsHiddenForAnEntitledProCustomer()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(25), 0, 100))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
+
+        var cut = Render<UpgradeCard>();
+
+        Assert.That(cut.FindAll(".upgrade-card"), Is.Empty);
     }
 
     [Test]

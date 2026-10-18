@@ -31,6 +31,7 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
         var archivedBlobs = 0;
         var mcpKeys = 0;
         var mcpUsageRecords = 0;
+        var userRecords = 0;
 
         async Task RunStageAsync(UserDataResetStage stage, Func<Task> action)
         {
@@ -45,7 +46,8 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
                     new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs)
                     {
                         McpKeys = mcpKeys,
-                        McpUsageRecords = mcpUsageRecords
+                        McpUsageRecords = mcpUsageRecords,
+                        UserRecords = userRecords
                     },
                     exception);
             }
@@ -64,6 +66,11 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
         await RunStageAsync(UserDataResetStage.BillingEntitlement, async () =>
         {
             billingEntitlements = await repository.DeleteBillingEntitlementsAsync(userId, cancellationToken);
+        });
+
+        await RunStageAsync(UserDataResetStage.UserRecord, async () =>
+        {
+            userRecords = await repository.DeleteUserRecordsAsync(userId, cancellationToken);
         });
 
         await RunStageAsync(UserDataResetStage.ArchivedBlob, async () =>
@@ -95,7 +102,8 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
         return new UserDataResetResult(workspaceDocuments, workspaceRecords, billingEntitlements, archivedBlobs)
         {
             McpKeys = mcpKeys,
-            McpUsageRecords = mcpUsageRecords
+            McpUsageRecords = mcpUsageRecords,
+            UserRecords = userRecords
         };
     }
 }

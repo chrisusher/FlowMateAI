@@ -1944,6 +1944,21 @@ a {
     border-radius: 12px
 }
 
+.plan-status[data-status="pastdue"],
+.plan-status[data-status="unpaid"],
+.plan-status[data-status="incomplete"],
+.plan-status[data-status="paused"] {
+    background: #fff3e5;
+    color: #9a5a12
+}
+
+.plan-status[data-status="canceled"],
+.plan-status[data-status="incompleteexpired"],
+.plan-status[data-status="unknown"] {
+    background: #f0f0ed;
+    color: #777b74
+}
+
 @media(max-width:1050px) {
     .content-area {
         padding: 30px 28px

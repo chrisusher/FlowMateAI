@@ -10,6 +10,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
     private bool _annual;
     private bool _checkoutInProgress;
     private bool _checkoutPending;
+
     public bool Annual
     {
         get => _annual;
@@ -24,17 +25,33 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
             NotifyChanged();
         }
     }
+
     public string? BillingMessage
     {
         get; private set;
     }
+
     public IReadOnlyList<BillingPrice> Prices { get; private set; } = [];
+
     public BillingSummary? BillingState
     {
         get; private set;
     }
+
+    public SubscriptionStatus CurrentSubscriptionStatus => SubscriptionStatusExtensions.FromProviderStatus(BillingState?.Status);
+
+    public BillingPlan CurrentPlan => BillingState is null ? BillingPlan.Free : BillingPlanExtensions.ParseOrFree(BillingState.Plan);
+
+    public bool ShouldShowUpgrade => BillingState is not null
+        && CurrentPlan == BillingPlan.Free
+        && CurrentSubscriptionStatus is (SubscriptionStatus.None or SubscriptionStatus.Canceled or SubscriptionStatus.IncompleteExpired);
+
     public bool CheckoutInProgress => _checkoutInProgress;
     public bool CheckoutPending => _checkoutPending;
+    public string FreePlanButtonText => BillingState is null
+        ? "Checking plan…"
+        : CurrentPlan == BillingPlan.Free ? "Current plan" : "Included in Pro";
+
     public bool HasSelectedPrice => Prices.Any(price => price.Interval == (Annual ? "year" : "month"));
     public bool HasEntitledSubscription => SubscriptionEntitlementExtensions.FromProviderStatus(BillingState?.Status) == SubscriptionEntitlement.Entitled;
 
@@ -80,6 +97,51 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
         BillingInterval.Monthly => "monthly",
         _ => "subscription"
     };
+
+    public string SubscriptionStatusLabel => CurrentSubscriptionStatus switch
+    {
+        SubscriptionStatus.None => "Free",
+        SubscriptionStatus.Active when BillingState?.CancelAtPeriodEnd == true => "Cancellation scheduled",
+        SubscriptionStatus.Active when BillingState?.IsManualGrant == true => "Preview access",
+        SubscriptionStatus.Active => "Paid",
+        SubscriptionStatus.Trialing when BillingState?.CancelAtPeriodEnd == true => "Trial ending",
+        SubscriptionStatus.Trialing => "Trial",
+        SubscriptionStatus.PastDue => "Payment past due",
+        SubscriptionStatus.Canceled => "Cancelled",
+        SubscriptionStatus.Unpaid => "Payment required",
+        SubscriptionStatus.Incomplete => "Payment pending",
+        SubscriptionStatus.IncompleteExpired => "Checkout expired",
+        SubscriptionStatus.Paused => "Paused",
+        _ => "Status unavailable"
+    };
+
+    public string SubscriptionStatusDetail => CurrentSubscriptionStatus switch
+    {
+        SubscriptionStatus.None => "You're on Free. Your existing workspace stays available.",
+        SubscriptionStatus.Active when BillingState?.CancelAtPeriodEnd == true => EndDateMessage("Your Pro access ends"),
+        SubscriptionStatus.Active when BillingState?.IsManualGrant == true => "Your Pro preview access was granted manually. It has no automatic renewal date.",
+        SubscriptionStatus.Active => EndDateMessage("Next renewal"),
+        SubscriptionStatus.Trialing when BillingState?.CancelAtPeriodEnd == true => EndDateMessage("Your trial and Pro access are scheduled to end"),
+        SubscriptionStatus.Trialing => TrialStatusDetail(),
+        SubscriptionStatus.PastDue => "Update your payment method in Manage billing. Your existing work remains available while payment is resolved.",
+        SubscriptionStatus.Canceled => "Your Pro subscription has ended. Your existing workspace stays available on Free.",
+        SubscriptionStatus.Unpaid => "Payment needs attention. Manage billing to resolve it; your existing work remains available.",
+        SubscriptionStatus.Incomplete => "Stripe is still processing your subscription. Refresh the status or manage billing if this takes more than a moment.",
+        SubscriptionStatus.IncompleteExpired => "Checkout expired before the subscription was confirmed. You can choose Pro again when you're ready.",
+        SubscriptionStatus.Paused => "Your subscription is paused. Manage billing to resume it; your existing work remains available.",
+        _ => "Billing status couldn't be identified. Refresh to try again."
+    };
+
+    public bool CanManageSubscription => BillingState?.IsManualGrant != true
+        && CurrentSubscriptionStatus is (SubscriptionStatus.Active or SubscriptionStatus.Trialing or SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid or SubscriptionStatus.Incomplete or SubscriptionStatus.Paused);
+
+    private string EndDateMessage(string prefix) => BillingState?.PeriodEndsAt is { } end
+        ? $"{prefix} {end.ToLocalTime():d}."
+        : $"{prefix} date unavailable. Refresh billing status for the latest details.";
+
+    private string TrialStatusDetail() => BillingState?.PeriodEndsAt is { } end
+        ? $"Your trial ends {end.ToLocalTime():d}. Unless you cancel first, the {RenewalChargeLabel} charge follows then."
+        : "Your trial end date is unavailable. Refresh billing status for the latest details.";
 
     public async Task ShowCheckoutReturn(CheckoutOutcome outcome)
     {
@@ -197,7 +259,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
             return;
         }
 
-        if (HasEntitledSubscription)
+        if (CanManageSubscription)
         {
             await OpenBillingPortal();
 

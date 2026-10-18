@@ -3,17 +3,18 @@ using ChrisUsher.Core.Shared;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
+using Services.Users;
 using Shared.Contracts;
 
 namespace API.Functions.V1.Billing;
 
-public sealed class BillingCheckout(Auth0TokenValidator tokens, IBillingService billing)
+public sealed class BillingCheckout(Auth0TokenValidator tokens, IBillingService billing, IUserService users)
 {
 
     [Function("BillingCheckout")]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/billing/checkout")] HttpRequestData request, CancellationToken cancellationToken)
     {
-        var (userId, email) = await HttpFunction.UserAsync(request, tokens, cancellationToken);
+        var (userId, email) = await HttpFunction.UserAsync(request, tokens, users, cancellationToken);
 
         if (userId is null)
         {

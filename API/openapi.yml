@@ -294,7 +294,7 @@ components:
           type: string
     BillingSummary:
       type: object
-      required: [plan, status, trialUsed, promptsUsed, promptLimit]
+      required: [plan, status, trialUsed, cancelAtPeriodEnd, isManualGrant, promptsUsed, promptLimit]
       properties:
         plan:
           type: string
@@ -311,6 +311,12 @@ components:
           enum: [month, year]
           nullable: true
           description: Confirmed subscription renewal interval from Stripe; null when not yet known.
+        isManualGrant:
+          type: boolean
+          description: True when Pro access was granted manually for preview and has no Stripe subscription or automatic renewal.
+        cancelAtPeriodEnd:
+          type: boolean
+          description: True when Stripe has scheduled the subscription to end at the current period boundary.
         promptsUsed:
           type: integer
         promptLimit:
