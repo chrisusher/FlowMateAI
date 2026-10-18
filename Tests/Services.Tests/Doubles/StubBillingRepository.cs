@@ -6,6 +6,7 @@ namespace Services.Tests.Doubles;
 public class StubBillingRepository : IBillingRepository
 {
     private readonly SemaphoreSlim _promptGate = new(1, 1);
+    public List<BillingEntitlementDocument> SavedEntitlements { get; } = [];
     public BillingEntitlementDocument Entitlement
     {
         get; init;
@@ -61,6 +62,7 @@ public class StubBillingRepository : IBillingRepository
 
     public Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default)
     {
+        SavedEntitlements.Add(JsonSerializer.Deserialize<BillingEntitlementDocument>(JsonSerializer.Serialize(entitlement))!);
         Entitlement.StripeCustomerId = entitlement.StripeCustomerId;
 
         return Task.CompletedTask;

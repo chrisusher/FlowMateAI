@@ -88,11 +88,12 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Billing.CheckoutInProgress, Is.False);
     }
 
-    [Test]
-    public async Task CheckoutReturnShowsPendingUntilServerConfirmsPro()
+    [TestCase(CheckoutOutcome.Return, "active")]
+    [TestCase(CheckoutOutcome.TrialReturn, "trialing")]
+    public async Task CheckoutReturnSyncsWorkspacePlanWhenServerConfirmsPro(CheckoutOutcome outcome, string confirmedStatus)
     {
         await SignInAsync();
-        var status = "Free";
+        var plan = BillingPlan.Free;
 
         Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
         {
@@ -102,22 +103,46 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
             },
             "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new BillingSummary(status, status == "Pro" ? "active" : "none", false, null, 0, 10))
+                Content = JsonContent.Create(new BillingSummary(plan.ToString(), plan == BillingPlan.Pro ? confirmedStatus : "none", false, null, 0, plan == BillingPlan.Pro ? 100 : 10))
             },
             _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
         });
 
         await Billing.InitialiseAsync();
-        await Billing.ShowCheckoutReturn(CheckoutOutcome.Return);
+        await Billing.ShowCheckoutReturn(outcome);
         
         Assert.That(Billing.CheckoutPending, Is.True);
-        Assert.That(Billing.BillingMessage, Does.Contain("Payment is processing"));
         Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
 
-        status = "Pro";
+        await Billing.RefreshSubscriptionStatusAsync();
+        Assert.That(Billing.CheckoutPending, Is.True);
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
+
+        var previousWrites = WorkspaceModule.Invocations.Count(call => call.Identifier == "write");
+        plan = BillingPlan.Pro;
         await Billing.RefreshSubscriptionStatusAsync();
         Assert.That(Billing.CheckoutPending, Is.False);
         Assert.That(Billing.BillingMessage, Is.EqualTo("Your Pro subscription is active."));
+        Assert.That(Billing.BillingState?.Status, Is.EqualTo(confirmedStatus));
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Pro));
+        Assert.That(Projects.ProjectLimit, Is.EqualTo(25));
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "write"), Is.GreaterThan(previousWrites));
+    }
+
+    [Test]
+    public async Task FailedSubscriptionRefreshPreservesWorkspacePlanAndPendingCheckout()
+    {
+        await SignInAsync();
+        await Billing.ShowCheckoutReturn(CheckoutOutcome.TrialReturn);
+        var previousWrites = WorkspaceModule.Invocations.Count(call => call.Identifier == "write");
+        Api.Respond = (_, _) => throw new HttpRequestException("Offline");
+
+        await Billing.RefreshSubscriptionStatusAsync();
+
+        Assert.That(Billing.CheckoutPending, Is.True);
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
+        Assert.That(Billing.BillingMessage, Is.EqualTo("Subscription status could not be refreshed. Try again in a moment."));
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "write"), Is.EqualTo(previousWrites));
     }
 
     [Test]

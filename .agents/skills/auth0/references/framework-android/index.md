@@ -434,7 +434,7 @@ LocalAuthenticationOptions.Builder()
 // AuthenticationException
 error.isMultifactorRequired: Boolean
 error.isBrowserAppNotAvailable: Boolean
-error.isAuthenticationCancelled: Boolean
+error.isAuthenticationCanceled: Boolean
 error.statusCode: Int
 error.message: String?
 
@@ -500,7 +500,7 @@ WebAuthProvider.login(account)
                 error.isBrowserAppNotAvailable -> {
                     // No browser available on device
                 }
-                error.isAuthenticationCancelled -> {
+                error.isAuthenticationCanceled -> {
                     // User cancelled the login
                 }
                 else -> {
@@ -890,7 +890,7 @@ authentication.login(...)
                     // No browser available
                     // Fallback to in-app WebView (not recommended)
                 }
-                error.isAuthenticationCancelled -> {
+                error.isAuthenticationCanceled -> {
                     // User cancelled the login flow
                 }
                 error.statusCode == 429 -> {

@@ -121,6 +121,13 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
         try
         {
             BillingState = await client.GetSummaryAsync();
+
+            if (BillingState is not null)
+            {
+                Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState.Plan);
+                await Store.SaveAsync();
+            }
+
             _checkoutPending = !HasEntitledSubscription;
             BillingMessage = _checkoutPending
                 ? "Payment is still processing. Try checking again in a moment."

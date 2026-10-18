@@ -91,12 +91,20 @@ public sealed class StripeBillingServiceTests
         Assert.That(handler.Requests.Any(path => path == "billing_portal/sessions"), Is.True);
     }
 
-    [Test]
-    public async Task StripeConfirmedSubscriptionIsSentToBillingPortalWhenWebhookIsDelayed()
+    [TestCase("active", false)]
+    [TestCase("active", true)]
+    [TestCase("trialing", false)]
+    [TestCase("trialing", true)]
+    public async Task StripeConfirmedSubscriptionIsPersistedBeforeOpeningPortalWhenWebhookIsDelayed(string status, bool trial)
     {
         var handler = new StripeHandler
         {
-            SubscriptionStatus = "active"
+            SubscriptionsJson = $$"""
+                {"data":[
+                    {"id":"sub_ended","customer":"cus_existing","status":"canceled","trial_start":1700000000,"current_period_end":1701209600},
+                    {"id":"sub_confirmed","customer":"cus_existing","status":"{{status}}","trial_start":null,"current_period_end":1792329600}
+                ]}
+                """
         };
         var repository = new StubBillingRepository
         {
@@ -107,13 +115,37 @@ public sealed class StripeBillingServiceTests
                 SubscriptionStatus = "none"
             }
         };
+        handler.BeforePortalCreation = () =>
+        {
+            var saved = repository.SavedEntitlements.Single();
+            Assert.That(saved.Plan, Is.EqualTo("Pro"));
+            Assert.That(saved.SubscriptionStatus, Is.EqualTo(status));
+            Assert.That(saved.StripeCustomerId, Is.EqualTo("cus_existing"));
+            Assert.That(saved.StripeSubscriptionId, Is.EqualTo("sub_confirmed"));
+            Assert.That(saved.PeriodEndsAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1792329600)));
+            Assert.That(saved.TrialUsed, Is.True);
+        };
         var service = CreateService(handler, repository);
 
-        var result = await service.CreateCheckoutAsync("user", null, false);
+        var result = trial
+            ? await service.StartTrialAsync("user", null, false)
+            : await service.CreateCheckoutAsync("user", null, false);
 
         Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Url, Is.EqualTo("https://billing.example.test/portal"));
         Assert.That(handler.Requests.Any(path => path == "billing_portal/sessions"), Is.True);
         Assert.That(handler.CheckoutSessionCreations, Is.Zero);
+
+        var summary = await service.GetSummaryAsync("user");
+        var reservation = await service.ConsumePromptAsync("user", "2026-10");
+        Assert.That(summary.Plan, Is.EqualTo("Pro"));
+        Assert.That(summary.Status, Is.EqualTo(status));
+        Assert.That(summary.PromptLimit, Is.EqualTo(100));
+        Assert.That(reservation.Limit, Is.EqualTo(100));
+
+        var subscriptionQueries = handler.Requests.Count(path => path.StartsWith("subscriptions?", StringComparison.Ordinal));
+        await service.CreateCheckoutAsync("user", null, false);
+        Assert.That(handler.Requests.Count(path => path.StartsWith("subscriptions?", StringComparison.Ordinal)), Is.EqualTo(subscriptionQueries));
     }
 
     [Test]
@@ -214,10 +246,8 @@ public sealed class StripeBillingServiceTests
         {
             get; private set;
         }
-        public string? SubscriptionStatus
-        {
-            get; init;
-        }
+        public string SubscriptionsJson { get; init; } = "{\"data\":[]}";
+        public Action? BeforePortalCreation { get; set; }
         public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -232,9 +262,7 @@ public sealed class StripeBillingServiceTests
 
             if (request.RequestUri.AbsolutePath.EndsWith("/subscriptions", StringComparison.Ordinal))
             {
-                return JsonResponse(SubscriptionStatus is null
-                    ? "{\"data\":[]}"
-                    : $"{{\"data\":[{{\"status\":\"{SubscriptionStatus}\"}}]}}");
+                return JsonResponse(SubscriptionsJson);
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal)
@@ -283,6 +311,8 @@ public sealed class StripeBillingServiceTests
 
             if (request.RequestUri.AbsolutePath.EndsWith("/billing_portal/sessions", StringComparison.Ordinal))
             {
+                BeforePortalCreation?.Invoke();
+
                 return JsonResponse("{\"url\":\"https://billing.example.test/portal\"}");
             }
 
