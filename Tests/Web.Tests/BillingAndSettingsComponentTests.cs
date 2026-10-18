@@ -108,7 +108,8 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         });
 
         await Billing.InitialiseAsync();
-        Billing.ShowCheckoutReturn(CheckoutOutcome.Return);
+        await Billing.ShowCheckoutReturn(CheckoutOutcome.Return);
+        
         Assert.That(Billing.CheckoutPending, Is.True);
         Assert.That(Billing.BillingMessage, Does.Contain("Payment is processing"));
         Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
@@ -232,7 +233,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Content(cut.Find(".setting-row")), Does.Contain($"Up to {projects} projects"));
         Assert.That(Content(cut.Find(".setting-row")), Does.Contain($"{prompts} coach prompts"));
         Assert.That(cut.Find("article").Id, Is.EqualTo("billing"));
-        
+
         cut.Find("button").Click();
         Assert.That(Billing.BillingMessage, Is.EqualTo("Portal unavailable"));
     }
