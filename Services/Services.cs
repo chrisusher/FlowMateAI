@@ -105,6 +105,7 @@ public static class Services
         #region Config
         services.AddSingleton(functionsConfig!);
         services.AddSingleton(globalConfig!);
+        services.AddSingleton(new Environment(configuration));
         #endregion
 
         #region Repositories

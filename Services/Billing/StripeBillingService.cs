@@ -8,6 +8,7 @@ using Services.Repositories;
 namespace Services.Billing;
 
 public sealed class StripeBillingService(
+    Environment environment,
     IConfiguration configuration,
     IHttpClientFactory clients,
     IBillingRepository repository) : IBillingService
@@ -76,9 +77,9 @@ public sealed class StripeBillingService(
     public async Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, bool trial = false)
     {
         var priceId = configuration[annual ? "Stripe:AnnualPriceId" : "Stripe:MonthlyPriceId"];
-        var origin = configuration["WebApp:Origin"]?.TrimEnd('/');
+        var appBaseUrl = environment.GetWebAppBaseUrl();
 
-        if (string.IsNullOrWhiteSpace(priceId) || string.IsNullOrWhiteSpace(origin))
+        if (string.IsNullOrWhiteSpace(priceId) || string.IsNullOrWhiteSpace(appBaseUrl))
         {
             return Failure(BillingActionCode.BillingUnavailable, "Checkout is not configured yet.");
         }
@@ -129,8 +130,8 @@ public sealed class StripeBillingService(
                 ["customer"] = customer,
                 ["line_items[0][price]"] = priceId,
                 ["line_items[0][quantity]"] = "1",
-                ["success_url"] = origin + (trial ? $"/pricing?checkout=trial-return&annual={annual.ToString().ToLowerInvariant()}" : "/pricing?checkout=return"),
-                ["cancel_url"] = origin + (trial ? "/pricing?checkout=trial-cancelled" : "/pricing?checkout=cancelled"),
+                ["success_url"] = appBaseUrl + (trial ? $"/pricing?checkout=trial-return&annual={annual.ToString().ToLowerInvariant()}" : "/pricing?checkout=return"),
+                ["cancel_url"] = appBaseUrl + (trial ? "/pricing?checkout=trial-cancelled" : "/pricing?checkout=cancelled"),
                 ["subscription_data[metadata][user_id]"] = userId,
                 ["metadata[flowmate_trial]"] = trial ? "true" : "false"
             };
@@ -263,9 +264,9 @@ public sealed class StripeBillingService(
 
     public async Task<BillingActionResponse> CreatePortalAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var origin = configuration["WebApp:Origin"]?.TrimEnd('/');
+        var appBaseUrl = environment.GetWebAppBaseUrl();
 
-        if (string.IsNullOrWhiteSpace(origin))
+        if (string.IsNullOrWhiteSpace(appBaseUrl))
         {
             return Failure(BillingActionCode.BillingUnavailable, "Billing is not configured yet.");
         }
@@ -281,7 +282,7 @@ public sealed class StripeBillingService(
             using var response = await SendAsync(HttpMethod.Post, "billing_portal/sessions", new Dictionary<string, string>
             {
                 ["customer"] = entitlement.StripeCustomerId,
-                ["return_url"] = origin + "/settings"
+                ["return_url"] = appBaseUrl + "/settings"
             }, null, cancellationToken);
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);

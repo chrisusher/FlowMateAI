@@ -441,7 +441,8 @@ var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WithBlazorClientApp(frontend);
 
 api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"))
-    .WithEnvironment("WebApp__Origin", gateway.GetEndpoint("https"));
+    .WithEnvironment("WebApp__Origin", gateway.GetEndpoint("https"))
+    .WithEnvironment("WebApp__BasePath", "/frontend");
 
 builder.Build().Run();
 
