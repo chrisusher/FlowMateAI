@@ -121,11 +121,11 @@ public sealed class StripeBillingService(
                 return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
             }
 
-            var openSession = await GetOpenCheckoutSessionAsync(customer, priceId, trial, cancellationToken);
+            var existingCheckout = await GetExistingCheckoutResponseAsync(customer, priceId, trial, cancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(openSession))
+            if (existingCheckout is not null)
             {
-                return new(true, openSession, null, null);
+                return existingCheckout;
             }
 
             var form = new Dictionary<string, string>
@@ -146,7 +146,7 @@ public sealed class StripeBillingService(
                 form["subscription_data[trial_settings][end_behavior][missing_payment_method]"] = "cancel";
             }
 
-            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId, priceId, trial), cancellationToken);
+            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId), cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -199,7 +199,7 @@ public sealed class StripeBillingService(
         return (entitledSubscription, trialUsed);
     }
 
-    private async Task<string?> GetOpenCheckoutSessionAsync(string customerId, string priceId, bool trial, CancellationToken cancellationToken)
+    private async Task<BillingActionResponse?> GetExistingCheckoutResponseAsync(string customerId, string priceId, bool trial, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(HttpMethod.Get,
             $"checkout/sessions?customer={Uri.EscapeDataString(customerId)}&status=open&limit=100&expand%5B%5D=data.line_items", null, null, cancellationToken);
@@ -216,32 +216,37 @@ public sealed class StripeBillingService(
             return null;
         }
 
+        BillingActionResponse? existingCheckout = null;
+
         foreach (var session in sessions.EnumerateArray())
         {
             if (!session.TryGetProperty("mode", out var mode)
                 || mode.ValueKind != JsonValueKind.String
-                || mode.GetString() != "subscription"
-                || (session.TryGetProperty("metadata", out var metadata)
-                    && metadata.TryGetProperty("flowmate_trial", out var sessionTrial)
-                    && (sessionTrial.ValueKind != JsonValueKind.String
-                        || !string.Equals(sessionTrial.GetString(), trial ? "true" : "false", StringComparison.Ordinal)))
-                || (trial && (!session.TryGetProperty("metadata", out var trialMetadata)
-                    || !trialMetadata.TryGetProperty("flowmate_trial", out var trialSession)
-                    || trialSession.ValueKind != JsonValueKind.String
-                    || !string.Equals(trialSession.GetString(), "true", StringComparison.Ordinal))))
+                || mode.GetString() != "subscription")
             {
                 continue;
             }
 
-            if (!session.TryGetProperty("url", out var url) || url.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(url.GetString()))
+            var sessionIsTrial = session.TryGetProperty("metadata", out var metadata)
+                && metadata.ValueKind == JsonValueKind.Object
+                && metadata.TryGetProperty("flowmate_trial", out var sessionTrial)
+                && sessionTrial.ValueKind == JsonValueKind.String
+                && sessionTrial.GetString() == "true";
+
+            if (sessionIsTrial != trial
+                || !session.TryGetProperty("url", out var url)
+                || url.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(url.GetString()))
             {
-                continue;
+                return CheckoutConflict();
             }
 
             if (trial)
             {
                 // A trial keeps its original price, even when the pricing toggle changes.
-                return url.GetString();
+                existingCheckout = new(true, url.GetString(), null, null);
+
+                continue;
             }
 
             if (!session.TryGetProperty("line_items", out var lineItems)
@@ -249,7 +254,7 @@ public sealed class StripeBillingService(
                 || !lineItems.TryGetProperty("data", out var items)
                 || items.ValueKind != JsonValueKind.Array)
             {
-                continue;
+                return CheckoutConflict();
             }
 
             var hasRequestedPrice = items.EnumerateArray().Any(item =>
@@ -262,19 +267,24 @@ public sealed class StripeBillingService(
                         && id.ValueKind == JsonValueKind.String
                         && string.Equals(id.GetString(), priceId, StringComparison.Ordinal)));
 
-            if (hasRequestedPrice)
+            if (!hasRequestedPrice)
             {
-                return url.GetString();
+                return CheckoutConflict();
             }
+
+            existingCheckout = new(true, url.GetString(), null, null);
         }
 
-        return null;
+        return existingCheckout;
     }
 
-    private static string CheckoutIdempotencyKey(string userId, string priceId, bool trial)
+    private static BillingActionResponse CheckoutConflict() => Failure(BillingActionCode.CheckoutInProgress,
+        "You already have an open checkout with a different billing selection. Return to that selection to finish it, or wait for the checkout to expire before starting another subscription.");
+
+    private static string CheckoutIdempotencyKey(string userId)
     {
-        // Competing trial requests must share a key across monthly and annual prices.
-        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + "\n" + (trial ? "trial" : priceId) + "\n" + trial))).ToLowerInvariant();
+        // All subscription requests share a key to prevent competing paid and trial sessions.
+        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId))).ToLowerInvariant();
         var utcDay = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
         return $"flowmate-checkout-{requestHash}-{utcDay}";

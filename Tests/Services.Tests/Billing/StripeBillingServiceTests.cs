@@ -39,21 +39,20 @@ public sealed class StripeBillingServiceTests
     }
 
     [Test]
-    public async Task CheckoutDoesNotReuseOpenSessionForDifferentPrice()
+    public async Task CheckoutBlocksDifferentPriceWhileAnotherCheckoutIsOpen()
     {
         var handler = new StripeHandler();
         var service = CreateService(handler, _repository!);
 
         var monthly = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
         var annual = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", true);
-        var annualRetry = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", true);
+        var monthlyRetry = await service.CreateCheckoutAsync("auth0|customer", "person@example.test", false);
 
         Assert.That(monthly.Url, Is.EqualTo("https://checkout.example.test/session/price_monthly"));
-        Assert.That(annual.Url, Is.EqualTo("https://checkout.example.test/session/price_annual"));
-        Assert.That(annualRetry.Url, Is.EqualTo(annual.Url));
-        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(2));
-        Assert.That(handler.CheckoutIdempotencyKeys, Has.Count.EqualTo(2));
-        Assert.That(handler.CheckoutIdempotencyKeys[0], Is.Not.EqualTo(handler.CheckoutIdempotencyKeys[1]));
+        Assert.That(annual.Succeeded, Is.False);
+        Assert.That(annual.Code, Is.EqualTo(BillingActionCode.CheckoutInProgress));
+        Assert.That(monthlyRetry.Url, Is.EqualTo(monthly.Url));
+        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
     }
 
     [TestCase(false)]
@@ -74,8 +73,11 @@ public sealed class StripeBillingServiceTests
         Assert.That(handler.OpenCheckoutSessions.Count(session => session.Trial), Is.EqualTo(1));
     }
 
-    [Test]
-    public async Task ConcurrentMonthlyAndAnnualTrialRequestsCannotCreateTwoSessions()
+    [TestCase(true, true)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(false, false)]
+    public async Task ConcurrentSubscriptionRequestsCannotCreateTwoSessions(bool firstTrial, bool secondTrial)
     {
         var bothRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var requestsStarted = 0;
@@ -95,29 +97,50 @@ public sealed class StripeBillingServiceTests
         var service = CreateService(handler, _repository);
 
         var results = await Task.WhenAll(
-            service.StartTrialAsync("user", null, false),
-            service.StartTrialAsync("user", null, true)).WaitAsync(TimeSpan.FromSeconds(10));
+            service.CreateCheckoutAsync("user", null, false, trial: firstTrial),
+            service.CreateCheckoutAsync("user", null, true, trial: secondTrial)).WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.That(handler.CheckoutIdempotencyKeys.Distinct().Count(), Is.EqualTo(1));
         Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
         Assert.That(results.Count(result => result.Succeeded), Is.EqualTo(1));
 
-        var retry = await service.StartTrialAsync("user", null, true);
+        var successfulIndex = Array.FindIndex(results, result => result.Succeeded);
+        var retry = await service.CreateCheckoutAsync("user", null, successfulIndex == 1, trial: successfulIndex == 0 ? firstTrial : secondTrial);
         Assert.That(retry.Url, Is.EqualTo(results.Single(result => result.Succeeded).Url));
         Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
     }
 
-    [Test]
-    public async Task TrialCheckoutDoesNotReuseAnOpenPaidCheckout()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task CheckoutBlocksTheOppositeSubscriptionCheckoutType(bool existingTrial)
     {
         var handler = new StripeHandler();
-        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/paid"));
+        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/existing", existingTrial));
         var service = CreateService(handler, _repository!);
 
-        var result = await service.StartTrialAsync("user", null, false);
+        var result = await service.CreateCheckoutAsync("user", null, false, trial: !existingTrial);
 
-        Assert.That(result.Url, Is.Not.EqualTo("https://checkout.example.test/paid"));
-        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Code, Is.EqualTo(BillingActionCode.CheckoutInProgress));
+        Assert.That(result.Url, Is.Null);
+        Assert.That(handler.CheckoutSessionCreations, Is.Zero);
+        Assert.That(handler.OpenCheckoutSessions, Has.Count.EqualTo(1));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task MatchingCheckoutDoesNotHideAnExistingOppositeType(bool trial)
+    {
+        var handler = new StripeHandler();
+        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/matching", trial));
+        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/opposite", !trial));
+        var service = CreateService(handler, _repository!);
+
+        var result = await service.CreateCheckoutAsync("user", null, false, trial: trial);
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Code, Is.EqualTo(BillingActionCode.CheckoutInProgress));
+        Assert.That(handler.CheckoutSessionCreations, Is.Zero);
     }
 
     [Test]
