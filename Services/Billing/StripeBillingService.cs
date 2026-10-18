@@ -22,7 +22,7 @@ public sealed class StripeBillingService(
         var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
         var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
 
-        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit);
+        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit, entitlement.SubscriptionInterval);
     }
 
     public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, string month, CancellationToken cancellationToken = default)
@@ -228,8 +228,23 @@ public sealed class StripeBillingService(
                 || (trial && (!session.TryGetProperty("metadata", out var trialMetadata)
                     || !trialMetadata.TryGetProperty("flowmate_trial", out var trialSession)
                     || trialSession.ValueKind != JsonValueKind.String
-                    || !string.Equals(trialSession.GetString(), "true", StringComparison.Ordinal)))
-                || !session.TryGetProperty("line_items", out var lineItems)
+                    || !string.Equals(trialSession.GetString(), "true", StringComparison.Ordinal))))
+            {
+                continue;
+            }
+
+            if (!session.TryGetProperty("url", out var url) || url.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(url.GetString()))
+            {
+                continue;
+            }
+
+            if (trial)
+            {
+                // A trial keeps its original price, even when the pricing toggle changes.
+                return url.GetString();
+            }
+
+            if (!session.TryGetProperty("line_items", out var lineItems)
                 || lineItems.ValueKind != JsonValueKind.Object
                 || !lineItems.TryGetProperty("data", out var items)
                 || items.ValueKind != JsonValueKind.Array)
@@ -247,9 +262,7 @@ public sealed class StripeBillingService(
                         && id.ValueKind == JsonValueKind.String
                         && string.Equals(id.GetString(), priceId, StringComparison.Ordinal)));
 
-            if (hasRequestedPrice
-                && session.TryGetProperty("url", out var url)
-                && url.ValueKind == JsonValueKind.String)
+            if (hasRequestedPrice)
             {
                 return url.GetString();
             }
@@ -260,7 +273,8 @@ public sealed class StripeBillingService(
 
     private static string CheckoutIdempotencyKey(string userId, string priceId, bool trial)
     {
-        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + "\n" + priceId + "\n" + trial))).ToLowerInvariant();
+        // Competing trial requests must share a key across monthly and annual prices.
+        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + "\n" + (trial ? "trial" : priceId) + "\n" + trial))).ToLowerInvariant();
         var utcDay = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
         return $"flowmate-checkout-{requestHash}-{utcDay}";
@@ -346,7 +360,42 @@ public sealed class StripeBillingService(
         entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "cancelled";
         entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
         entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number;
-        entitlement.PeriodEndsAt = UnixTime(subscription, "current_period_end");
+        entitlement.PeriodEndsAt = (entitlement.SubscriptionStatus == "trialing" ? UnixTime(subscription, "trial_end") : null)
+            ?? UnixTime(subscription, "current_period_end");
+        entitlement.SubscriptionInterval = ReadSubscriptionInterval(subscription);
+    }
+
+    private static BillingInterval? ReadSubscriptionInterval(JsonElement subscription)
+    {
+        if (!subscription.TryGetProperty("items", out var items)
+            || !items.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in data.EnumerateArray())
+        {
+            if (!item.TryGetProperty("price", out var price)
+                || price.ValueKind != JsonValueKind.Object
+                || !price.TryGetProperty("recurring", out var recurring)
+                || recurring.ValueKind != JsonValueKind.Object
+                || !recurring.TryGetProperty("interval", out var interval))
+            {
+                continue;
+            }
+
+            var count = recurring.TryGetProperty("interval_count", out var intervalCount) ? intervalCount.GetInt32() : 1;
+
+            return (interval.GetString(), count) switch
+            {
+                ("month", 1) => BillingInterval.Monthly,
+                ("year", 1) or ("month", 12) => BillingInterval.Annual,
+                _ => null
+            };
+        }
+
+        return null;
     }
 
     private async Task<string> EnsureCustomerAsync(BillingEntitlementDocument entitlement, string userId, string? email, CancellationToken cancellationToken)

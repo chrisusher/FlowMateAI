@@ -74,6 +74,12 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
     }
 
     public string PriceLabel => Prices.FirstOrDefault(p => p.Interval == (Annual ? "year" : "month"))?.Display ?? "Pricing unavailable";
+    public string RenewalChargeLabel => BillingState?.SubscriptionInterval switch
+    {
+        BillingInterval.Annual => "annual",
+        BillingInterval.Monthly => "monthly",
+        _ => "subscription"
+    };
 
     public async Task ShowCheckoutReturn(CheckoutOutcome outcome)
     {

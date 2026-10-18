@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 using Services.Billing;
 using Services.Database;
 using Services.Repositories;
@@ -55,6 +56,70 @@ public sealed class StripeBillingServiceTests
         Assert.That(handler.CheckoutIdempotencyKeys[0], Is.Not.EqualTo(handler.CheckoutIdempotencyKeys[1]));
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task TrialCheckoutReusesExistingTrialWhenSelectedIntervalChanges(bool annual)
+    {
+        var handler = new StripeHandler();
+        var service = CreateService(handler, _repository!);
+
+        var first = await service.StartTrialAsync("user", null, annual);
+        var switched = await service.StartTrialAsync("user", null, !annual);
+        var retry = await service.StartTrialAsync("user", null, !annual);
+
+        Assert.That(first.Succeeded, Is.True);
+        Assert.That(switched.Url, Is.EqualTo(first.Url));
+        Assert.That(retry.Url, Is.EqualTo(first.Url));
+        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
+        Assert.That(handler.OpenCheckoutSessions.Count(session => session.Trial), Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task ConcurrentMonthlyAndAnnualTrialRequestsCannotCreateTwoSessions()
+    {
+        var bothRequestsStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requestsStarted = 0;
+        var handler = new StripeHandler
+        {
+            BeforeCheckoutCreation = cancellationToken =>
+            {
+                if (Interlocked.Increment(ref requestsStarted) == 2)
+                {
+                    bothRequestsStarted.TrySetResult();
+                }
+
+                return bothRequestsStarted.Task.WaitAsync(cancellationToken);
+            }
+        };
+        _repository!.Entitlement.StripeCustomerId = "cus_existing";
+        var service = CreateService(handler, _repository);
+
+        var results = await Task.WhenAll(
+            service.StartTrialAsync("user", null, false),
+            service.StartTrialAsync("user", null, true)).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.That(handler.CheckoutIdempotencyKeys.Distinct().Count(), Is.EqualTo(1));
+        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
+        Assert.That(results.Count(result => result.Succeeded), Is.EqualTo(1));
+
+        var retry = await service.StartTrialAsync("user", null, true);
+        Assert.That(retry.Url, Is.EqualTo(results.Single(result => result.Succeeded).Url));
+        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task TrialCheckoutDoesNotReuseAnOpenPaidCheckout()
+    {
+        var handler = new StripeHandler();
+        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/paid"));
+        var service = CreateService(handler, _repository!);
+
+        var result = await service.StartTrialAsync("user", null, false);
+
+        Assert.That(result.Url, Is.Not.EqualTo("https://checkout.example.test/paid"));
+        Assert.That(handler.CheckoutSessionCreations, Is.EqualTo(1));
+    }
+
     [Test]
     public async Task CheckoutDoesNotReuseOpenSessionOutsideSubscriptionMode()
     {
@@ -99,12 +164,13 @@ public sealed class StripeBillingServiceTests
     {
         var handler = new StripeHandler
         {
-            SubscriptionsJson = $$"""
+            SubscriptionsJson = """
                 {"data":[
                     {"id":"sub_ended","customer":"cus_existing","status":"canceled","trial_start":1700000000,"current_period_end":1701209600},
-                    {"id":"sub_confirmed","customer":"cus_existing","status":"{{status}}","trial_start":null,"current_period_end":1792329600}
+                    {"id":"sub_confirmed","customer":"cus_existing","status":"$STATUS","trial_start":null,"current_period_end":1792329600,
+                     "items":{"data":[{"price":{"recurring":{"interval":"year","interval_count":1}}}]}}
                 ]}
-                """
+                """.Replace("$STATUS", status, StringComparison.Ordinal)
         };
         var repository = new StubBillingRepository
         {
@@ -124,6 +190,7 @@ public sealed class StripeBillingServiceTests
             Assert.That(saved.StripeSubscriptionId, Is.EqualTo("sub_confirmed"));
             Assert.That(saved.PeriodEndsAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1792329600)));
             Assert.That(saved.TrialUsed, Is.True);
+            Assert.That(saved.SubscriptionInterval, Is.EqualTo(BillingInterval.Annual));
         };
         var service = CreateService(handler, repository);
 
@@ -141,11 +208,40 @@ public sealed class StripeBillingServiceTests
         Assert.That(summary.Plan, Is.EqualTo("Pro"));
         Assert.That(summary.Status, Is.EqualTo(status));
         Assert.That(summary.PromptLimit, Is.EqualTo(100));
+        Assert.That(summary.SubscriptionInterval, Is.EqualTo(BillingInterval.Annual));
         Assert.That(reservation.Limit, Is.EqualTo(100));
 
         var subscriptionQueries = handler.Requests.Count(path => path.StartsWith("subscriptions?", StringComparison.Ordinal));
         await service.CreateCheckoutAsync("user", null, false);
         Assert.That(handler.Requests.Count(path => path.StartsWith("subscriptions?", StringComparison.Ordinal)), Is.EqualTo(subscriptionQueries));
+    }
+
+    [TestCase("month", 1, BillingInterval.Monthly)]
+    [TestCase("year", 1, BillingInterval.Annual)]
+    [TestCase("month", 12, BillingInterval.Annual)]
+    [TestCase("month", 6, null)]
+    [TestCase("week", 1, null)]
+    public async Task SubscriptionWebhookPersistsConfirmedRenewalInterval(string interval, int count, BillingInterval? expected)
+    {
+        _repository!.Entitlement.SubscriptionInterval = BillingInterval.Annual;
+        var service = CreateService(new StripeHandler(), _repository);
+        var payload = """
+            {"id":"evt_subscription","type":"customer.subscription.updated","data":{"object":{
+                "id":"sub_confirmed","customer":"cus_existing","metadata":{"user_id":"user"},
+                "status":"trialing","trial_start":1791120000,"trial_end":1792329600,
+                "items":{"data":[{"price":{"recurring":{"interval":"$INTERVAL","interval_count":$COUNT}}}]}
+            }}}
+            """.Replace("$INTERVAL", interval, StringComparison.Ordinal).Replace("$COUNT", count.ToString(), StringComparison.Ordinal);
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var digest = HMACSHA256.HashData(Encoding.UTF8.GetBytes("whsec_test_placeholder"), Encoding.UTF8.GetBytes($"{timestamp}.{payload}"));
+
+        var accepted = await service.ProcessWebhookAsync(payload, $"t={timestamp},v1={Convert.ToHexString(digest)}");
+        var summary = await service.GetSummaryAsync("user");
+
+        Assert.That(accepted, Is.True);
+        Assert.That(_repository.SavedEntitlements.Single().SubscriptionInterval, Is.EqualTo(expected));
+        Assert.That(summary.SubscriptionInterval, Is.EqualTo(expected));
+        Assert.That(summary.PeriodEndsAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1792329600)));
     }
 
     [Test]
@@ -225,6 +321,7 @@ public sealed class StripeBillingServiceTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Stripe:SecretKey"] = "sk_test_placeholder",
+            ["Stripe:WebhookSecret"] = "whsec_test_placeholder",
             ["Stripe:MonthlyPriceId"] = "price_monthly",
             ["Stripe:AnnualPriceId"] = "price_annual",
             ["WebApp:Origin"] = "https://app.example.test"
@@ -240,6 +337,7 @@ public sealed class StripeBillingServiceTests
 
     private sealed class StripeHandler : HttpMessageHandler
     {
+        private readonly Dictionary<string, (string Form, string Url)> _checkoutRequests = [];
         public List<string> Requests { get; } = [];
         public List<string> CheckoutIdempotencyKeys { get; } = [];
 
@@ -255,6 +353,7 @@ public sealed class StripeBillingServiceTests
         }
 
         public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
+        public Func<CancellationToken, Task>? BeforeCheckoutCreation { get; init; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -278,6 +377,7 @@ public sealed class StripeBillingServiceTests
                 {
                     mode = session.Mode,
                     url = session.Url,
+                    metadata = new { flowmate_trial = session.Trial ? "true" : "false" },
                     line_items = new
                     {
                         data = new[]
@@ -301,18 +401,38 @@ public sealed class StripeBillingServiceTests
 
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal))
             {
-                CheckoutSessionCreations++;
-                CheckoutIdempotencyKeys.Add(request.Headers.GetValues("Idempotency-Key").Single());
                 var form = await request.Content!.ReadAsStringAsync(cancellationToken);
-                var priceId = FormValue(form, "line_items[0][price]")!;
-                var url = $"https://checkout.example.test/session/{priceId}";
-                OpenCheckoutSessions.Add(new OpenCheckoutSession("subscription", priceId, url));
 
-                return JsonResponse(JsonSerializer.Serialize(new
+                if (BeforeCheckoutCreation is not null)
                 {
-                    id = "cs_test",
-                    url
-                }));
+                    await BeforeCheckoutCreation(cancellationToken);
+                }
+
+                var key = request.Headers.GetValues("Idempotency-Key").Single();
+
+                lock (_checkoutRequests)
+                {
+                    CheckoutIdempotencyKeys.Add(key);
+
+                    if (_checkoutRequests.TryGetValue(key, out var previous))
+                    {
+                        return previous.Form == form
+                            ? JsonResponse(JsonSerializer.Serialize(new { url = previous.Url }))
+                            : new HttpResponseMessage(HttpStatusCode.BadRequest)
+                            {
+                                Content = new StringContent("{\"error\":{\"message\":\"Idempotency key reused with different parameters.\"}}")
+                            };
+                    }
+
+                    CheckoutSessionCreations++;
+                    var priceId = FormValue(form, "line_items[0][price]")!;
+                    var url = $"https://checkout.example.test/session/{priceId}";
+                    var trial = FormValue(form, "metadata[flowmate_trial]") == "true";
+                    OpenCheckoutSessions.Add(new OpenCheckoutSession("subscription", priceId, url, trial));
+                    _checkoutRequests.Add(key, (form, url));
+
+                    return JsonResponse(JsonSerializer.Serialize(new { id = "cs_test", url }));
+                }
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/billing_portal/sessions", StringComparison.Ordinal))
@@ -336,7 +456,7 @@ public sealed class StripeBillingServiceTests
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
 
-        public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url);
+        public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url, bool Trial = false);
     }
 
     private sealed class StubWorkspaceService : IWorkspaceService

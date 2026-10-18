@@ -35,6 +35,35 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(cut.Find(".plan-button").TextContent, Does.Contain("Pro subscription active"));
     }
 
+    [TestCase(BillingInterval.Annual, "annual")]
+    [TestCase(BillingInterval.Monthly, "monthly")]
+    [TestCase(null, "subscription")]
+    public async Task TrialRenewalCopyUsesConfirmedIntervalAfterFreshLoadAndIgnoresPricingToggle(BillingInterval? interval, string chargeLabel)
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "trialing", true, DateTimeOffset.UtcNow.AddDays(10), 0, 100, interval))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        Assert.That(Billing.Annual, Is.False);
+        var cut = Render<ProPlanCard>();
+        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"avoid the {chargeLabel} charge"));
+
+        await cut.InvokeAsync(() => Billing.Annual = true);
+        cut.Render();
+        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"avoid the {chargeLabel} charge"));
+    }
+
     [Test]
     public async Task RepeatedCheckoutClicksSendOnlyOneRequest()
     {
