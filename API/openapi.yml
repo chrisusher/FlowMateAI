@@ -306,6 +306,11 @@ components:
           type: string
           format: date-time
           nullable: true
+        subscriptionInterval:
+          type: string
+          enum: [month, year]
+          nullable: true
+          description: Confirmed subscription renewal interval from Stripe; null when not yet known.
         promptsUsed:
           type: integer
         promptLimit:

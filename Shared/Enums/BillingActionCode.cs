@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<BillingActionCode>))]
 public enum BillingActionCode
 {
     [JsonStringEnumMemberName("billing_unavailable")]
@@ -18,5 +19,8 @@ public enum BillingActionCode
     CustomerMissing = 4,
 
     [JsonStringEnumMemberName("request_failed")]
-    RequestFailed = 5
+    RequestFailed = 5,
+
+    [JsonStringEnumMemberName("checkout_in_progress")]
+    CheckoutInProgress = 6
 }

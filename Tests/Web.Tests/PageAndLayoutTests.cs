@@ -65,7 +65,7 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     [Test]
     public async Task PricingPageChangesIntervalAndShowsActionMessages()
     {
-        await Billing.InitializeAsync();
+        await Billing.InitialiseAsync();
         var cut = Render<PricingPage>();
         cut.FindAll(".billing-toggle button")[1].Click();
         Assert.That(Billing.Annual, Is.True);

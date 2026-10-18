@@ -501,7 +501,7 @@ WebAuthProvider.login(account)
                     // No browser available on device
                 }
                 error.isAuthenticationCanceled -> {
-                    // User canceled the login
+                    // User cancelled the login
                 }
                 else -> {
                     // Other authentication error
@@ -891,7 +891,7 @@ authentication.login(...)
                     // Fallback to in-app WebView (not recommended)
                 }
                 error.isAuthenticationCanceled -> {
-                    // User canceled the login flow
+                    // User cancelled the login flow
                 }
                 error.statusCode == 429 -> {
                     // Rate limited - too many login attempts

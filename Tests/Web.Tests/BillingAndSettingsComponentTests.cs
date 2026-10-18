@@ -23,7 +23,8 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     public async Task ProPlanCardChangesPriceAndRoutesEntitledCustomersToBillingPortal()
     {
         await SignInAsync();
-        await Billing.InitializeAsync();
+        await Billing.InitialiseAsync();
+
         var cut = Render<ProPlanCard>();
         Assert.That(Content(cut.Find(".price")), Is.EqualTo("£10 / month"));
         await cut.InvokeAsync(() => Billing.Annual = true);
@@ -34,6 +35,35 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(cut.Find(".plan-button").TextContent, Does.Contain("Pro subscription active"));
     }
 
+    [TestCase(BillingInterval.Annual, "annual")]
+    [TestCase(BillingInterval.Monthly, "monthly")]
+    [TestCase(null, "subscription")]
+    public async Task TrialRenewalCopyUsesConfirmedIntervalAfterFreshLoadAndIgnoresPricingToggle(BillingInterval? interval, string chargeLabel)
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "trialing", true, DateTimeOffset.UtcNow.AddDays(10), 0, 100, interval))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        Assert.That(Billing.Annual, Is.False);
+        var cut = Render<ProPlanCard>();
+        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"avoid the {chargeLabel} charge"));
+
+        await cut.InvokeAsync(() => Billing.Annual = true);
+        cut.Render();
+        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"avoid the {chargeLabel} charge"));
+    }
+
     [Test]
     public async Task RepeatedCheckoutClicksSendOnlyOneRequest()
     {
@@ -41,6 +71,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         var requestStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var checkoutRequests = 0;
+
         Api.Respond = async (request, cancellationToken) =>
         {
             if (request.RequestUri!.AbsolutePath == "/api/v1/billing/prices")
@@ -74,7 +105,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
             return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
         };
 
-        await Billing.InitializeAsync();
+        await Billing.InitialiseAsync();
         var firstCheckout = Billing.BuyPro();
         await requestStarted.Task;
         var secondCheckout = Billing.BuyPro();
@@ -86,11 +117,13 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Billing.CheckoutInProgress, Is.False);
     }
 
-    [Test]
-    public async Task CheckoutReturnShowsPendingUntilServerConfirmsPro()
+    [TestCase(CheckoutOutcome.Return, "active")]
+    [TestCase(CheckoutOutcome.TrialReturn, "trialing")]
+    public async Task CheckoutReturnSyncsWorkspacePlanWhenServerConfirmsPro(CheckoutOutcome outcome, string confirmedStatus)
     {
         await SignInAsync();
-        var status = "Free";
+        var plan = BillingPlan.Free;
+
         Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
         {
             "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
@@ -99,27 +132,53 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
             },
             "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(new BillingSummary(status, status == "Pro" ? "active" : "none", false, null, 0, 10))
+                Content = JsonContent.Create(new BillingSummary(plan.ToString(), plan == BillingPlan.Pro ? confirmedStatus : "none", false, null, 0, plan == BillingPlan.Pro ? 100 : 10))
             },
             _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
         });
 
-        await Billing.InitializeAsync();
-        Billing.ShowCheckoutReturn(CheckoutOutcome.Return);
+        await Billing.InitialiseAsync();
+        await Billing.ShowCheckoutReturn(outcome);
+        
         Assert.That(Billing.CheckoutPending, Is.True);
-        Assert.That(Billing.BillingMessage, Does.Contain("Payment is processing"));
         Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
 
-        status = "Pro";
+        await Billing.RefreshSubscriptionStatusAsync();
+        Assert.That(Billing.CheckoutPending, Is.True);
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
+
+        var previousWrites = WorkspaceModule.Invocations.Count(call => call.Identifier == "write");
+        plan = BillingPlan.Pro;
         await Billing.RefreshSubscriptionStatusAsync();
         Assert.That(Billing.CheckoutPending, Is.False);
         Assert.That(Billing.BillingMessage, Is.EqualTo("Your Pro subscription is active."));
+        Assert.That(Billing.BillingState?.Status, Is.EqualTo(confirmedStatus));
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Pro));
+        Assert.That(Projects.ProjectLimit, Is.EqualTo(25));
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "write"), Is.GreaterThan(previousWrites));
+    }
+
+    [Test]
+    public async Task FailedSubscriptionRefreshPreservesWorkspacePlanAndPendingCheckout()
+    {
+        await SignInAsync();
+        await Billing.ShowCheckoutReturn(CheckoutOutcome.TrialReturn);
+        var previousWrites = WorkspaceModule.Invocations.Count(call => call.Identifier == "write");
+        Api.Respond = (_, _) => throw new HttpRequestException("Offline");
+
+        await Billing.RefreshSubscriptionStatusAsync();
+
+        Assert.That(Billing.CheckoutPending, Is.True);
+        Assert.That(Store.Data.Plan, Is.EqualTo(BillingPlan.Free));
+        Assert.That(Billing.BillingMessage, Is.EqualTo("Subscription status could not be refreshed. Try again in a moment."));
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "write"), Is.EqualTo(previousWrites));
     }
 
     [Test]
     public async Task ProPlanCardReportsNetworkFailure()
     {
         await SignInAsync();
+
         Api.Respond = (request, _) => request.RequestUri!.AbsolutePath switch
         {
             "/api/v1/billing/prices" => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
@@ -136,7 +195,8 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
             }),
             _ => throw new HttpRequestException("Offline")
         };
-        await Billing.InitializeAsync();
+        await Billing.InitialiseAsync();
+
         var cut = Render<ProPlanCard>();
         await cut.InvokeAsync(() => Billing.BuyPro());
         Assert.That(Billing.BillingMessage, Is.EqualTo("Checkout is temporarily unavailable."));
@@ -155,19 +215,35 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Api.Paths, Is.Empty);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void TrialCancellationReturnRestoresSelectedBillingInterval(bool annual)
+    {
+        Navigation.NavigateTo($"pricing?checkout=trial-cancelled&annual={annual.ToString().ToLowerInvariant()}");
+
+        Render<PricingPage>();
+
+        Assert.That(Billing.Annual, Is.EqualTo(annual));
+        Assert.That(Billing.BillingMessage, Does.Contain("Trial checkout was cancelled"));
+    }
+
     [Test]
     public async Task ProfileCardEditsAndSavesProfileAndShowsAuthenticatedEmail()
     {
         await SignInAsync();
         var cut = Render<ProfileCard>();
+
         Assert.That(cut.FindAll("input")[1].GetAttribute("value"), Is.EqualTo("alex@example.test"));
         Assert.That(cut.FindAll("input")[1].HasAttribute("disabled"), Is.True);
+
         cut.Find("input").Change("New name");
         cut.Find("select").Change("Asia/Tokyo");
         cut.Find(".quiet-button").Click();
+
         Assert.That(Store.Data.DisplayName, Is.EqualTo("New name"));
         Assert.That(Store.Data.TimeZone, Is.EqualTo("Asia/Tokyo"));
         Assert.That(WorkspaceModule.Invocations.Any(call => call.Identifier == "write"), Is.True);
+
         cut.Find(".text-button").Click();
         Assert.That(AuthModule.Invocations.Any(call => call.Identifier == "logout"), Is.True);
     }
@@ -201,9 +277,12 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     {
         var cut = Render<PreferencesCard>();
         cut.FindAll(".setting-control")[0].Click();
+
         Assert.That(cut.Markup, Does.Contain("Dark mode on"));
         Assert.That(JSInterop.Invocations.Any(call => call.Identifier == "localStorage.setItem" && Equals(call.Arguments[0], "flowmate.theme") && Equals(call.Arguments[1], "dark")), Is.True);
+
         Assert.That(JSInterop.Invocations.Any(call => call.Identifier == "eval" && Equals(call.Arguments[0], "document.documentElement.dataset.theme='dark'")), Is.True);
+
         cut.FindAll(".setting-control")[1].Click();
         Assert.That(Store.Data.Muted, Is.True);
         Assert.That(cut.Markup, Does.Contain("Muted"));
@@ -216,9 +295,11 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     {
         Store.Data.Plan = plan;
         var cut = Render<BillingCard>();
+
         Assert.That(Content(cut.Find(".setting-row")), Does.Contain($"Up to {projects} projects"));
         Assert.That(Content(cut.Find(".setting-row")), Does.Contain($"{prompts} coach prompts"));
         Assert.That(cut.Find("article").Id, Is.EqualTo("billing"));
+
         cut.Find("button").Click();
         Assert.That(Billing.BillingMessage, Is.EqualTo("Portal unavailable"));
     }

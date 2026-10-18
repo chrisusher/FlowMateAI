@@ -155,7 +155,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void TaskNamesRenderAsTextAndRemovalCanBeCanceled()
+    public void TaskNamesRenderAsTextAndRemovalCanBeCancelled()
     {
         PlannedTask.Title = "<img src=x onerror=alert(1)>";
         var cut = Render<AllTasksCard>();

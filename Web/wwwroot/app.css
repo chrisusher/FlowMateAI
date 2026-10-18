@@ -1732,10 +1732,11 @@ a {
 
 .plan-button {
     width: 100%;
-    height: 37px;
-    border-radius: 8px;
+    min-height: 42px;
+    border-radius: 9px;
     font-weight: 600;
-    font-size: 10px
+    font-size: 11px;
+    transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease, border-color .15s ease
 }
 
 .plan-button.secondary {
@@ -1746,8 +1747,51 @@ a {
 
 .plan-button.primary {
     border: 0;
-    background: #626ee4;
-    color: #fff
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 24%, transparent)
+}
+
+.plan-button.primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 88%, #161a42);
+    box-shadow: 0 6px 15px color-mix(in srgb, var(--accent) 32%, transparent);
+    transform: translateY(-1px)
+}
+
+.plan-button:focus-visible,
+.checkout-button:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 38%, transparent);
+    outline-offset: 3px
+}
+
+.plan-button:disabled {
+    cursor: not-allowed;
+    opacity: .58;
+    box-shadow: none
+}
+
+.checkout-button {
+    width: 100%;
+    min-height: 40px;
+    margin-top: 10px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 600;
+    transition: border-color .15s ease, color .15s ease, background-color .15s ease
+}
+
+.checkout-button:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent)
+}
+
+.checkout-button:disabled {
+    cursor: not-allowed;
+    opacity: .6
 }
 
 .trial-copy {

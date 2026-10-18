@@ -29,6 +29,7 @@ public class DatabaseContext : DbContext
         modelBuilder.Entity<BillingEntitlementDocument>(entity =>
         {
             entity.ToContainer("BillingEntitlements");
+            entity.Property(x => x.SubscriptionInterval).HasConversion<string>();
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.UserId);
             entity.Property(x => x.ETag).IsETagConcurrency();

@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<TimerPhase>))]
 public enum TimerPhase
 {
     [JsonStringEnumMemberName("idle")]

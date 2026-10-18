@@ -33,6 +33,7 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
             existing.SubscriptionStatus = entitlement.SubscriptionStatus;
             existing.TrialUsed = entitlement.TrialUsed;
             existing.PeriodEndsAt = entitlement.PeriodEndsAt;
+            existing.SubscriptionInterval = entitlement.SubscriptionInterval;
             // Prompt usage is changed only through the atomic reservation/release methods below.
         }
         await database.SaveChangesAsync(cancellationToken);

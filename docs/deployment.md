@@ -16,6 +16,10 @@ aspire start --apphost AppHost\AppHost.csproj
 
 The signed-in Azure account needs permission to create resource groups and resources. Aspire's local Azure resources are billable. The separate GitHub Actions workflow below continues to deploy the Static Web App and Functions API to resources that already exist.
 
+For local billing, keep these Stripe entries in the ignored `.env` file at the repository root: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_MONTHLY_PRICE_ID`, and `STRIPE_ANNUAL_PRICE_ID`. AppHost adds the values as secret parameters in the `flowmate-secrets` Key Vault and passes Key Vault references to the API. Do not commit `.env` or copy these values into the browser app settings.
+
+For local webhook tests, run `stripe listen --events customer.subscription.created,customer.subscription.updated,customer.subscription.deleted --forward-to http://localhost:<API-http-port>/api/v1/webhooks/stripe` and set `STRIPE_WEBHOOK_SECRET` to the `whsec_...` value printed by the CLI. The CLI secret is specific to that listener and differs from a Stripe Dashboard endpoint secret. Keep the listener running while testing.
+
 ## GitHub Actions settings
 
 For the Auth0 dashboard setup and the exact frontend/API values, see [Auth0 setup for Azure](auth0-azure-setup.md).
@@ -38,7 +42,7 @@ Configure this repository variable:
 
 Set `Auth0__Authority` to the Auth0 tenant issuer including `https://` and the trailing slash, and `Auth0__Audience` to the API audience registered in Auth0. Set `Cors__AllowedOrigins__0` to the exact Static Web App origin, with no path or trailing slash. Also configure `Database__AccountEndpoint`, `Database__Key`, `Database__DatabaseName`, and `ConnectionStrings__Storage` from server-side settings or a secret store. The current Cosmos provider uses the account key, so supply it through a protected Function App setting or Key Vault reference.
 
-Set `Stripe__SecretKey`, `Stripe__WebhookSecret`, `Stripe__MonthlyPriceId`, `Stripe__AnnualPriceId`, and `WebApp__Origin` on the Function App. Register `https://<function-app-host>/api/webhooks/stripe` in Stripe and subscribe to `customer.subscription.created`, `customer.subscription.updated`, and `customer.subscription.deleted`. Configure `Foundry__Endpoint`, `Foundry__ApiKey`, `Foundry__Deployment`, and `Foundry__ApiVersion` on the Function App; the coach sends the user's own tasks, projects, and focus totals to that deployment.
+Set `Stripe__SecretKey`, `Stripe__WebhookSecret`, `Stripe__MonthlyPriceId`, `Stripe__AnnualPriceId`, and `WebApp__Origin` on the Function App. In Stripe Workbench, create a snapshot event destination for your account at `https://<function-app-host>/api/v1/webhooks/stripe`, and subscribe to `customer.subscription.created`, `customer.subscription.updated`, and `customer.subscription.deleted`. The API reads the subscription from the event's `data.object`, so configure snapshot payloads rather than thin events. Use the signing secret shown for that specific endpoint and mode as `Stripe__WebhookSecret`. Configure `Foundry__Endpoint`, `Foundry__ApiKey`, `Foundry__Deployment`, and `Foundry__ApiVersion` on the Function App; the coach sends the user's own tasks, projects, and focus totals to that deployment.
 
 Set the web app's `ApiBaseUrl` to the HTTPS Functions API origin. Configure the Auth0 SPA client with the Static Web App origin and callback/logout URLs. Register separate Google, GitHub, Microsoft personal, and Microsoft work/school connections in Auth0. Keep Stripe, Foundry, Cosmos, and storage credentials in server-side app settings or Key Vault; do not add them to the Blazor app settings. `API/appsettings.example.json` lists the expected server-side keys.
 

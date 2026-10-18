@@ -1,10 +1,38 @@
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Foundry;
+using DotNetEnv;
 using Microsoft.Extensions.Configuration;
+
+var repositoryRoot = FindRepositoryRoot();
+
+if (repositoryRoot is not null)
+{
+    var dotEnvPath = Path.Combine(repositoryRoot, ".env");
+
+    if (File.Exists(dotEnvPath))
+    {
+        Env.Load(dotEnvPath);
+    }
+}
 
 var builder = DistributedApplication.CreateBuilder(args);
 
 builder.Environment.ApplicationName = "FlowMate AI";
+
+string? LocalSecret(params string[] names)
+{
+    foreach (var name in names)
+    {
+        var value = builder.Configuration[name] ?? Environment.GetEnvironmentVariable(name);
+
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+    }
+
+    return null;
+}
 
 // Parameters
 var environment = builder.AddParameter("environment", false);
@@ -45,6 +73,29 @@ var database = cosmosDb.AddCosmosDatabase("database", "flowmate");
 // Key Vault
 var keyVault = builder.AddAzureKeyVault("flowmate-secrets");
 
+var stripeSecretReferences = new Dictionary<string, string>(StringComparer.Ordinal)
+{
+    ["Stripe__SecretKey"] = AddStripeVaultSecret("stripe-secret-key", LocalSecret("STRIPE_SECRET_KEY", "Stripe:SecretKey")),
+    ["Stripe__WebhookSecret"] = AddStripeVaultSecret("stripe-webhook-secret", LocalSecret("STRIPE_WEBHOOK_SECRET", "Stripe:WebhookSecret")),
+    ["Stripe__MonthlyPriceId"] = AddStripeVaultSecret("stripe-monthly-price-id", LocalSecret("STRIPE_MONTHLY_PRICE_ID", "Stripe:MonthlyPriceId")),
+    ["Stripe__AnnualPriceId"] = AddStripeVaultSecret("stripe-annual-price-id", LocalSecret("STRIPE_ANNUAL_PRICE_ID", "Stripe:AnnualPriceId"))
+};
+
+string AddStripeVaultSecret(string vaultSecretName, string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return string.Empty;
+    }
+
+    var parameterName = $"{vaultSecretName}-value";
+    builder.Configuration[$"Parameters:{parameterName}"] = value;
+    var parameter = builder.AddParameter(parameterName, secret: true);
+    keyVault.AddSecret(vaultSecretName, parameter);
+
+    return vaultSecretName;
+}
+
 // Service Bus
 var serviceBus = builder.AddAzureServiceBus("flowmate-service-bus");
 
@@ -74,6 +125,14 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithReference(serviceBus)
     .WithReference(foundryProject)
     .WithExternalHttpEndpoints();
+
+foreach (var (configurationKey, vaultSecretName) in stripeSecretReferences)
+{
+    if (!string.IsNullOrWhiteSpace(vaultSecretName))
+    {
+        api.WithEnvironment(configurationKey, keyVault.GetSecret(vaultSecretName));
+    }
+}
 
 var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
     .WaitFor(mcpHostStorage)
@@ -381,6 +440,25 @@ var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WithHttpHealthCheck("/frontend/")
     .WithBlazorClientApp(frontend);
 
-api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"));
+api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"))
+    .WithEnvironment("WebApp__Origin", gateway.GetEndpoint("https"))
+    .WithEnvironment("WebApp__BasePath", "/frontend");
 
 builder.Build().Run();
+
+static string? FindRepositoryRoot()
+{
+    foreach (var startingPath in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+    {
+        for (var directory = new DirectoryInfo(startingPath); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "FlowMateAI.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+    }
+
+    return null;
+}
+

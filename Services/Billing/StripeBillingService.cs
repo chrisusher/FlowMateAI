@@ -8,6 +8,7 @@ using Services.Repositories;
 namespace Services.Billing;
 
 public sealed class StripeBillingService(
+    FlowMateEnvironment environment,
     IConfiguration configuration,
     IHttpClientFactory clients,
     IBillingRepository repository) : IBillingService
@@ -21,7 +22,7 @@ public sealed class StripeBillingService(
         var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
         var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
 
-        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit);
+        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit, entitlement.SubscriptionInterval);
     }
 
     public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, string month, CancellationToken cancellationToken = default)
@@ -70,74 +71,15 @@ public sealed class StripeBillingService(
         return prices;
     }
 
-    public async Task<BillingActionResponse> StartTrialAsync(string userId, string? email, CancellationToken cancellationToken = default)
-    {
-        var priceId = configuration["Stripe:MonthlyPriceId"];
+    public Task<BillingActionResponse> StartTrialAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default) =>
+        CreateCheckoutAsync(userId, email, annual, cancellationToken, trial: true);
 
-        if (string.IsNullOrWhiteSpace(priceId))
-        {
-            return Failure(BillingActionCode.BillingUnavailable, "Pro pricing is not configured yet.");
-        }
-        var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
-
-        if (IsEntitled(entitlement.SubscriptionStatus))
-        {
-            return await CreatePortalAsync(userId, cancellationToken);
-        }
-
-        if (entitlement.TrialUsed)
-        {
-            return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
-        }
-
-        try
-        {
-            var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
-
-            if (await HasEntitledStripeSubscriptionAsync(customer, cancellationToken))
-            {
-                return await CreatePortalAsync(userId, cancellationToken);
-            }
-
-            var form = new Dictionary<string, string>
-            {
-                ["customer"] = customer,
-                ["items[0][price]"] = priceId,
-                ["trial_period_days"] = "14",
-                ["trial_settings[end_behavior][missing_payment_method]"] = "cancel",
-                ["metadata[user_id]"] = userId
-            };
-            using var response = await SendAsync(HttpMethod.Post, "subscriptions", form, $"flowmate-trial-{userId}", cancellationToken);
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return Failure(BillingActionCode.StripeError, StripeError(body));
-            }
-            using var subscription = JsonDocument.Parse(body);
-            entitlement.StripeSubscriptionId = subscription.RootElement.GetProperty("id").GetString() ?? "";
-            entitlement.SubscriptionStatus = subscription.RootElement.GetProperty("status").GetString() ?? "trialing";
-            entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
-
-            entitlement.TrialUsed = true;
-            entitlement.PeriodEndsAt = UnixTime(subscription.RootElement, "current_period_end");
-
-            await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-
-            return new(true, null, null, "Your 14-day Pro trial has started.");
-        }
-        catch (HttpRequestException)
-        {
-            return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. Try again in a moment.");
-        }
-    }
-
-    public async Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default)
+    public async Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, bool trial = false)
     {
         var priceId = configuration[annual ? "Stripe:AnnualPriceId" : "Stripe:MonthlyPriceId"];
-        var origin = configuration["WebApp:Origin"]?.TrimEnd('/');
+        var appBaseUrl = environment.GetWebAppBaseUrl();
 
-        if (string.IsNullOrWhiteSpace(priceId) || string.IsNullOrWhiteSpace(origin))
+        if (string.IsNullOrWhiteSpace(priceId) || string.IsNullOrWhiteSpace(appBaseUrl))
         {
             return Failure(BillingActionCode.BillingUnavailable, "Checkout is not configured yet.");
         }
@@ -151,18 +93,39 @@ public sealed class StripeBillingService(
                 return await CreatePortalAsync(userId, cancellationToken);
             }
 
-            var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
-
-            if (await HasEntitledStripeSubscriptionAsync(customer, cancellationToken))
+            if (trial && entitlement.TrialUsed)
             {
+                return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
+            }
+
+            var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
+            var stripeState = await GetStripeSubscriptionStateAsync(customer, cancellationToken);
+
+            if (stripeState.EntitledSubscription is { } subscription)
+            {
+                ApplySubscription(entitlement, subscription);
+                entitlement.TrialUsed |= stripeState.TrialUsed;
+                await repository.SaveEntitlementAsync(entitlement, cancellationToken);
+
                 return await CreatePortalAsync(userId, cancellationToken);
             }
 
-            var openSession = await GetOpenCheckoutSessionAsync(customer, priceId, cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(openSession))
+            if (stripeState.TrialUsed && !entitlement.TrialUsed)
             {
-                return new(true, openSession, null, null);
+                entitlement.TrialUsed = true;
+                await repository.SaveEntitlementAsync(entitlement, cancellationToken);
+            }
+
+            if (trial && stripeState.TrialUsed)
+            {
+                return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
+            }
+
+            var existingCheckout = await GetExistingCheckoutResponseAsync(customer, priceId, trial, cancellationToken);
+
+            if (existingCheckout is not null)
+            {
+                return existingCheckout;
             }
 
             var form = new Dictionary<string, string>
@@ -171,12 +134,19 @@ public sealed class StripeBillingService(
                 ["customer"] = customer,
                 ["line_items[0][price]"] = priceId,
                 ["line_items[0][quantity]"] = "1",
-                ["success_url"] = origin + "/pricing?checkout=return",
-                ["cancel_url"] = origin + "/pricing?checkout=cancelled",
-                ["subscription_data[metadata][user_id]"] = userId
+                ["success_url"] = appBaseUrl + (trial ? $"/pricing?checkout=trial-return&annual={annual.ToString().ToLowerInvariant()}" : "/pricing?checkout=return"),
+                ["cancel_url"] = appBaseUrl + (trial ? $"/pricing?checkout=trial-cancelled&annual={annual.ToString().ToLowerInvariant()}" : "/pricing?checkout=cancelled"),
+                ["subscription_data[metadata][user_id]"] = userId,
+                ["metadata[flowmate_trial]"] = trial ? "true" : "false"
             };
 
-            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId, priceId), cancellationToken);
+            if (trial)
+            {
+                form["subscription_data[trial_period_days]"] = "14";
+                form["subscription_data[trial_settings][end_behavior][missing_payment_method]"] = "cancel";
+            }
+
+            using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId), cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -193,7 +163,7 @@ public sealed class StripeBillingService(
         }
     }
 
-    private async Task<bool> HasEntitledStripeSubscriptionAsync(string customerId, CancellationToken cancellationToken)
+    private async Task<(JsonElement? EntitledSubscription, bool TrialUsed)> GetStripeSubscriptionStateAsync(string customerId, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(HttpMethod.Get,
             $"subscriptions?customer={Uri.EscapeDataString(customerId)}&status=all&limit=100", null, null, cancellationToken);
@@ -205,14 +175,31 @@ public sealed class StripeBillingService(
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
 
-        return document.RootElement.TryGetProperty("data", out var subscriptions)
-            && subscriptions.ValueKind == JsonValueKind.Array
-            && subscriptions.EnumerateArray().Any(subscription =>
-                subscription.TryGetProperty("status", out var status)
-                && IsEntitled(status.GetString() ?? ""));
+        if (!document.RootElement.TryGetProperty("data", out var subscriptions) || subscriptions.ValueKind != JsonValueKind.Array)
+        {
+            return (null, false);
+        }
+
+        JsonElement? entitledSubscription = null;
+        var trialUsed = false;
+
+        foreach (var subscription in subscriptions.EnumerateArray())
+        {
+            if (entitledSubscription is null && subscription.TryGetProperty("status", out var status) && IsEntitled(status.GetString() ?? ""))
+            {
+                entitledSubscription = subscription.Clone();
+            }
+
+            if (subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number)
+            {
+                trialUsed = true;
+            }
+        }
+
+        return (entitledSubscription, trialUsed);
     }
 
-    private async Task<string?> GetOpenCheckoutSessionAsync(string customerId, string priceId, CancellationToken cancellationToken)
+    private async Task<BillingActionResponse?> GetExistingCheckoutResponseAsync(string customerId, string priceId, bool trial, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(HttpMethod.Get,
             $"checkout/sessions?customer={Uri.EscapeDataString(customerId)}&status=open&limit=100&expand%5B%5D=data.line_items", null, null, cancellationToken);
@@ -229,17 +216,45 @@ public sealed class StripeBillingService(
             return null;
         }
 
+        BillingActionResponse? existingCheckout = null;
+
         foreach (var session in sessions.EnumerateArray())
         {
             if (!session.TryGetProperty("mode", out var mode)
                 || mode.ValueKind != JsonValueKind.String
-                || mode.GetString() != "subscription"
-                || !session.TryGetProperty("line_items", out var lineItems)
+                || mode.GetString() != "subscription")
+            {
+                continue;
+            }
+
+            var sessionIsTrial = session.TryGetProperty("metadata", out var metadata)
+                && metadata.ValueKind == JsonValueKind.Object
+                && metadata.TryGetProperty("flowmate_trial", out var sessionTrial)
+                && sessionTrial.ValueKind == JsonValueKind.String
+                && sessionTrial.GetString() == "true";
+
+            if (sessionIsTrial != trial
+                || !session.TryGetProperty("url", out var url)
+                || url.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(url.GetString()))
+            {
+                return CheckoutConflict();
+            }
+
+            if (trial)
+            {
+                // A trial keeps its original price, even when the pricing toggle changes.
+                existingCheckout = new(true, url.GetString(), null, null);
+
+                continue;
+            }
+
+            if (!session.TryGetProperty("line_items", out var lineItems)
                 || lineItems.ValueKind != JsonValueKind.Object
                 || !lineItems.TryGetProperty("data", out var items)
                 || items.ValueKind != JsonValueKind.Array)
             {
-                continue;
+                return CheckoutConflict();
             }
 
             var hasRequestedPrice = items.EnumerateArray().Any(item =>
@@ -252,20 +267,24 @@ public sealed class StripeBillingService(
                         && id.ValueKind == JsonValueKind.String
                         && string.Equals(id.GetString(), priceId, StringComparison.Ordinal)));
 
-            if (hasRequestedPrice
-                && session.TryGetProperty("url", out var url)
-                && url.ValueKind == JsonValueKind.String)
+            if (!hasRequestedPrice)
             {
-                return url.GetString();
+                return CheckoutConflict();
             }
+
+            existingCheckout = new(true, url.GetString(), null, null);
         }
 
-        return null;
+        return existingCheckout;
     }
 
-    private static string CheckoutIdempotencyKey(string userId, string priceId)
+    private static BillingActionResponse CheckoutConflict() => Failure(BillingActionCode.CheckoutInProgress,
+        "You already have an open checkout with a different billing selection. Return to that selection to finish it, or wait for the checkout to expire before starting another subscription.");
+
+    private static string CheckoutIdempotencyKey(string userId)
     {
-        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + "\n" + priceId))).ToLowerInvariant();
+        // All subscription requests share a key to prevent competing paid and trial sessions.
+        var requestHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId))).ToLowerInvariant();
         var utcDay = DateTimeOffset.UtcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
         return $"flowmate-checkout-{requestHash}-{utcDay}";
@@ -273,9 +292,9 @@ public sealed class StripeBillingService(
 
     public async Task<BillingActionResponse> CreatePortalAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var origin = configuration["WebApp:Origin"]?.TrimEnd('/');
+        var appBaseUrl = environment.GetWebAppBaseUrl();
 
-        if (string.IsNullOrWhiteSpace(origin))
+        if (string.IsNullOrWhiteSpace(appBaseUrl))
         {
             return Failure(BillingActionCode.BillingUnavailable, "Billing is not configured yet.");
         }
@@ -291,7 +310,7 @@ public sealed class StripeBillingService(
             using var response = await SendAsync(HttpMethod.Post, "billing_portal/sessions", new Dictionary<string, string>
             {
                 ["customer"] = entitlement.StripeCustomerId,
-                ["return_url"] = origin + "/settings"
+                ["return_url"] = appBaseUrl + "/settings"
             }, null, cancellationToken);
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -335,18 +354,58 @@ public sealed class StripeBillingService(
             if (!string.IsNullOrWhiteSpace(userId))
             {
                 var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
-                entitlement.StripeSubscriptionId = subscription.GetProperty("id").GetString() ?? "";
-                entitlement.StripeCustomerId = subscription.GetProperty("customer").GetString() ?? entitlement.StripeCustomerId;
-                entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "canceled";
-                entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
-                entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out _);
-                entitlement.PeriodEndsAt = UnixTime(subscription, "current_period_end");
+                ApplySubscription(entitlement, subscription);
                 await repository.SaveEntitlementAsync(entitlement, cancellationToken);
             }
         }
         await repository.MarkEventProcessedAsync(eventId, cancellationToken);
 
         return true;
+    }
+
+    private static void ApplySubscription(BillingEntitlementDocument entitlement, JsonElement subscription)
+    {
+        entitlement.StripeSubscriptionId = subscription.GetProperty("id").GetString() ?? "";
+        entitlement.StripeCustomerId = subscription.GetProperty("customer").GetString() ?? entitlement.StripeCustomerId;
+        entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "cancelled";
+        entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
+        entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number;
+        entitlement.PeriodEndsAt = (entitlement.SubscriptionStatus == "trialing" ? UnixTime(subscription, "trial_end") : null)
+            ?? UnixTime(subscription, "current_period_end");
+        entitlement.SubscriptionInterval = ReadSubscriptionInterval(subscription);
+    }
+
+    private static BillingInterval? ReadSubscriptionInterval(JsonElement subscription)
+    {
+        if (!subscription.TryGetProperty("items", out var items)
+            || !items.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in data.EnumerateArray())
+        {
+            if (!item.TryGetProperty("price", out var price)
+                || price.ValueKind != JsonValueKind.Object
+                || !price.TryGetProperty("recurring", out var recurring)
+                || recurring.ValueKind != JsonValueKind.Object
+                || !recurring.TryGetProperty("interval", out var interval))
+            {
+                continue;
+            }
+
+            var count = recurring.TryGetProperty("interval_count", out var intervalCount) ? intervalCount.GetInt32() : 1;
+
+            return (interval.GetString(), count) switch
+            {
+                ("month", 1) => BillingInterval.Monthly,
+                ("year", 1) or ("month", 12) => BillingInterval.Annual,
+                _ => null
+            };
+        }
+
+        return null;
     }
 
     private async Task<string> EnsureCustomerAsync(BillingEntitlementDocument entitlement, string userId, string? email, CancellationToken cancellationToken)

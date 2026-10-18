@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<CoachFailureCode>))]
 public enum CoachFailureCode
 {
     [JsonStringEnumMemberName("quota-reached")]

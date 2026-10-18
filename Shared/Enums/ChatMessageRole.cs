@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ChatMessageRole>))]
 public enum ChatMessageRole
 {
     [JsonStringEnumMemberName("user")]

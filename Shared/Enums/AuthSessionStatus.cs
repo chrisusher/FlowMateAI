@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<AuthSessionStatus>))]
 public enum AuthSessionStatus
 {
     [JsonStringEnumMemberName("uninitialized")]

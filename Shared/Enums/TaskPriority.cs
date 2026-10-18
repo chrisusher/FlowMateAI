@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<TaskPriority>))]
 public enum TaskPriority
 {
     [JsonStringEnumMemberName("low")]
