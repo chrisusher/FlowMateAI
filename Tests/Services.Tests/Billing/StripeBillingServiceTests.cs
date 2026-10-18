@@ -198,7 +198,7 @@ public sealed class StripeBillingServiceTests
             ["WebApp:Origin"] = "https://app.example.test"
         }).Build();
 
-        return new(configuration, new TestHttpClientFactory(handler), repository);
+        return new(new FlowMateEnvironment(configuration), configuration, new TestHttpClientFactory(handler), repository);
     }
 
     private sealed class TestHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

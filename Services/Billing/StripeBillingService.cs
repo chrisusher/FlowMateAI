@@ -8,7 +8,7 @@ using Services.Repositories;
 namespace Services.Billing;
 
 public sealed class StripeBillingService(
-    Environment environment,
+    FlowMateEnvironment environment,
     IConfiguration configuration,
     IHttpClientFactory clients,
     IBillingRepository repository) : IBillingService

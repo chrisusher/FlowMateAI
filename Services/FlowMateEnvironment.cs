@@ -1,10 +1,10 @@
 namespace Services;
 
-public class Environment
+public class FlowMateEnvironment
 {
     private readonly IConfiguration _configuration;
 
-    public Environment(IConfiguration configuration)
+    public FlowMateEnvironment(IConfiguration configuration)
     {
         _configuration = configuration;
     }
