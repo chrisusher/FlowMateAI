@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Services;
 using Services.Database;
 using Services.Repositories;
+using Shared.Enums;
 
 namespace CLI.Commands.User;
 
@@ -54,13 +55,17 @@ internal static class GrantProCommand
             var entitlement = await repository.GetEntitlementAsync(userId, operationCancellation.Token);
             entitlement.Plan = "Pro";
             entitlement.SubscriptionStatus = "active";
+            entitlement.SubscriptionInterval = BillingInterval.Monthly;
+            entitlement.PeriodEndsAt = DateTimeOffset.UtcNow.AddMonths(1);
+            entitlement.CancelAtPeriodEnd = false;
             await repository.SaveEntitlementAsync(entitlement, operationCancellation.Token);
 
-            Console.WriteLine("Pro access granted.");
+            Console.WriteLine("Monthly Pro preview access granted.");
             Console.WriteLine($"Email: {email}");
             Console.WriteLine($"Auth0 user ID: {userId}");
             Console.WriteLine($"Cosmos database: {settings.DatabaseName}");
-            Console.WriteLine("This is a manual preview grant; no Stripe subscription or payment was created.");
+            Console.WriteLine($"Simulated monthly period ends: {entitlement.PeriodEndsAt:yyyy-MM-dd} UTC");
+            Console.WriteLine("This is a manual preview grant; no Stripe subscription, renewal, or payment was created.");
 
             return 0;
         }

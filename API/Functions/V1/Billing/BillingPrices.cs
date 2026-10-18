@@ -2,17 +2,18 @@ using API.Security;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
+using Services.Users;
 
 namespace API.Functions.V1.Billing;
 
-public sealed class BillingPrices(Auth0TokenValidator tokens, IBillingService billing)
+public sealed class BillingPrices(Auth0TokenValidator tokens, IBillingService billing, IUserService users)
 {
     [Function("BillingPrices")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/billing/prices")] HttpRequestData request,
         CancellationToken cancellationToken)
     {
-        var (userId, _) = await HttpFunction.UserAsync(request, tokens, cancellationToken);
+        var (userId, _) = await HttpFunction.UserAsync(request, tokens, users, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(userId))
         {

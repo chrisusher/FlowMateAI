@@ -20,7 +20,7 @@ Create an Auth0 machine-to-machine application authorized for the Auth0 Manageme
 
 ## Grant Pro access for a preview
 
-`user grant-pro` resolves an existing Auth0 account by email and upserts its Cosmos billing entitlement to `Pro` with an active status. It grants the same Pro feature limits used by the app, without creating a Stripe customer or subscription. It does not create an Auth0 account; the email must already belong to one. If multiple Auth0 accounts match, pass `--user-id` to select one. The command leaves the account's Stripe identifiers, trial history, and usage counters intact.
+`user grant-pro` resolves an existing Auth0 account by email and upserts its Cosmos billing entitlement to `Pro` with an active status and monthly interval. It sets a simulated period end one month from the grant date so the billing screen can display monthly renewal details. This is preview data only: it does not create a Stripe subscription, renewal, or payment, and Pro access does not automatically expire at that date. It does not create an Auth0 account; the email must already belong to one. If multiple Auth0 accounts match, pass `--user-id` to select one. The command leaves the account's Stripe identifiers, trial history, and usage counters intact.
 
 ## Standalone usage
 

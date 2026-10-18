@@ -12,6 +12,8 @@ public class DatabaseContext : DbContext
 
     public DbSet<StripeEventDocument> StripeEvents => Set<StripeEventDocument>();
 
+    public DbSet<UserDocument> Users => Set<UserDocument>();
+
     public DbSet<WorkspaceDocument> Workspaces => Set<WorkspaceDocument>();
 
     public DbSet<WorkspaceRecordDocument> WorkspaceRecords => Set<WorkspaceRecordDocument>();
@@ -65,6 +67,13 @@ public class DatabaseContext : DbContext
             entity.ToContainer("StripeEvents");
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.PartitionId);
+        });
+
+        modelBuilder.Entity<UserDocument>(entity =>
+        {
+            entity.ToContainer("Users");
+            entity.HasKey(x => x.Id);
+            entity.HasPartitionKey(x => x.UserId);
         });
 
         base.OnModelCreating(modelBuilder);

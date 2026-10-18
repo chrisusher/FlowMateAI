@@ -3,11 +3,12 @@ using ChrisUsher.Core.Shared;
 using Services.Coach;
 using Services.Billing;
 using Services.Workspaces;
+using Services.Users;
 using Shared.Models.Coach;
 
 namespace API.Functions.V1.Coach;
 
-public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces, IBillingService billing)
+public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces, IBillingService billing, IUserService users)
 {
 
     [Function("FocusCoach")]
@@ -15,7 +16,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/coach")] HttpRequestData request,
         CancellationToken cancellationToken)
     {
-        var (userId, _) = await HttpFunction.UserAsync(request, tokens, cancellationToken);
+        var (userId, _) = await HttpFunction.UserAsync(request, tokens, users, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(userId))
         {
