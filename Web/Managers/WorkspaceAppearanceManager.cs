@@ -10,7 +10,7 @@ public sealed class WorkspaceAppearanceManager(WorkspaceStore store, IJSRuntime 
     private bool _initialized;
     public bool IsDark { get; private set; }
 
-    public async Task InitializeAsync()
+    public async Task InitialiseAsync()
     {
         if (_initialized)
         {

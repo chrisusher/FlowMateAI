@@ -35,11 +35,12 @@ public partial class PricingPage
         }
 
         _handledCheckoutOutcome = outcome;
+        
         if (outcome is CheckoutOutcome.TrialReturn or CheckoutOutcome.TrialCancelled)
         {
             Billing.Annual = AnnualTrial == true;
         }
-        await Billing.InitializeAsync();
+        await Billing.InitialiseAsync();
         await Billing.ShowCheckoutReturn(outcome.Value);
     }
 }

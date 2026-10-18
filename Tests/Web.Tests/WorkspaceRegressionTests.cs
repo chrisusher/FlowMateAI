@@ -771,7 +771,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 Content = JsonContent.Create(new ApiError("unauthorized", "The access token expired."), options: SharedCommon.JsonOptions)
             }
         });
-        await Billing.InitializeAsync();
+        await Billing.InitialiseAsync();
         Api.Paths.Clear();
 
         await Billing.BuyPro();
@@ -808,7 +808,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     [Test]
     public async Task PricingPageRetainsTheBillingIntervalWhenRecreated()
     {
-        await Billing.InitializeAsync();
+        await Billing.InitialiseAsync();
         var first = Render<PricingPage>();
         first.FindAll(".billing-toggle button")[1].Click();
         first.Dispose();

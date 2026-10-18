@@ -36,8 +36,8 @@ public partial class WorkspaceLayout
         await Auth.InitialiseAsync();
         await Store.InitialiseAsync();
         Coach.Initialize();
-        await Billing.InitializeAsync();
-        await Appearance.InitializeAsync();
+        await Billing.InitialiseAsync();
+        await Appearance.InitialiseAsync();
 
         if (_disposed)
         {

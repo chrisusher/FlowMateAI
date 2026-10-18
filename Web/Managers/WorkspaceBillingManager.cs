@@ -6,7 +6,7 @@ namespace Web.Managers;
 public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient client, Auth0Client auth, NavigationManager navigation) : WorkspaceManager
 {
     private WorkspaceStore Store => store;
-    private bool _initialized;
+    private bool _initialised;
     private bool _annual;
     private bool _checkoutInProgress;
     private bool _checkoutPending;
@@ -24,17 +24,23 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
             NotifyChanged();
         }
     }
-    public string? BillingMessage { get; private set; }
+    public string? BillingMessage
+    {
+        get; private set;
+    }
     public IReadOnlyList<BillingPrice> Prices { get; private set; } = [];
-    public BillingSummary? BillingState { get; private set; }
+    public BillingSummary? BillingState
+    {
+        get; private set;
+    }
     public bool CheckoutInProgress => _checkoutInProgress;
     public bool CheckoutPending => _checkoutPending;
     public bool HasSelectedPrice => Prices.Any(price => price.Interval == (Annual ? "year" : "month"));
     public bool HasEntitledSubscription => SubscriptionEntitlementExtensions.FromProviderStatus(BillingState?.Status) == SubscriptionEntitlement.Entitled;
 
-    public async Task InitializeAsync()
+    public async Task InitialiseAsync()
     {
-        if (_initialized)
+        if (_initialised)
         {
             return;
         }
@@ -53,7 +59,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
             }
             catch (HttpRequestException) { }
         }
-        _initialized = true;
+        _initialised = true;
         NotifyChanged();
     }
 
@@ -160,7 +166,10 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
             BillingMessage = result.Message;
         }
-        catch (HttpRequestException) { BillingMessage = "Billing is temporarily unavailable."; }
+        catch (HttpRequestException)
+        {
+            BillingMessage = "Billing is temporarily unavailable.";
+        }
         finally
         {
             _checkoutInProgress = false;
