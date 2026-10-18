@@ -110,6 +110,7 @@ var luna = foundry.AddDeployment("gpt56-luna", FoundryModel.OpenAI.Gpt56Luna);
 var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WaitFor(storage)
     .WaitFor(blobs)
+    .WaitFor(database)
     .WithHostStorage(storage)
     .WithEnvironment("ConnectionStrings__Storage", blobs.Resource.ConnectionStringExpression)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)

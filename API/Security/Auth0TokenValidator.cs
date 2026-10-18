@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -117,6 +118,46 @@ public sealed class Auth0TokenValidator(IConfiguration configuration, IHttpClien
                                    ex is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
 
+            return null;
+        }
+    }
+
+    public async Task<string?> GetEmailAsync(string? authorization, string userId, CancellationToken cancellationToken = default)
+    {
+        var token = authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
+            ? authorization[7..].Trim()
+            : "";
+
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(configuration["Auth0:Authority"]))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, configuration["Auth0:Authority"]!.TrimEnd('/') + "/userinfo");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await clients.CreateClient().SendAsync(request, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            using var profile = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            var body = profile.RootElement;
+
+            if (!body.TryGetProperty("sub", out var subject) || subject.GetString() != userId ||
+                !body.TryGetProperty("email", out var email) || email.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            return email.GetString();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException ||
+                                           exception is TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
             return null;
         }
     }
