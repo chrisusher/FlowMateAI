@@ -5,15 +5,35 @@
     <div class="settings-heading">
         <div>
             <h3>Plan &amp; billing</h3>
-            <p>You're currently on the @Store.Data.Plan plan.</p>
+            <p>You're currently on the @(Billing.BillingState is null ? "unconfirmed" : Billing.CurrentPlan.ToString()) plan.</p>
         </div>
-        <button class="text-button" @onclick="Billing.OpenBillingPortal">Manage billing</button>
+        @if (Billing.CanManageSubscription)
+        {
+            <button class="text-button" @onclick="Billing.OpenBillingPortal">Manage billing</button>
+        }
+        else if (Billing.ShouldShowUpgrade)
+        {
+            <a class="text-button" href="pricing">Choose Pro</a>
+        }
+        else
+        {
+            <button class="text-button" @onclick="Billing.RefreshSubscriptionStatusAsync">Refresh status</button>
+        }
     </div>
     <div class="setting-row">
         <div>
-            <strong>@Store.Data.Plan plan</strong>
-            <small>Up to @(Store.Data.Plan == BillingPlan.Pro ? 25 : 3) projects | @((Store.Data.Plan == BillingPlan.Pro) ? "100" : "10") coach prompts / month</small>
+            <strong>@(Billing.BillingState is null ? "Plan" : $"{Billing.CurrentPlan} plan")</strong>
+            <small>@(Billing.BillingState is null ? "Plan limits appear after billing status is confirmed." : $"Up to {(Billing.CurrentPlan == BillingPlan.Pro ? 25 : 3)} projects | {(Billing.CurrentPlan == BillingPlan.Pro ? "100" : "10")} coach prompts / month")</small>
         </div>
-        <span class="plan-status">Active</span>
+        <span class="plan-status" data-status="@Billing.CurrentSubscriptionStatus.ToString().ToLowerInvariant()" role="status">@(Billing.BillingState is null ? "Unconfirmed" : Billing.SubscriptionStatusLabel)</span>
     </div>
+    <p class="billing-status-copy">@(Billing.BillingState is null ? "Billing status is unavailable. Refresh to check your plan and subscription." : Billing.SubscriptionStatusDetail)</p>
+    @if (Billing.CheckoutPending)
+    {
+        <p class="billing-message" role="status" aria-live="polite">@(Billing.BillingMessage ?? "Payment is processing. Pro access will appear when Stripe confirms your subscription.") <button class="text-button" @onclick="Billing.RefreshSubscriptionStatusAsync">Check payment status</button></p>
+    }
+    else if (!string.IsNullOrWhiteSpace(Billing.BillingMessage))
+    {
+        <p class="billing-message" role="status" aria-live="polite">@Billing.BillingMessage</p>
+    }
 </article>

@@ -6,11 +6,48 @@ namespace Web.Tests;
 public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
 {
     [Test]
-    public void UpgradeCardLinksToPricing()
+    public async Task UpgradeCardLinksToPricing()
     {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(Array.Empty<Shared.Contracts.BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new Shared.Contracts.BillingSummary("Free", "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
         var cut = Render<UpgradeCard>();
         Assert.That(cut.Markup, Does.Contain("Make room for more"));
         Assert.That(cut.Find("a").GetAttribute("href"), Is.EqualTo("pricing"));
+    }
+
+    [Test]
+    public async Task UpgradeCardIsHiddenForAnEntitledProCustomer()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(Array.Empty<Shared.Contracts.BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new Shared.Contracts.BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(25), 0, 100))
+            },
+            _ => new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
+
+        var cut = Render<UpgradeCard>();
+
+        Assert.That(cut.FindAll(".upgrade-card"), Is.Empty);
     }
 
     [Test]

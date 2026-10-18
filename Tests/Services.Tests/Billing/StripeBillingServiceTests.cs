@@ -314,6 +314,28 @@ public sealed class StripeBillingServiceTests
     }
 
     [Test]
+    public async Task SubscriptionWebhookPersistsScheduledCancellationForBillingSummary()
+    {
+        var service = CreateService(new StripeHandler(), _repository!);
+        var payload = """
+            {"id":"evt_subscription_cancel","type":"customer.subscription.updated","data":{"object":{
+                "id":"sub_confirmed","customer":"cus_existing","metadata":{"user_id":"user"},
+                "status":"active","cancel_at_period_end":true,"current_period_end":1792329600,
+                "items":{"data":[{"price":{"recurring":{"interval":"month","interval_count":1}}}]}
+            }}}
+            """;
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var digest = HMACSHA256.HashData(Encoding.UTF8.GetBytes("whsec_test_placeholder"), Encoding.UTF8.GetBytes($"{timestamp}.{payload}"));
+
+        var accepted = await service.ProcessWebhookAsync(payload, $"t={timestamp},v1={Convert.ToHexString(digest)}");
+        var summary = await service.GetSummaryAsync("user");
+
+        Assert.That(accepted, Is.True);
+        Assert.That(summary.CancelAtPeriodEnd, Is.True);
+        Assert.That(_repository!.SavedEntitlements.Single().CancelAtPeriodEnd, Is.True);
+    }
+
+    [Test]
     public async Task ConcurrentPromptReservationsNeverExceedTheServerPlanLimit()
     {
         var service = CreateService(new StripeHandler(), _repository!);
@@ -513,29 +535,184 @@ public sealed class StripeBillingServiceTests
                 return JsonResponse("{\"url\":\"https://billing.example.test/portal\"}");
             }
 
-            return new HttpResponseMessage(HttpStatusCode.NotFound);
+            return new HttpResponseMessage(HttpStatusCode.NotFound);…9393 tokens truncated…entSubscriptionStatus is SubscriptionStatus.Active or SubscriptionStatus.Trialing or SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid or SubscriptionStatus.Incomplete or SubscriptionStatus.Paused;
+
+    private string EndDateMessage(string prefix) => BillingState?.PeriodEndsAt is { } end
+        ? $"{prefix} {end.ToLocalTime():d}."
+        : $"{prefix} date unavailable. Refresh billing status for the latest details.";
+
+    private string TrialStatusDetail() => BillingState?.PeriodEndsAt is { } end
+        ? $"Your trial ends {end.ToLocalTime():d}. Unless you cancel first, the {RenewalChargeLabel} charge follows then."
+        : "Your trial end date is unavailable. Refresh billing status for the latest details.";
+
+    public async Task ShowCheckoutReturn(CheckoutOutcome outcome)
+    {
+        switch (outcome)
+        {
+            case CheckoutOutcome.Return:
+                _checkoutPending = !HasEntitledSubscription;
+                BillingMessage = _checkoutPending
+                    ? "Payment is processing. Pro access will appear once Stripe confirms your subscription."
+                    : "Your Pro subscription is active.";
+                break;
+            case CheckoutOutcome.Cancelled:
+                _checkoutPending = false;
+                BillingMessage = "Checkout was cancelled. No subscription was started.";
+                break;
+            case CheckoutOutcome.TrialReturn:
+                _checkoutPending = !HasEntitledSubscription;
+                BillingMessage = _checkoutPending
+                    ? "Your trial is being set up. Pro access will appear once Stripe confirms your subscription."
+                    : $"Your 14-day Pro trial is active{TrialEndMessage()}. No charge is due until the trial ends.";
+                break;
+            case CheckoutOutcome.TrialCancelled:
+                _checkoutPending = false;
+                BillingMessage = "Trial checkout was cancelled. No trial or subscription was started.";
+                break;
+            default:
+                return;
         }
 
-        private static string? FormValue(string body, string key) => body.Split('&')
-            .Select(pair => pair.Split('=', 2))
-            .Where(pair => pair.Length == 2 && Uri.UnescapeDataString(pair[0]) == key)
-            .Select(pair => Uri.UnescapeDataString(pair[1]))
-            .FirstOrDefault();
-
-        private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
+        if ((outcome is CheckoutOutcome.Return or CheckoutOutcome.TrialReturn) && BillingState is not null)
         {
-            Content = new StringContent(json, Encoding.UTF8, "application/json")
-        };
+            Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState.Plan);
+            await Store.SaveAsync();
+        }
 
-        public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url, bool Trial = false);
+        NotifyChanged();
     }
 
-    private sealed class StubWorkspaceService : IWorkspaceService
-    {
-        public Task<WorkspaceResponse> GetAsync(string ownerId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new WorkspaceResponse(new WorkspaceSnapshot(), "revision"));
+    private string TrialEndMessage() => BillingState?.PeriodEndsAt is { } end
+        ? $" until {end.ToLocalTime():d}"
+        : "";
 
-        public Task<WorkspaceSaveResult> SaveAsync(string ownerId, WorkspaceSaveRequest request, CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
+    public async Task RefreshSubscriptionStatusAsync()
+    {
+        try
+        {
+            BillingState = await client.GetSummaryAsync();
+
+            if (BillingState is not null)
+            {
+                Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState.Plan);
+                await Store.SaveAsync();
+            }
+
+            _checkoutPending = !HasEntitledSubscription;
+            BillingMessage = _checkoutPending
+                ? "Payment is still processing. Try checking again in a moment."
+                : "Your Pro subscription is active.";
+        }
+        catch (HttpRequestException)
+        {
+            BillingMessage = "Subscription status could not be refreshed. Try again in a moment.";
+        }
+        finally
+        {
+            NotifyChanged();
+        }
+    }
+
+    public async Task StartTrial()
+    {
+        if (_checkoutInProgress || !HasSelectedPrice || BillingState?.TrialUsed == true || HasEntitledSubscription)
+        {
+            return;
+        }
+
+        _checkoutInProgress = true;
+        NotifyChanged();
+
+        try
+        {
+            var result = await client.StartTrialAsync(Annual);
+
+            if (!result.Succeeded)
+            {
+                BillingMessage = result.Message;
+
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.Url))
+            {
+                navigation.NavigateTo(result.Url, forceLoad: true);
+
+                return;
+            }
+
+            BillingMessage = result.Message;
+        }
+        catch (HttpRequestException)
+        {
+            BillingMessage = "Billing is temporarily unavailable.";
+        }
+        finally
+        {
+            _checkoutInProgress = false;
+            NotifyChanged();
+        }
+    }
+
+    public async Task BuyPro()
+    {
+        if (_checkoutInProgress)
+        {
+            return;
+        }
+
+        if (CanManageSubscription)
+        {
+            await OpenBillingPortal();
+
+            return;
+        }
+
+        if (!HasSelectedPrice)
+        {
+            return;
+        }
+
+        _checkoutInProgress = true;
+        NotifyChanged();
+
+        try
+        {
+            var result = await client.CheckoutAsync(Annual);
+
+            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Url))
+            {
+                navigation.NavigateTo(result.Url, forceLoad: true);
+            }
+            else
+            {
+                BillingMessage = result.Message;
+            }
+        }
+        catch (HttpRequestException) { BillingMessage = "Checkout is temporarily unavailable."; }
+        finally
+        {
+            _checkoutInProgress = false;
+            NotifyChanged();
+        }
+    }
+
+    public async Task OpenBillingPortal()
+    {
+        try
+        {
+            var result = await client.PortalAsync();
+
+            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Url))
+            {
+                navigation.NavigateTo(result.Url, forceLoad: true);
+            }
+            else
+            {
+                BillingMessage = result.Message;
+            }
+        }
+        catch (HttpRequestException) { BillingMessage = "Billing is temporarily unavailable."; }
+        finally { NotifyChanged(); }
     }
 }

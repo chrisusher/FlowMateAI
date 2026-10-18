@@ -22,7 +22,7 @@ public sealed class StripeBillingService(
         var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
         var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
 
-        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit, entitlement.SubscriptionInterval);
+        return new(entitlement.Plan, entitlement.SubscriptionStatus, entitlement.TrialUsed, entitlement.PeriodEndsAt, used, limit, entitlement.SubscriptionInterval, entitlement.CancelAtPeriodEnd);
     }
 
     public async Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, string month, CancellationToken cancellationToken = default)
@@ -372,6 +372,8 @@ public sealed class StripeBillingService(
         entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number;
         entitlement.PeriodEndsAt = (entitlement.SubscriptionStatus == "trialing" ? UnixTime(subscription, "trial_end") : null)
             ?? UnixTime(subscription, "current_period_end");
+        entitlement.CancelAtPeriodEnd = subscription.TryGetProperty("cancel_at_period_end", out var cancelAtPeriodEnd)
+            && cancelAtPeriodEnd.ValueKind == JsonValueKind.True;
         entitlement.SubscriptionInterval = ReadSubscriptionInterval(subscription);
     }
 
