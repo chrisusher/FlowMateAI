@@ -16,12 +16,20 @@ internal static class HttpFunction
         var userId = principal?.FindFirst("sub")?.Value;
         var email = principal?.FindFirst("email")?.Value;
 
+        var userAlreadyRegistered = false;
+
         if (!string.IsNullOrWhiteSpace(userId) && string.IsNullOrWhiteSpace(email))
         {
-            email = await tokens.GetEmailAsync(authorization, userId, cancellationToken);
+            email = await users.FindEmailByUserIdAsync(userId, cancellationToken);
+            userAlreadyRegistered = !string.IsNullOrWhiteSpace(email);
+
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                email = await tokens.GetEmailAsync(authorization, userId, cancellationToken);
+            }
         }
 
-        if (!string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(email))
+        if (!userAlreadyRegistered && !string.IsNullOrWhiteSpace(userId) && !string.IsNullOrWhiteSpace(email))
         {
             await users.EnsureRegisteredAsync(userId, email, cancellationToken);
         }

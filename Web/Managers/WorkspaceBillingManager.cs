@@ -132,7 +132,8 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
         _ => "Billing status couldn't be identified. Refresh to try again."
     };
 
-    public bool CanManageSubscription => CurrentSubscriptionStatus is SubscriptionStatus.Active or SubscriptionStatus.Trialing or SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid or SubscriptionStatus.Incomplete or SubscriptionStatus.Paused;
+    public bool CanManageSubscription => BillingState?.IsManualGrant != true
+        && CurrentSubscriptionStatus is (SubscriptionStatus.Active or SubscriptionStatus.Trialing or SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid or SubscriptionStatus.Incomplete or SubscriptionStatus.Paused);
 
     private string EndDateMessage(string prefix) => BillingState?.PeriodEndsAt is { } end
         ? $"{prefix} {end.ToLocalTime():d}."

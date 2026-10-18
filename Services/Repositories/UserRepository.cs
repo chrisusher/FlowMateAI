@@ -78,6 +78,18 @@ public sealed class UserRepository(DatabaseContext database) : IUserRepository
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public async Task<string?> FindEmailByUserIdAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+
+        await EnsureCreatedAsync(cancellationToken);
+
+        return await database.Users.AsNoTracking()
+            .Where(user => user.UserId == userId)
+            .Select(user => user.Email)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     private static string NormaliseEmail(string email) => email.Trim().ToLowerInvariant();
 
     private async Task EnsureCreatedAsync(CancellationToken cancellationToken)

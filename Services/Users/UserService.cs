@@ -9,4 +9,7 @@ public sealed class UserService(IUserRepository repository) : IUserService
 
     public Task<string?> FindUserIdByEmailAsync(string email, CancellationToken cancellationToken = default) =>
         repository.FindUserIdByEmailAsync(email, cancellationToken);
+
+    public Task<string?> FindEmailByUserIdAsync(string userId, CancellationToken cancellationToken = default) =>
+        repository.FindEmailByUserIdAsync(userId, cancellationToken);
 }
