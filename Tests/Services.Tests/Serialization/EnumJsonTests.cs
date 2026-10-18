@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json.Serialization;
+using Shared.Contracts;
 
 namespace Services.Tests.Serialization;
 
@@ -20,5 +21,15 @@ public sealed class EnumJsonTests
             Assert.That(json, Is.EqualTo(JsonSerializer.Serialize(expected)), $"{enumType.Name}.{name}");
             Assert.That(JsonSerializer.Deserialize(json, enumType), Is.EqualTo(value));
         }
+    }
+
+    [Test]
+    public void BillingSummaryWritesCancellationAndManualGrantFlagsForWebClients()
+    {
+        var summary = new BillingSummary("Pro", "active", false, null, 0, 100, CancelAtPeriodEnd: true, IsManualGrant: true);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(summary, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+
+        Assert.That(document.RootElement.GetProperty("cancelAtPeriodEnd").GetBoolean(), Is.True);
+        Assert.That(document.RootElement.GetProperty("isManualGrant").GetBoolean(), Is.True);
     }
 }

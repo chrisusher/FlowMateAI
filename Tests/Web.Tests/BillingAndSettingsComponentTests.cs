@@ -355,6 +355,68 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task ManualPreviewGrantDoesNotShowBillingPortalAction()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(5), 0, 100, IsManualGrant: true))
+            },
+            "/api/v1/billing/portal" => new HttpResponseMessage(HttpStatusCode.BadRequest),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<BillingCard>();
+
+        Assert.That(Billing.CanManageSubscription, Is.False);
+        Assert.That(Content(cut.Find(".plan-status")), Is.EqualTo("Preview access"));
+        Assert.That(Content(cut.Find(".billing-status-copy")), Does.Contain("no automatic renewal date"));
+        Assert.That(Content(cut.Find(".settings-heading button")), Is.EqualTo("Refresh status"));
+        Assert.That(Api.Paths, Does.Not.Contain("/api/v1/billing/portal"));
+    }
+
+    [Test]
+    public async Task ManualPreviewGrantKeepsTrialDisabledAndDoesNotRouteCheckoutThroughPortal()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[] { new BillingPrice("month", "gbp", 1000, "£10 / month") })
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(5), 0, 100, IsManualGrant: true))
+            },
+            "/api/v1/billing/checkout" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingActionResponse(false, null, BillingActionCode.RequestFailed, "Checkout unavailable."))
+            },
+            "/api/v1/billing/portal" => new HttpResponseMessage(HttpStatusCode.BadRequest),
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<ProPlanCard>();
+
+        Assert.That(cut.Find(".plan-button").HasAttribute("disabled"), Is.True);
+        Assert.That(Content(cut.Find(".plan-button")), Is.EqualTo("Pro preview access active"));
+        Assert.That(Content(cut.Find(".checkout-button")), Is.EqualTo("Subscribe monthly"));
+
+        cut.Find(".checkout-button").Click();
+        cut.WaitForAssertion(() => Assert.That(Api.Paths, Does.Contain("/api/v1/billing/checkout")));
+        Assert.That(Api.Paths, Does.Not.Contain("/api/v1/billing/portal"));
+    }
+
+    [Test]
     public async Task BillingCardRefreshShowsAChangedStripeStatus()
     {
         await SignInAsync();

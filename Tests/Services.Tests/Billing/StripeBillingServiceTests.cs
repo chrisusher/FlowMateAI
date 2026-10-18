@@ -337,6 +337,30 @@ public sealed class StripeBillingServiceTests
         Assert.That(_repository!.SavedEntitlements.Single().CancelAtPeriodEnd, Is.True);
     }
 
+    [TestCase("Pro", "active", "", true)]
+    [TestCase("Pro", "active", "sub_stripe", false)]
+    [TestCase("Free", "active", "", false)]
+    [TestCase("Pro", "trialing", "", false)]
+    public async Task SummaryMarksOnlyActiveProEntitlementsWithoutStripeSubscriptionsAsManualGrants(
+        string plan, string status, string stripeSubscriptionId, bool expectedManualGrant)
+    {
+        var repository = new StubBillingRepository
+        {
+            Entitlement = new BillingEntitlementDocument
+            {
+                UserId = "user",
+                Plan = plan,
+                SubscriptionStatus = status,
+                StripeSubscriptionId = stripeSubscriptionId
+            }
+        };
+        var service = CreateService(new StripeHandler(), repository);
+
+        var summary = await service.GetSummaryAsync("user");
+
+        Assert.That(summary.IsManualGrant, Is.EqualTo(expectedManualGrant));
+    }
+
     [Test]
     public async Task ConcurrentPromptReservationsNeverExceedTheServerPlanLimit()
     {
