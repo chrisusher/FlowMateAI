@@ -434,7 +434,7 @@ LocalAuthenticationOptions.Builder()
 // AuthenticationException
 error.isMultifactorRequired: Boolean
 error.isBrowserAppNotAvailable: Boolean
-error.isAuthenticationCanceled: Boolean
+error.isAuthenticationCancelled: Boolean
 error.statusCode: Int
 error.message: String?
 
@@ -500,8 +500,8 @@ WebAuthProvider.login(account)
                 error.isBrowserAppNotAvailable -> {
                     // No browser available on device
                 }
-                error.isAuthenticationCanceled -> {
-                    // User canceled the login
+                error.isAuthenticationCancelled -> {
+                    // User cancelled the login
                 }
                 else -> {
                     // Other authentication error
@@ -890,8 +890,8 @@ authentication.login(...)
                     // No browser available
                     // Fallback to in-app WebView (not recommended)
                 }
-                error.isAuthenticationCanceled -> {
-                    // User canceled the login flow
+                error.isAuthenticationCancelled -> {
+                    // User cancelled the login flow
                 }
                 error.statusCode == 429 -> {
                     // Rate limited - too many login attempts

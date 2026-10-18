@@ -1711,6 +1711,6 @@ Infer the default category from the prompt name where possible:
 - `signup*` → **Signup**
 - anything else → **Other**
 
-If the user accepts, append a new row to the matching category's table in the screens catalog below with the `(prompt, screen)` pair. Only persist after a successful PUT so a failed or canceled rewrite doesn't pollute the catalog. If multiple new screens came up in the same run, batch the confirmations into one question listing all of them.
+If the user accepts, append a new row to the matching category's table in the screens catalog below with the `(prompt, screen)` pair. Only persist after a successful PUT so a failed or cancelled rewrite doesn't pollute the catalog. If multiple new screens came up in the same run, batch the confirmations into one question listing all of them.
 
 The reference map grows with real usage this way; users only name a new screen once.

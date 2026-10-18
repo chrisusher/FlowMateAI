@@ -328,7 +328,7 @@ public sealed class StripeBillingService(
                 var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
                 entitlement.StripeSubscriptionId = subscription.GetProperty("id").GetString() ?? "";
                 entitlement.StripeCustomerId = subscription.GetProperty("customer").GetString() ?? entitlement.StripeCustomerId;
-                entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "canceled";
+                entitlement.SubscriptionStatus = subscription.GetProperty("status").GetString() ?? "cancelled";
                 entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
                 entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out _);
                 entitlement.PeriodEndsAt = UnixTime(subscription, "current_period_end");

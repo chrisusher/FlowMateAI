@@ -87,7 +87,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
                 break;
             case CheckoutOutcome.Cancelled:
                 _checkoutPending = false;
-                BillingMessage = "Checkout was canceled. No subscription was started.";
+                BillingMessage = "Checkout was cancelled. No subscription was started.";
                 break;
             case CheckoutOutcome.TrialReturn:
                 _checkoutPending = !HasEntitledSubscription;
@@ -97,7 +97,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
                 break;
             case CheckoutOutcome.TrialCancelled:
                 _checkoutPending = false;
-                BillingMessage = "Trial checkout was canceled. No trial or subscription was started.";
+                BillingMessage = "Trial checkout was cancelled. No trial or subscription was started.";
                 break;
             default:
                 return;
