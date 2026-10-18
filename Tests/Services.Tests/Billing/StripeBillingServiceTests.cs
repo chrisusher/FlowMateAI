@@ -252,7 +252,7 @@ public sealed class StripeBillingServiceTests
         };
         handler.BeforePortalCreation = () =>
         {
-            var saved = repository.SavedEntitlements.Single();
+            var saved = repository.SavedEntitlements.Last();
             Assert.That(saved.Plan, Is.EqualTo("Pro"));
             Assert.That(saved.SubscriptionStatus, Is.EqualTo(status));
             Assert.That(saved.StripeCustomerId, Is.EqualTo("cus_existing"));
@@ -293,7 +293,7 @@ public sealed class StripeBillingServiceTests
     public async Task SubscriptionWebhookPersistsConfirmedRenewalInterval(string interval, int count, BillingInterval? expected)
     {
         _repository!.Entitlement.SubscriptionInterval = BillingInterval.Annual;
-        var service = CreateService(new StripeHandler(), _repository);
+        _repository.Entitlement.StripeCustomerId = "cus_existing";
         var payload = """
             {"id":"evt_subscription","type":"customer.subscription.updated","data":{"object":{
                 "id":"sub_confirmed","customer":"cus_existing","metadata":{"user_id":"user"},
@@ -301,6 +301,11 @@ public sealed class StripeBillingServiceTests
                 "items":{"data":[{"price":{"recurring":{"interval":"$INTERVAL","interval_count":$COUNT}}}]}
             }}}
             """.Replace("$INTERVAL", interval, StringComparison.Ordinal).Replace("$COUNT", count.ToString(), StringComparison.Ordinal);
+        using var snapshot = JsonDocument.Parse(payload);
+        var service = CreateService(new StripeHandler
+        {
+            SubscriptionsJson = "{\"data\":[" + snapshot.RootElement.GetProperty("data").GetProperty("object").GetRawText() + "]}"
+        }, _repository);
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var digest = HMACSHA256.HashData(Encoding.UTF8.GetBytes("whsec_test_placeholder"), Encoding.UTF8.GetBytes($"{timestamp}.{payload}"));
 
@@ -308,7 +313,7 @@ public sealed class StripeBillingServiceTests
         var summary = await service.GetSummaryAsync("user");
 
         Assert.That(accepted, Is.True);
-        Assert.That(_repository.SavedEntitlements.Single().SubscriptionInterval, Is.EqualTo(expected));
+        Assert.That(_repository.SavedEntitlements.Last().SubscriptionInterval, Is.EqualTo(expected));
         Assert.That(summary.SubscriptionInterval, Is.EqualTo(expected));
         Assert.That(summary.PeriodEndsAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1792329600)));
     }
@@ -438,6 +443,11 @@ public sealed class StripeBillingServiceTests
             if (request.RequestUri.AbsolutePath.EndsWith("/subscriptions", StringComparison.Ordinal))
             {
                 return JsonResponse(SubscriptionsJson);
+            }
+
+            if (request.RequestUri.AbsolutePath.Contains("/customers/", StringComparison.Ordinal))
+            {
+                return JsonResponse("{\"id\":\"cus_existing\",\"metadata\":{\"user_id\":\"user\"}}");
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal)

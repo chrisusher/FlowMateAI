@@ -17,7 +17,7 @@ public sealed class StripeBillingService(
 
     public async Task<BillingSummary> GetSummaryAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
+        var entitlement = await ReconcileEntitlementAsync(userId, null, cancellationToken);
         var month = DateTimeOffset.UtcNow.ToString("yyyy-MM", CultureInfo.InvariantCulture);
         var used = string.Equals(entitlement.PromptMonth, month, StringComparison.Ordinal) ? entitlement.PromptCount : 0;
         var limit = BillingPlanExtensions.ParseOrFree(entitlement.Plan) == BillingPlan.Pro ? 100 : 10;
@@ -99,24 +99,14 @@ public sealed class StripeBillingService(
             }
 
             var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
-            var stripeState = await GetStripeSubscriptionStateAsync(customer, cancellationToken);
+            entitlement = await ReconcileEntitlementAsync(userId, customer, cancellationToken);
 
-            if (stripeState.EntitledSubscription is { } subscription)
+            if (IsEntitled(entitlement.SubscriptionStatus))
             {
-                ApplySubscription(entitlement, subscription);
-                entitlement.TrialUsed |= stripeState.TrialUsed;
-                await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-
                 return await CreatePortalAsync(userId, cancellationToken);
             }
 
-            if (stripeState.TrialUsed && !entitlement.TrialUsed)
-            {
-                entitlement.TrialUsed = true;
-                await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-            }
-
-            if (trial && stripeState.TrialUsed)
+            if (trial && entitlement.TrialUsed)
             {
                 return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
             }
@@ -163,40 +153,95 @@ public sealed class StripeBillingService(
         }
     }
 
-    private async Task<(JsonElement? EntitledSubscription, bool TrialUsed)> GetStripeSubscriptionStateAsync(string customerId, CancellationToken cancellationToken)
+    private async Task<BillingEntitlementDocument> ReconcileEntitlementAsync(string userId, string? expectedCustomer, CancellationToken cancellationToken)
     {
-        using var response = await SendAsync(HttpMethod.Get,
-            $"subscriptions?customer={Uri.EscapeDataString(customerId)}&status=all&limit=100", null, null, cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        for (var attempt = 0; attempt < 8; attempt++)
         {
-            throw new HttpRequestException(StripeError(await response.Content.ReadAsStringAsync(cancellationToken)));
-        }
+            // Read the revision BEFORE querying Stripe so an older provider response cannot win a later write.
+            var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
+            var customer = entitlement.StripeCustomerId;
 
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
-
-        if (!document.RootElement.TryGetProperty("data", out var subscriptions) || subscriptions.ValueKind != JsonValueKind.Array)
-        {
-            return (null, false);
-        }
-
-        JsonElement? entitledSubscription = null;
-        var trialUsed = false;
-
-        foreach (var subscription in subscriptions.EnumerateArray())
-        {
-            if (entitledSubscription is null && subscription.TryGetProperty("status", out var status) && IsEntitled(status.GetString() ?? ""))
+            if (string.IsNullOrWhiteSpace(customer)
+                || (expectedCustomer is not null && !string.Equals(customer, expectedCustomer, StringComparison.Ordinal)))
             {
-                entitledSubscription = subscription.Clone();
+                return entitlement;
             }
 
-            if (subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number)
+            var revision = entitlement.ETag;
+            var subscriptions = await GetStripeSubscriptionsAsync(customer, cancellationToken);
+            var current = subscriptions
+                .OrderBy(subscription => subscription.GetProperty("status").GetString() is "canceled" or "incomplete_expired" ? 1 : 0)
+                .ThenByDescending(subscription => UnixTime(subscription, "created"))
+                .ThenByDescending(subscription => subscription.GetProperty("id").GetString(), StringComparer.Ordinal)
+                .Select(subscription => (JsonElement?)subscription).FirstOrDefault();
+
+            entitlement.TrialUsed |= subscriptions.Any(subscription =>
+                subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number);
+
+            if (current is { } subscription)
             {
-                trialUsed = true;
+                ApplySubscription(entitlement, subscription);
             }
+            else
+            {
+                entitlement.StripeSubscriptionId = "";
+                entitlement.SubscriptionStatus = "none";
+                entitlement.Plan = BillingPlan.Free.ToString();
+                entitlement.PeriodEndsAt = null;
+                entitlement.SubscriptionInterval = null;
+            }
+
+            if (await repository.TrySaveEntitlementAsync(entitlement, revision, cancellationToken))
+            {
+                return entitlement;
+            }
+            // Even unchanged state is conditionally written, fencing slower workers with older Stripe responses.
         }
 
-        return (entitledSubscription, trialUsed);
+        throw new InvalidOperationException("Billing changed repeatedly. Retry the request.");
+    }
+
+    private async Task<List<JsonElement>> GetStripeSubscriptionsAsync(string customerId, CancellationToken cancellationToken)
+    {
+        var result = new List<JsonElement>();
+        string? cursor = null;
+
+        do
+        {
+            var path = $"subscriptions?customer={Uri.EscapeDataString(customerId)}&status=all&limit=100"
+                + (cursor is null ? "" : $"&starting_after={Uri.EscapeDataString(cursor)}");
+            using var response = await SendAsync(HttpMethod.Get, path, null, null, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            var root = document.RootElement;
+            var next = new List<JsonElement>();
+
+            foreach (var subscription in root.GetProperty("data").EnumerateArray())
+            {
+                if (!string.Equals(subscription.GetProperty("customer").GetString(), customerId, StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(subscription.GetProperty("id").GetString())
+                    || string.IsNullOrWhiteSpace(subscription.GetProperty("status").GetString()))
+                {
+                    throw new InvalidOperationException("Stripe returned an invalid subscription.");
+                }
+
+                next.Add(subscription.Clone());
+            }
+
+            result.AddRange(next);
+            var hasMore = root.TryGetProperty("has_more", out var more) && more.GetBoolean();
+            var nextCursor = next.Count > 0 ? next[^1].GetProperty("id").GetString() : null;
+
+            if (hasMore && (nextCursor is null || nextCursor == cursor))
+            {
+                throw new InvalidOperationException("Stripe returned an incomplete subscription list.");
+            }
+
+            cursor = hasMore ? nextCursor : null;
+        }
+        while (cursor is not null);
+
+        return result;
     }
 
     private async Task<BillingActionResponse?> GetExistingCheckoutResponseAsync(string customerId, string priceId, bool trial, CancellationToken cancellationToken)
@@ -336,31 +381,68 @@ public sealed class StripeBillingService(
             return false;
         }
 
-        using var eventDoc = JsonDocument.Parse(payload);
-        var root = eventDoc.RootElement;
-        var eventId = root.GetProperty("id").GetString();
+        JsonDocument eventDoc;
 
-        if (string.IsNullOrWhiteSpace(eventId) || await repository.HasProcessedEventAsync(eventId, cancellationToken))
+        try
         {
+            eventDoc = JsonDocument.Parse(payload);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+
+        using (eventDoc)
+        {
+            var root = eventDoc.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(id.GetString())
+                || !root.TryGetProperty("type", out var eventType) || eventType.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var eventId = id.GetString()!;
+
+            if (await repository.HasProcessedEventAsync(eventId, cancellationToken))
+            {
+                return true;
+            }
+
+            var type = eventType.GetString()!;
+
+            if (type.StartsWith("customer.subscription.", StringComparison.Ordinal)
+                || type is "invoice.paid" or "invoice.payment_failed" or "checkout.session.completed" or "checkout.session.async_payment_succeeded")
+            {
+                if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object
+                    || !data.TryGetProperty("object", out var item) || item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("customer", out var customer) || customer.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(customer.GetString()))
+                {
+                    return false;
+                }
+
+                var customerId = customer.GetString()!;
+                using var response = await SendAsync(HttpMethod.Get, $"customers/{Uri.EscapeDataString(customerId)}", null, null, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                using var customerDoc = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+                var customerRoot = customerDoc.RootElement;
+
+                if (customerRoot.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object
+                    && metadata.TryGetProperty("user_id", out var user) && user.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(user.GetString()))
+                {
+                    // Current customer metadata and the stored mapping must agree; obsolete customers cannot rebind an account.
+                    await ReconcileEntitlementAsync(user.GetString()!, customerId, cancellationToken);
+                }
+            }
+
+            // Reconciliation has no external side effects. If this write fails, retrying safely reconciles again.
+            await repository.MarkEventProcessedAsync(eventId, cancellationToken);
+
             return true;
         }
-        var type = root.GetProperty("type").GetString() ?? "";
-
-        if (type.StartsWith("customer.subscription.", StringComparison.Ordinal))
-        {
-            var subscription = root.GetProperty("data").GetProperty("object");
-            var userId = subscription.GetProperty("metadata").TryGetProperty("user_id", out var user) ? user.GetString() : null;
-
-            if (!string.IsNullOrWhiteSpace(userId))
-            {
-                var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
-                ApplySubscription(entitlement, subscription);
-                await repository.SaveEntitlementAsync(entitlement, cancellationToken);
-            }
-        }
-        await repository.MarkEventProcessedAsync(eventId, cancellationToken);
-
-        return true;
     }
 
     private static void ApplySubscription(BillingEntitlementDocument entitlement, JsonElement subscription)
@@ -371,8 +453,19 @@ public sealed class StripeBillingService(
         entitlement.Plan = (IsEntitled(entitlement.SubscriptionStatus) ? BillingPlan.Pro : BillingPlan.Free).ToString();
         entitlement.TrialUsed |= subscription.TryGetProperty("trial_start", out var trialStart) && trialStart.ValueKind == JsonValueKind.Number;
         entitlement.PeriodEndsAt = (entitlement.SubscriptionStatus == "trialing" ? UnixTime(subscription, "trial_end") : null)
-            ?? UnixTime(subscription, "current_period_end");
+            ?? UnixTime(subscription, "current_period_end")
+            ?? ReadItemPeriodEnd(subscription);
         entitlement.SubscriptionInterval = ReadSubscriptionInterval(subscription);
+    }
+
+    private static DateTimeOffset? ReadItemPeriodEnd(JsonElement subscription)
+    {
+        if (!subscription.TryGetProperty("items", out var items) || !items.TryGetProperty("data", out var data))
+        {
+            return null;
+        }
+
+        return data.EnumerateArray().Select(item => UnixTime(item, "current_period_end")).Min();
     }
 
     private static BillingInterval? ReadSubscriptionInterval(JsonElement subscription)
@@ -474,7 +567,8 @@ public sealed class StripeBillingService(
 
         var timestampText = values.FirstOrDefault(part => part[0] == "t")?[1];
 
-        if (!long.TryParse(timestampText, out var timestamp) || Math.Abs(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - timestamp) > 300)
+        if (!long.TryParse(timestampText, out var timestamp) || timestamp < DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 300
+            || timestamp > DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 300)
         {
             return false;
         }

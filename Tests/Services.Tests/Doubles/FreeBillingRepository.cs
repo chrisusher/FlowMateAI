@@ -14,6 +14,8 @@ public class FreeBillingRepository : IBillingRepository
 
     public Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
+    public Task<bool> TrySaveEntitlementAsync(BillingEntitlementDocument entitlement, string? expectedRevision, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
     public Task<bool> HasProcessedEventAsync(string eventId, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
     public Task MarkEventProcessedAsync(string eventId, CancellationToken cancellationToken = default) => Task.CompletedTask;
