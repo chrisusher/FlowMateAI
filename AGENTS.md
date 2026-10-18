@@ -1,5 +1,9 @@
 # Repository guidance for Codex agents
 
+## Language and spelling
+
+- This is a British English repository. Use British English spelling and conventions in documentation, comments, and user-facing text where possible. Preserve established spelling at external or compatibility boundaries.
+
 ## Service classes and persistence
 
 - Code whose class or file name ends in `Service` must never reference an Entity Framework context or be coupled to `CosmosClient`.
