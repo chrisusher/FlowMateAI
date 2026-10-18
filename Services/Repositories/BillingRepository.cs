@@ -1,3 +1,5 @@
+using System.Net;
+using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Services.Database;
 
@@ -12,31 +14,50 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
     {
         await EnsureCreatedAsync(cancellationToken);
 
-        return await database.BillingEntitlements.FirstOrDefaultAsync(x => x.Id == "billing" && x.UserId == userId, cancellationToken)
+        return await database.BillingEntitlements.AsNoTracking().FirstOrDefaultAsync(x => x.Id == "billing" && x.UserId == userId, cancellationToken)
             ?? new BillingEntitlementDocument { UserId = userId };
     }
 
     public async Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default)
     {
-        await EnsureCreatedAsync(cancellationToken);
-        var existing = await database.BillingEntitlements.FirstOrDefaultAsync(x => x.Id == "billing" && x.UserId == entitlement.UserId, cancellationToken);
+        if (!await TrySaveEntitlementAsync(entitlement, entitlement.ETag, cancellationToken))
+        {
+            throw new InvalidOperationException("Billing changed during the request. Retry the request.");
+        }
+    }
 
-        if (existing is null)
+    public async Task<bool> TrySaveEntitlementAsync(BillingEntitlementDocument entitlement, string? expectedRevision, CancellationToken cancellationToken = default)
+    {
+        var entry = database.Entry(entitlement);
+        entitlement.ETag = expectedRevision;
+        entry.State = expectedRevision is null ? EntityState.Added : EntityState.Modified;
+        entry.Property(x => x.ETag).OriginalValue = expectedRevision;
+        entry.Property(x => x.ETag).IsModified = false;
+
+        // This is a full document replacement. The ETag protects the prompt counts read with it too.
+
+        try
         {
-            database.BillingEntitlements.Add(entitlement);
+            await database.SaveChangesAsync(cancellationToken);
+
+            return true;
         }
-        else
+        catch (DbUpdateConcurrencyException)
         {
-            existing.StripeCustomerId = entitlement.StripeCustomerId;
-            existing.StripeSubscriptionId = entitlement.StripeSubscriptionId;
-            existing.Plan = entitlement.Plan;
-            existing.SubscriptionStatus = entitlement.SubscriptionStatus;
-            existing.TrialUsed = entitlement.TrialUsed;
-            existing.PeriodEndsAt = entitlement.PeriodEndsAt;
-            existing.SubscriptionInterval = entitlement.SubscriptionInterval;
-            // Prompt usage is changed only through the atomic reservation/release methods below.
+            return false;
         }
-        await database.SaveChangesAsync(cancellationToken);
+        catch (DbUpdateException exception) when (exception.InnerException is CosmosException { StatusCode: HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed })
+        {
+            return false;
+        }
+        catch (CosmosException exception) when (exception.StatusCode is HttpStatusCode.Conflict or HttpStatusCode.PreconditionFailed)
+        {
+            return false;
+        }
+        finally
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 
     public async Task<(bool Allowed, int Used, int Limit)> TryConsumePromptAsync(
@@ -127,13 +148,24 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
 
     public async Task MarkEventProcessedAsync(string eventId, CancellationToken cancellationToken = default)
     {
-        database.StripeEvents.Add(new StripeEventDocument { Id = eventId });
+        var entry = database.StripeEvents.Add(new StripeEventDocument { Id = eventId });
 
         try
         {
             await database.SaveChangesAsync(cancellationToken);
         }
-        catch (DbUpdateException) { /* A concurrent webhook already recorded the same event id. */ }
+        catch (DbUpdateException exception) when (exception.InnerException is CosmosException { StatusCode: HttpStatusCode.Conflict })
+        {
+            // Only a duplicate insert is safe to acknowledge. Other failures need Stripe to retry.
+        }
+        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.Conflict)
+        {
+            // A concurrent delivery already recorded this event.
+        }
+        finally
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 
     private async Task EnsureCreatedAsync(CancellationToken cancellationToken)

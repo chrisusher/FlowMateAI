@@ -11,7 +11,7 @@ public class StubBillingRepository : IBillingRepository
 
     public BillingEntitlementDocument Entitlement
     {
-        get; init;
+        get; set;
     } = new()
     {
         UserId = "user"
@@ -60,14 +60,33 @@ public class StubBillingRepository : IBillingRepository
         }
     }
 
-    public Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(Entitlement);
+    public Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(JsonSerializer.Deserialize<BillingEntitlementDocument>(JsonSerializer.Serialize(Entitlement))!);
 
     public Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default)
     {
         SavedEntitlements.Add(JsonSerializer.Deserialize<BillingEntitlementDocument>(JsonSerializer.Serialize(entitlement))!);
-        Entitlement.StripeCustomerId = entitlement.StripeCustomerId;
+        Entitlement = JsonSerializer.Deserialize<BillingEntitlementDocument>(JsonSerializer.Serialize(entitlement))!;
 
         return Task.CompletedTask;
+    }
+
+    public Task<bool> TrySaveEntitlementAsync(BillingEntitlementDocument entitlement, string? expectedRevision, CancellationToken cancellationToken = default)
+    {
+        lock (SavedEntitlements)
+        {
+            if (Entitlement.ETag != expectedRevision)
+            {
+                return Task.FromResult(false);
+            }
+
+            entitlement.ETag = Guid.NewGuid().ToString();
+            entitlement.PromptMonth = Entitlement.PromptMonth;
+            entitlement.PromptCount = Entitlement.PromptCount;
+            SaveEntitlementAsync(entitlement, cancellationToken).GetAwaiter().GetResult();
+
+            return Task.FromResult(true);
+        }
     }
 
     public Task<bool> HasProcessedEventAsync(string eventId, CancellationToken cancellationToken = default) => Task.FromResult(false);

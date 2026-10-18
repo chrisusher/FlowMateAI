@@ -6,6 +6,8 @@ public interface IBillingRepository
 {
     Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default);
     Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default);
+    // False means the caller must reload both the entitlement and Stripe state before retrying.
+    Task<bool> TrySaveEntitlementAsync(BillingEntitlementDocument entitlement, string? expectedRevision, CancellationToken cancellationToken = default);
 
     Task<(bool Allowed, int Used, int Limit)> TryConsumePromptAsync(
         string userId, string month, int freeLimit, int proLimit, CancellationToken cancellationToken = default) =>
