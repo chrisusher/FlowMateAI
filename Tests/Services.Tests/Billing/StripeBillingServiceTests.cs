@@ -317,6 +317,7 @@ public sealed class StripeBillingServiceTests
     public async Task SubscriptionWebhookPersistsScheduledCancellationForBillingSummary()
     {
         var service = CreateService(new StripeHandler(), _repository!);
+
         var payload = """
             {"id":"evt_subscription_cancel","type":"customer.subscription.updated","data":{"object":{
                 "id":"sub_confirmed","customer":"cus_existing","metadata":{"user_id":"user"},
@@ -324,6 +325,7 @@ public sealed class StripeBillingServiceTests
                 "items":{"data":[{"price":{"recurring":{"interval":"month","interval_count":1}}}]}
             }}}
             """;
+
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var digest = HMACSHA256.HashData(Encoding.UTF8.GetBytes("whsec_test_placeholder"), Encoding.UTF8.GetBytes($"{timestamp}.{payload}"));
 
@@ -426,6 +428,15 @@ public sealed class StripeBillingServiceTests
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
+    private sealed class StubWorkspaceService : IWorkspaceService
+    {
+        public Task<WorkspaceResponse> GetAsync(string ownerId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new WorkspaceResponse(new WorkspaceSnapshot(), "revision"));
+
+        public Task<WorkspaceSaveResult> SaveAsync(string ownerId, WorkspaceSaveRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class StripeHandler : HttpMessageHandler
     {
         private readonly Dictionary<string, (string Form, string Url)> _checkoutRequests = [];
@@ -444,8 +455,14 @@ public sealed class StripeBillingServiceTests
         }
 
         public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
-        public Func<CancellationToken, Task>? BeforeCheckoutCreation { get; init; }
-        public string? LastCheckoutCancelUrl { get; private set; }
+        public Func<CancellationToken, Task>? BeforeCheckoutCreation
+        {
+            get; init;
+        }
+        public string? LastCheckoutCancelUrl
+        {
+            get; private set;
+        }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -469,7 +486,10 @@ public sealed class StripeBillingServiceTests
                 {
                     mode = session.Mode,
                     url = session.Url,
-                    metadata = new { flowmate_trial = session.Trial ? "true" : "false" },
+                    metadata = new
+                    {
+                        flowmate_trial = session.Trial ? "true" : "false"
+                    },
                     line_items = new
                     {
                         data = new[]
@@ -509,7 +529,10 @@ public sealed class StripeBillingServiceTests
                     if (_checkoutRequests.TryGetValue(key, out var previous))
                     {
                         return previous.Form == form
-                            ? JsonResponse(JsonSerializer.Serialize(new { url = previous.Url }))
+                            ? JsonResponse(JsonSerializer.Serialize(new
+                            {
+                                url = previous.Url
+                            }))
                             : new HttpResponseMessage(HttpStatusCode.BadRequest)
                             {
                                 Content = new StringContent("{\"error\":{\"message\":\"Idempotency key reused with different parameters.\"}}")
@@ -524,7 +547,11 @@ public sealed class StripeBillingServiceTests
                     OpenCheckoutSessions.Add(new OpenCheckoutSession("subscription", priceId, url, trial));
                     _checkoutRequests.Add(key, (form, url));
 
-                    return JsonResponse(JsonSerializer.Serialize(new { id = "cs_test", url }));
+                    return JsonResponse(JsonSerializer.Serialize(new
+                    {
+                        id = "cs_test",
+                        url
+                    }));
                 }
             }
 
@@ -535,184 +562,32 @@ public sealed class StripeBillingServiceTests
                 return JsonResponse("{\"url\":\"https://billing.example.test/portal\"}");
             }
 
-            return new HttpResponseMessage(HttpStatusCode.NotFound);…9393 tokens truncated…entSubscriptionStatus is SubscriptionStatus.Active or SubscriptionStatus.Trialing or SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid or SubscriptionStatus.Incomplete or SubscriptionStatus.Paused;
-
-    private string EndDateMessage(string prefix) => BillingState?.PeriodEndsAt is { } end
-        ? $"{prefix} {end.ToLocalTime():d}."
-        : $"{prefix} date unavailable. Refresh billing status for the latest details.";
-
-    private string TrialStatusDetail() => BillingState?.PeriodEndsAt is { } end
-        ? $"Your trial ends {end.ToLocalTime():d}. Unless you cancel first, the {RenewalChargeLabel} charge follows then."
-        : "Your trial end date is unavailable. Refresh billing status for the latest details.";
-
-    public async Task ShowCheckoutReturn(CheckoutOutcome outcome)
-    {
-        switch (outcome)
-        {
-            case CheckoutOutcome.Return:
-                _checkoutPending = !HasEntitledSubscription;
-                BillingMessage = _checkoutPending
-                    ? "Payment is processing. Pro access will appear once Stripe confirms your subscription."
-                    : "Your Pro subscription is active.";
-                break;
-            case CheckoutOutcome.Cancelled:
-                _checkoutPending = false;
-                BillingMessage = "Checkout was cancelled. No subscription was started.";
-                break;
-            case CheckoutOutcome.TrialReturn:
-                _checkoutPending = !HasEntitledSubscription;
-                BillingMessage = _checkoutPending
-                    ? "Your trial is being set up. Pro access will appear once Stripe confirms your subscription."
-                    : $"Your 14-day Pro trial is active{TrialEndMessage()}. No charge is due until the trial ends.";
-                break;
-            case CheckoutOutcome.TrialCancelled:
-                _checkoutPending = false;
-                BillingMessage = "Trial checkout was cancelled. No trial or subscription was started.";
-                break;
-            default:
-                return;
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
 
-        if ((outcome is CheckoutOutcome.Return or CheckoutOutcome.TrialReturn) && BillingState is not null)
+        private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
         {
-            Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState.Plan);
-            await Store.SaveAsync();
-        }
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
 
-        NotifyChanged();
-    }
-
-    private string TrialEndMessage() => BillingState?.PeriodEndsAt is { } end
-        ? $" until {end.ToLocalTime():d}"
-        : "";
-
-    public async Task RefreshSubscriptionStatusAsync()
-    {
-        try
+        private static string? FormValue(string form, string key)
         {
-            BillingState = await client.GetSummaryAsync();
-
-            if (BillingState is not null)
+            foreach (var pair in form.Split('&'))
             {
-                Store.Data.Plan = BillingPlanExtensions.ParseOrFree(BillingState.Plan);
-                await Store.SaveAsync();
+                var parts = pair.Split('=', 2);
+                var name = Uri.UnescapeDataString(parts[0].Replace('+', ' '));
+
+                if (name == key)
+                {
+                    return parts.Length == 2
+                        ? Uri.UnescapeDataString(parts[1].Replace('+', ' '))
+                        : string.Empty;
+                }
             }
 
-            _checkoutPending = !HasEntitledSubscription;
-            BillingMessage = _checkoutPending
-                ? "Payment is still processing. Try checking again in a moment."
-                : "Your Pro subscription is active.";
-        }
-        catch (HttpRequestException)
-        {
-            BillingMessage = "Subscription status could not be refreshed. Try again in a moment.";
-        }
-        finally
-        {
-            NotifyChanged();
-        }
-    }
-
-    public async Task StartTrial()
-    {
-        if (_checkoutInProgress || !HasSelectedPrice || BillingState?.TrialUsed == true || HasEntitledSubscription)
-        {
-            return;
+            return null;
         }
 
-        _checkoutInProgress = true;
-        NotifyChanged();
-
-        try
-        {
-            var result = await client.StartTrialAsync(Annual);
-
-            if (!result.Succeeded)
-            {
-                BillingMessage = result.Message;
-
-                return;
-            }
-
-            if (!string.IsNullOrWhiteSpace(result.Url))
-            {
-                navigation.NavigateTo(result.Url, forceLoad: true);
-
-                return;
-            }
-
-            BillingMessage = result.Message;
-        }
-        catch (HttpRequestException)
-        {
-            BillingMessage = "Billing is temporarily unavailable.";
-        }
-        finally
-        {
-            _checkoutInProgress = false;
-            NotifyChanged();
-        }
-    }
-
-    public async Task BuyPro()
-    {
-        if (_checkoutInProgress)
-        {
-            return;
-        }
-
-        if (CanManageSubscription)
-        {
-            await OpenBillingPortal();
-
-            return;
-        }
-
-        if (!HasSelectedPrice)
-        {
-            return;
-        }
-
-        _checkoutInProgress = true;
-        NotifyChanged();
-
-        try
-        {
-            var result = await client.CheckoutAsync(Annual);
-
-            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Url))
-            {
-                navigation.NavigateTo(result.Url, forceLoad: true);
-            }
-            else
-            {
-                BillingMessage = result.Message;
-            }
-        }
-        catch (HttpRequestException) { BillingMessage = "Checkout is temporarily unavailable."; }
-        finally
-        {
-            _checkoutInProgress = false;
-            NotifyChanged();
-        }
-    }
-
-    public async Task OpenBillingPortal()
-    {
-        try
-        {
-            var result = await client.PortalAsync();
-
-            if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Url))
-            {
-                navigation.NavigateTo(result.Url, forceLoad: true);
-            }
-            else
-            {
-                BillingMessage = result.Message;
-            }
-        }
-        catch (HttpRequestException) { BillingMessage = "Billing is temporarily unavailable."; }
-        finally { NotifyChanged(); }
+        public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url, bool Trial = false);
     }
 }

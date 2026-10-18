@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http.Json;
+using Shared.Contracts;
 using Web.Components.Features.Account;
 using Web.Components.Features.Sidebar;
 
@@ -11,15 +14,15 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
         await SignInAsync();
         Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
         {
-            "/api/v1/billing/prices" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = System.Net.Http.Json.JsonContent.Create(Array.Empty<Shared.Contracts.BillingPrice>())
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
             },
-            "/api/v1/billing" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = System.Net.Http.Json.JsonContent.Create(new Shared.Contracts.BillingSummary("Free", "none", false, null, 0, 10))
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
             },
-            _ => new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable)
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
         });
         await Billing.InitialiseAsync();
         var cut = Render<UpgradeCard>();
@@ -33,15 +36,15 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
         await SignInAsync();
         Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
         {
-            "/api/v1/billing/prices" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = System.Net.Http.Json.JsonContent.Create(Array.Empty<Shared.Contracts.BillingPrice>())
+                Content = JsonContent.Create(Array.Empty<BillingPrice>())
             },
-            "/api/v1/billing" => new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = System.Net.Http.Json.JsonContent.Create(new Shared.Contracts.BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(25), 0, 100))
+                Content = JsonContent.Create(new BillingSummary("Pro", "active", false, DateTimeOffset.UtcNow.AddDays(25), 0, 100))
             },
-            _ => new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable)
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
         });
         await Billing.InitialiseAsync();
 

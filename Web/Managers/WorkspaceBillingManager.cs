@@ -10,6 +10,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
     private bool _annual;
     private bool _checkoutInProgress;
     private bool _checkoutPending;
+
     public bool Annual
     {
         get => _annual;
@@ -24,25 +25,33 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
             NotifyChanged();
         }
     }
+
     public string? BillingMessage
     {
         get; private set;
     }
+
     public IReadOnlyList<BillingPrice> Prices { get; private set; } = [];
+
     public BillingSummary? BillingState
     {
         get; private set;
     }
+
     public SubscriptionStatus CurrentSubscriptionStatus => SubscriptionStatusExtensions.FromProviderStatus(BillingState?.Status);
+
     public BillingPlan CurrentPlan => BillingState is null ? BillingPlan.Free : BillingPlanExtensions.ParseOrFree(BillingState.Plan);
+
     public bool ShouldShowUpgrade => BillingState is not null
         && CurrentPlan == BillingPlan.Free
         && CurrentSubscriptionStatus is (SubscriptionStatus.None or SubscriptionStatus.Canceled or SubscriptionStatus.IncompleteExpired);
+
     public bool CheckoutInProgress => _checkoutInProgress;
     public bool CheckoutPending => _checkoutPending;
     public string FreePlanButtonText => BillingState is null
         ? "Checking plan…"
         : CurrentPlan == BillingPlan.Free ? "Current plan" : "Included in Pro";
+
     public bool HasSelectedPrice => Prices.Any(price => price.Interval == (Annual ? "year" : "month"));
     public bool HasEntitledSubscription => SubscriptionEntitlementExtensions.FromProviderStatus(BillingState?.Status) == SubscriptionEntitlement.Entitled;
 

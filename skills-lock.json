@@ -12,6 +12,12 @@
       "sourceType": "github",
       "skillPath": "skills/blazor-expert/SKILL.md",
       "computedHash": "00d1b81b5cd6eaa9f8694167cec3f0ac1b6026ff01f18103dbfaa486503f331c"
+    },
+    "csharp-developer": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/csharp-developer/SKILL.md",
+      "computedHash": "460ced665faa242042a7e9875eb938ea68059523ec73fea4a09226d1143e5000"
     }
   }
 }
