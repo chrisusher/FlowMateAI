@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<WorkspaceSaveErrorCode>))]
 public enum WorkspaceSaveErrorCode
 {
     [JsonStringEnumMemberName("revision-conflict")]

@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<CheckoutOutcome>))]
 public enum CheckoutOutcome
 {
     [JsonStringEnumMemberName("return")]

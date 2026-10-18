@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ColorTheme>))]
 public enum ColorTheme
 {
     [JsonStringEnumMemberName("light")]

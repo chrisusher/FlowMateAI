@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<OnboardingState>))]
 public enum OnboardingState
 {
     [JsonStringEnumMemberName("not-started")]

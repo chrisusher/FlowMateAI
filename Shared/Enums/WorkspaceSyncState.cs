@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<WorkspaceSyncState>))]
 public enum WorkspaceSyncState
 {
     [JsonStringEnumMemberName("saved")]

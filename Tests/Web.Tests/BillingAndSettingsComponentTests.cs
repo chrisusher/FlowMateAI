@@ -215,6 +215,18 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Api.Paths, Is.Empty);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void TrialCancellationReturnRestoresSelectedBillingInterval(bool annual)
+    {
+        Navigation.NavigateTo($"pricing?checkout=trial-cancelled&annual={annual.ToString().ToLowerInvariant()}");
+
+        Render<PricingPage>();
+
+        Assert.That(Billing.Annual, Is.EqualTo(annual));
+        Assert.That(Billing.BillingMessage, Does.Contain("Trial checkout was cancelled"));
+    }
+
     [Test]
     public async Task ProfileCardEditsAndSavesProfileAndShowsAuthenticatedEmail()
     {

@@ -3,6 +3,7 @@ using Newtonsoft.Json.Converters;
 namespace Shared.Enums;
 
 [Newtonsoft.Json.JsonConverter(typeof(StringEnumConverter))]
+[JsonConverter(typeof(JsonStringEnumConverter<EnvironmentType>))]
 public enum EnvironmentType
 {
     [JsonStringEnumMemberName("local")]

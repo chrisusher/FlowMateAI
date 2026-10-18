@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<UserDataResetStage>))]
 public enum UserDataResetStage
 {
     [JsonStringEnumMemberName("workspace-document")]

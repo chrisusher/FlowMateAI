@@ -88,14 +88,14 @@ public sealed class StripeBillingService(
         {
             var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
 
-            if (trial && entitlement.TrialUsed)
-            {
-                return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
-            }
-
             if (IsEntitled(entitlement.SubscriptionStatus))
             {
                 return await CreatePortalAsync(userId, cancellationToken);
+            }
+
+            if (trial && entitlement.TrialUsed)
+            {
+                return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
             }
 
             var customer = await EnsureCustomerAsync(entitlement, userId, email, cancellationToken);
@@ -135,7 +135,7 @@ public sealed class StripeBillingService(
                 ["line_items[0][price]"] = priceId,
                 ["line_items[0][quantity]"] = "1",
                 ["success_url"] = appBaseUrl + (trial ? $"/pricing?checkout=trial-return&annual={annual.ToString().ToLowerInvariant()}" : "/pricing?checkout=return"),
-                ["cancel_url"] = appBaseUrl + (trial ? "/pricing?checkout=trial-cancelled" : "/pricing?checkout=cancelled"),
+                ["cancel_url"] = appBaseUrl + (trial ? $"/pricing?checkout=trial-cancelled&annual={annual.ToString().ToLowerInvariant()}" : "/pricing?checkout=cancelled"),
                 ["subscription_data[metadata][user_id]"] = userId,
                 ["metadata[flowmate_trial]"] = trial ? "true" : "false"
             };

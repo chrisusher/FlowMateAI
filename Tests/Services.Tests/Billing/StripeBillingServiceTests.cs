@@ -156,6 +156,52 @@ public sealed class StripeBillingServiceTests
         Assert.That(handler.Requests.Any(path => path == "billing_portal/sessions"), Is.True);
     }
 
+    [TestCase("trialing")]
+    [TestCase("active")]
+    public async Task UsedTrialWithEntitledSubscriptionOpensPortal(string status)
+    {
+        _repository!.Entitlement.StripeCustomerId = "cus_existing";
+        _repository.Entitlement.SubscriptionStatus = status;
+        _repository.Entitlement.TrialUsed = true;
+        var handler = new StripeHandler();
+        var service = CreateService(handler, _repository);
+
+        var result = await service.StartTrialAsync("user", null, false);
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Url, Is.EqualTo("https://billing.example.test/portal"));
+        Assert.That(handler.CheckoutSessionCreations, Is.Zero);
+    }
+
+    [TestCase("none")]
+    [TestCase("canceled")]
+    public async Task UsedTrialWithoutEntitledSubscriptionRemainsIneligible(string status)
+    {
+        _repository!.Entitlement.SubscriptionStatus = status;
+        _repository.Entitlement.TrialUsed = true;
+        var handler = new StripeHandler();
+        var service = CreateService(handler, _repository);
+
+        var result = await service.StartTrialAsync("user", null, false);
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Code, Is.EqualTo(BillingActionCode.TrialUsed));
+        Assert.That(handler.Requests, Is.Empty);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task TrialCancellationUrlPreservesSelectedBillingInterval(bool annual)
+    {
+        var handler = new StripeHandler();
+        var service = CreateService(handler, _repository!);
+
+        await service.StartTrialAsync("user", null, annual);
+
+        Assert.That(handler.LastCheckoutCancelUrl,
+            Is.EqualTo($"https://app.example.test/pricing?checkout=trial-cancelled&annual={annual.ToString().ToLowerInvariant()}"));
+    }
+
     [TestCase("active", false)]
     [TestCase("active", true)]
     [TestCase("trialing", false)]
@@ -354,6 +400,7 @@ public sealed class StripeBillingServiceTests
 
         public List<OpenCheckoutSession> OpenCheckoutSessions { get; } = [];
         public Func<CancellationToken, Task>? BeforeCheckoutCreation { get; init; }
+        public string? LastCheckoutCancelUrl { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -425,6 +472,7 @@ public sealed class StripeBillingServiceTests
                     }
 
                     CheckoutSessionCreations++;
+                    LastCheckoutCancelUrl = FormValue(form, "cancel_url");
                     var priceId = FormValue(form, "line_items[0][price]")!;
                     var url = $"https://checkout.example.test/session/{priceId}";
                     var trial = FormValue(form, "metadata[flowmate_trial]") == "true";

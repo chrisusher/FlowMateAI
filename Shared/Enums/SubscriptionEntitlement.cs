@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<SubscriptionEntitlement>))]
 public enum SubscriptionEntitlement
 {
     [JsonStringEnumMemberName("not-entitled")]

@@ -1,5 +1,6 @@
 namespace Shared.Enums;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ReportPeriod>))]
 public enum ReportPeriod
 {
     [JsonStringEnumMemberName("day")]
