@@ -42,11 +42,6 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         var workspace = await workspaces.GetAsync(userId, cancellationToken);
         var conversation = workspace.Workspace.Conversations.FirstOrDefault(c => c.Id == input.ConversationId);
 
-        if (!string.IsNullOrWhiteSpace(input.ConversationId) && conversation is null)
-        {
-            return await HttpFunction.ErrorAsync(request, HttpStatusCode.NotFound, "conversation_not_found", "That coach conversation is no longer available. Start a new conversation and try again.", cancellationToken);
-        }
-
         FocusCoachAnswer answer;
 
         try
@@ -74,7 +69,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         {
             conversation = new ConversationRecord
             {
-                Title = input.Prompt.Length > 38 ? input.Prompt[..38] + "…" : input.Prompt,
+                Title = input.Prompt.Length > 38 ? input.Prompt[..38] + "â€¦" : input.Prompt,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
             workspace.Workspace.Conversations.Insert(0, conversation);
@@ -119,3 +114,4 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         return response;
     }
 }
+
