@@ -41,6 +41,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
 
         var workspace = await workspaces.GetAsync(userId, cancellationToken);
         var conversation = workspace.Workspace.Conversations.FirstOrDefault(c => c.Id == input.ConversationId);
+
         FocusCoachAnswer answer;
 
         try
@@ -113,3 +114,4 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         return response;
     }
 }
+

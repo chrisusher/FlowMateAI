@@ -70,6 +70,12 @@ public static class Services
 
                 // Application secrets are supplied through server-side app settings or the host secret store.
             });
+
+            services.AddScoped<IActivityArchiveRepository, BlobActivityArchiveRepository>();
+        }
+        else
+        {
+            services.AddScoped<IActivityArchiveRepository, DisabledActivityArchiveRepository>();
         }
 
         #endregion
@@ -109,7 +115,6 @@ public static class Services
         #endregion
 
         #region Repositories
-        services.AddScoped<IActivityArchiveRepository, BlobActivityArchiveRepository>();
         services.AddScoped<IBillingRepository, BillingRepository>();
         services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
