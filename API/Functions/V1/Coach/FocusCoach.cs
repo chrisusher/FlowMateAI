@@ -69,7 +69,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
         {
             conversation = new ConversationRecord
             {
-                Title = input.Prompt.Length > 38 ? input.Prompt[..38] + "â€¦" : input.Prompt,
+                Title = input.Prompt.Length > 38 ? input.Prompt[..38] + "…" : input.Prompt,
                 UpdatedAt = DateTimeOffset.UtcNow
             };
             workspace.Workspace.Conversations.Insert(0, conversation);
