@@ -1,5 +1,6 @@
 using Shared.Enums;
 using Web.Components.Features.Reports;
+using Web.Components.Pages;
 
 namespace Web.Tests;
 
