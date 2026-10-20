@@ -149,7 +149,10 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
     {
         if (CanViewNextPeriod)
         {
-            SelectedDate = AddPeriod(SelectedDate, 1);
+            var nextDate = AddPeriod(SelectedDate, 1);
+            SelectedDate = PeriodStartFor(nextDate) == PeriodStartFor(TodayDate)
+                ? TodayDate
+                : nextDate;
         }
     }
 
