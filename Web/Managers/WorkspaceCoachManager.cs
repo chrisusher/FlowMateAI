@@ -132,7 +132,7 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
 
         if (prompt.Contains("week", StringComparison.OrdinalIgnoreCase))
         {
-            return $"You've logged {statistics.PeriodMinutes} focused minutes this week across {statistics.PeriodSessions} sessions. Your work has been spread across {projectText}. What felt easiest to return to?";
+            return $"You've logged {statistics.CurrentWeekMinutes} focused minutes this week across {statistics.CurrentWeekSessions} sessions. Your work has been spread across {projectText}. What felt easiest to return to?";
         }
 
         if (next is null)
