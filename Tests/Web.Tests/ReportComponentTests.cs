@@ -92,6 +92,19 @@ public sealed class ReportComponentTests : WorkspaceComponentTest
     }
 
     [Test]
+    public void ReturningToTheCurrentMonthRestoresTheTodayAnchor()
+    {
+        Stats.Period = ReportPeriod.Month;
+        var currentMonthStart = new DateOnly(Stats.TodayDate.Year, Stats.TodayDate.Month, 1);
+        Stats.SelectedDate = currentMonthStart.AddMonths(-1);
+
+        Stats.NextPeriod();
+
+        Assert.That(Stats.SelectedDate, Is.EqualTo(Stats.TodayDate));
+        Assert.That(Stats.CanViewNextPeriod, Is.False);
+    }
+
+    [Test]
     public void OlderRecordsRemainStoredAndBecomeVisibleAgainWhenProIsRestored()
     {
         Stats.Period = ReportPeriod.Day;
