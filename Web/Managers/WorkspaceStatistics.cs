@@ -160,6 +160,19 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
         return date >= EffectivePeriodStart && date <= EffectivePeriodEnd && session.FocusMinutes > 0 && session.EndedAt > session.StartedAt;
     });
 
+    public int CurrentWeekMinutes => CurrentWeekRecords.Sum(session => session.FocusMinutes);
+
+    public int CurrentWeekSessions => CurrentWeekRecords.Count();
+
+    private IEnumerable<FocusSessionRecord> CurrentWeekRecords => Store.Data.Sessions.Where(session =>
+    {
+        var date = DateData.LocalDate(session.StartedAt, Store.Data.TimeZone);
+
+        return date >= CurrentWeekStart && date <= TodayDate && session.FocusMinutes > 0 && session.EndedAt > session.StartedAt;
+    });
+
+    private DateOnly CurrentWeekStart => TodayDate.AddDays(-(((int)TodayDate.DayOfWeek + 6) % 7));
+
     public int PeriodMinutes => PeriodRecords.Sum(s => s.FocusMinutes);
 
     public int PeriodSessions => PeriodRecords.Count();
