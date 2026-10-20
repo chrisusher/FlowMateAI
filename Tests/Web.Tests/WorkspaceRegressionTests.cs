@@ -752,6 +752,26 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task CoachWeekReplyUsesCurrentWeekAfterBrowsingAnOlderReportWeek()
+    {
+        Store.Data.TimeZone = "Europe/London";
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(Store.Data.TimeZone);
+        var today = Stats.TodayDate;
+        var currentWeekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+        var thisWeekStart = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(currentWeekStart.ToDateTime(new TimeOnly(12, 0)), zone), TimeSpan.Zero);
+        var previousWeekStart = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(currentWeekStart.AddDays(-1).ToDateTime(new TimeOnly(12, 0)), zone), TimeSpan.Zero);
+        AddSession(17, thisWeekStart);
+        AddSession(29, previousWeekStart);
+        Stats.SelectedDate = currentWeekStart.AddDays(-1);
+
+        await Coach.SendMessage(new() { Content = "Can you review my week?", UserId = "user" });
+
+        var reply = Store.Data.Conversations[0].Messages.Last().Text;
+        Assert.That(reply, Does.Contain("17 focused minutes this week across 1 sessions"));
+        Assert.That(reply, Does.Not.Contain("29 focused minutes"));
+    }
+
+    [Test]
     public async Task ExpiredCheckoutRequiresReauthenticationWithoutLeavingTheCurrentPage()
     {
         await SignInAsync();

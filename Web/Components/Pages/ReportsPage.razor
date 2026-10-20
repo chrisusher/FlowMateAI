@@ -12,11 +12,16 @@
         <h1>Focus reports</h1>
         <p class="subheading">Notice what moves forward when you give it your attention.</p>
     </div>
-    <select class="period-select" @bind="Stats.Period">
-        <option value="Day">Today</option>
-        <option value="Week">This week</option>
-        <option value="Month">This month</option>
-    </select>
+    <div class="report-period-controls" aria-label="Report period navigation">
+        <button class="quiet-button report-period-step" type="button" aria-label="Previous period" disabled="@(!Stats.CanViewPreviousPeriod)" @onclick="Stats.PreviousPeriod">&larr;</button>
+        <span class="report-period-label" aria-live="polite">@Stats.PeriodLabel</span>
+        <button class="quiet-button report-period-step" type="button" aria-label="Next period" disabled="@(!Stats.CanViewNextPeriod)" @onclick="Stats.NextPeriod">&rarr;</button>
+        <select class="period-select" aria-label="Report period" @bind="Stats.Period">
+            <option value="Day">Day</option>
+            <option value="Week">Week</option>
+            <option value="Month">Month</option>
+        </select>
+    </div>
 </div>
 <div class="report-summary">
     <FocusTimeCard />
@@ -25,7 +30,17 @@
 </div>
 <FocusChartCard />
 <ProjectBreakdownCard />
-@if (Store.Data.Plan == BillingPlan.Free)
+@if (Stats.HistoryIsTruncated)
+{
+    <div class="history-note" role="status">
+        This period starts before your plan's history limit. Showing reports from @(Stats.AvailableHistoryStart.ToDateTime(TimeOnly.MinValue).ToString("d MMM yyyy")) onwards.
+        @if (Store.Data.Plan == BillingPlan.Free)
+        {
+            <a href="pricing">Pro includes one year of history &rarr;</a>
+        }
+    </div>
+}
+else if (Store.Data.Plan == BillingPlan.Free)
 {
     <div class="history-note">
         Free reports include your last 30 days.
