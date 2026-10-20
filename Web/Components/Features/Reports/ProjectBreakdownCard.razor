@@ -13,7 +13,7 @@
         var mins = Stats.PeriodProjectMinutes(project.Id);
         <div class="breakdown-row">
             <span class="project-color" style="background:@project.Color"></span>
-            <strong>@project.Name</strong>
+            <strong>@(project.IsArchived ? $"{project.Name} (archived)" : project.Name)</strong>
             <span class="breakdown-bar">
                 <i style="width:@(Stats.PeriodMinutes == 0 ? 0 : mins * 100d / Stats.PeriodMinutes)%;background:@project.Color"></i>
             </span>
