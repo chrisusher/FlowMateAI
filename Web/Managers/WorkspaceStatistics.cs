@@ -10,6 +10,7 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
     private ReportPeriod _period = ReportPeriod.Week;
     private DateOnly? _selectedDate;
+    private bool _followsToday = true;
     private DateTime _lastDisplayedHour;
 
     // Invalidate date-based cards when the displayed hour changes.
@@ -39,23 +40,27 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
             _period = value;
             _selectedDate = TodayDate;
+            _followsToday = true;
             NotifyChanged();
         }
     }
 
     public DateOnly SelectedDate
     {
-        get => _selectedDate ?? TodayDate;
+        get => _followsToday || _selectedDate is null ? TodayDate : _selectedDate.Value;
         set
         {
             var selected = value > TodayDate ? TodayDate : value;
 
-            if (_selectedDate == selected)
+            var followsToday = selected == TodayDate;
+
+            if (_selectedDate == selected && _followsToday == followsToday)
             {
                 return;
             }
 
             _selectedDate = selected;
+            _followsToday = followsToday;
             NotifyChanged();
         }
     }
