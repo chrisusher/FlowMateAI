@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Shared.Enums;
 using Web.Clients;
 
 namespace Web.Managers;
@@ -52,7 +53,35 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
         ? "Checking plan…"
         : CurrentPlan == BillingPlan.Free ? "Current plan" : "Included in Pro";
 
-    public bool HasSelectedPrice => Prices.Any(price => price.Interval == (Annual ? "year" : "month"));
+    public BillingPrice? SelectedPrice => FindPrice(Annual ? BillingInterval.Annual : BillingInterval.Monthly);
+
+    public string? AnnualSavingsLabel
+    {
+        get
+        {
+            var monthly = FindPrice(BillingInterval.Monthly);
+            var annual = FindPrice(BillingInterval.Annual);
+
+            if (monthly is null
+                || annual is null
+                || monthly.UnitAmount <= 0
+                || annual.UnitAmount <= 0
+                || !string.Equals(monthly.Currency, annual.Currency, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var monthlyAnnualAmount = monthly.UnitAmount * 12m;
+            var saving = (monthlyAnnualAmount - annual.UnitAmount) / monthlyAnnualAmount;
+            var roundedPercentage = Math.Round(saving * 100m, 0, MidpointRounding.AwayFromZero);
+
+            return roundedPercentage > 0
+                ? $"Save {roundedPercentage:0}%"
+                : null;
+        }
+    }
+
+    public bool HasSelectedPrice => SelectedPrice is not null;
     public bool HasEntitledSubscription => SubscriptionEntitlementExtensions.FromProviderStatus(BillingState?.Status) == SubscriptionEntitlement.Entitled;
 
     public async Task InitialiseAsync()
@@ -90,7 +119,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
         NotifyChanged();
     }
 
-    public string PriceLabel => Prices.FirstOrDefault(p => p.Interval == (Annual ? "year" : "month"))?.Display ?? "Pricing unavailable";
+    public string PriceLabel => SelectedPrice?.Display ?? "Pricing unavailable";
     public string RenewalChargeLabel => BillingState?.SubscriptionInterval switch
     {
         BillingInterval.Annual => "annual",
@@ -142,6 +171,18 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
     private string TrialStatusDetail() => BillingState?.PeriodEndsAt is { } end
         ? $"Your trial ends {end.ToLocalTime():d}. Unless you cancel first, the {RenewalChargeLabel} charge follows then."
         : "Your trial end date is unavailable. Refresh billing status for the latest details.";
+
+    private BillingPrice? FindPrice(BillingInterval interval)
+    {
+        var providerInterval = interval switch
+        {
+            BillingInterval.Monthly => "month",
+            BillingInterval.Annual => "year",
+            _ => throw new ArgumentOutOfRangeException(nameof(interval), interval, null)
+        };
+
+        return Prices.FirstOrDefault(price => string.Equals(price.Interval, providerInterval, StringComparison.OrdinalIgnoreCase));
+    }
 
     public async Task ShowCheckoutReturn(CheckoutOutcome outcome)
     {

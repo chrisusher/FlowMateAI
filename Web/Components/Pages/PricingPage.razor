@@ -14,7 +14,10 @@
         <button class="@(Billing.Annual ? "" : "selected")" @onclick="() => Billing.Annual = false">Monthly</button>
         <button class="@(Billing.Annual ? "selected" : "")" @onclick="() => Billing.Annual = true">
             Yearly
-            <span>Save 20%</span>
+            @if (Billing.AnnualSavingsLabel is { } savings)
+            {
+                <span>@savings</span>
+            }
         </button>
     </div>
     @if (!string.IsNullOrEmpty(Billing.BillingMessage))

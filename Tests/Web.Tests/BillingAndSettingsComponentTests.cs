@@ -15,7 +15,7 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
     {
         var cut = Render<FreePlanCard>();
         Assert.That(Content(cut.Find(".price")), Does.Contain("£0"));
-        Assert.That(cut.FindAll("li").Count, Is.EqualTo(5));
+        Assert.That(cut.FindAll("li").Count, Is.EqualTo(7));
         Assert.That(cut.Find("button").HasAttribute("disabled"), Is.True);
         Assert.That(Content(cut.Find("button")), Is.EqualTo("Checking plan…"));
     }
@@ -58,6 +58,90 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(Billing.BillingMessage, Is.EqualTo("Portal unavailable"));
         Assert.That(cut.Find(".plan-button").HasAttribute("disabled"), Is.True);
         Assert.That(cut.Find(".plan-button").TextContent, Does.Contain("Pro subscription active"));
+    }
+
+    [Test]
+    public async Task PricingPageCalculatesAnnualSavingFromConfiguredPrices()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new BillingPrice("month", "gbp", 1000, "£10 / month"),
+                    new BillingPrice("year", "gbp", 9000, "£90 / year")
+                })
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<PricingPage>();
+
+        Assert.That(Billing.AnnualSavingsLabel, Is.EqualTo("Save 25%"));
+        Assert.That(Content(cut.Find(".billing-toggle span")), Is.EqualTo("Save 25%"));
+    }
+
+    [Test]
+    public async Task PricingPageHidesSavingWhenConfiguredPricesCannotBeCompared()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new BillingPrice("month", "gbp", 1000, "£10 / month"),
+                    new BillingPrice("year", "eur", 9000, "€90 / year")
+                })
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<PricingPage>();
+
+        Assert.That(Billing.AnnualSavingsLabel, Is.Null);
+        Assert.That(cut.FindAll(".billing-toggle span"), Is.Empty);
+    }
+
+    [Test]
+    public async Task PricingPageHidesSavingsThatRoundToZero()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new BillingPrice("month", "gbp", 1000, "£10 / month"),
+                    new BillingPrice("year", "gbp", 11999, "£119.99 / year")
+                })
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<PricingPage>();
+
+        Assert.That(Billing.AnnualSavingsLabel, Is.Null);
+        Assert.That(cut.FindAll(".billing-toggle span"), Is.Empty);
     }
 
     [TestCase(BillingInterval.Annual, "annual")]
