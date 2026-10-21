@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Services.Database;
 using Services.Repositories;
@@ -14,7 +13,8 @@ public sealed class UserRepositoryTests
     [Test]
     public async Task RegistrationStoresTrimmedAndNormalisedEmailAndSupportsBothLookups()
     {
-        await using var database = CreateDatabase();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = await testDatabase.CreateContextAsync();
         var repository = new UserRepository(database);
 
         await repository.EnsureRegisteredAsync("auth0|user-1", "  Person@Example.Test  ");
@@ -30,7 +30,9 @@ public sealed class UserRepositoryTests
     [Test]
     public async Task RegistrationSkipsSaveWhenEmailIsUnchanged()
     {
-        await using var database = CreateCountingDatabase();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var setupDatabase = await testDatabase.CreateContextAsync();
+        await using var database = new CountingContext(testDatabase.CreateOptions());
         var repository = new UserRepository(database);
         await repository.EnsureRegisteredAsync("auth0|user-1", "person@example.test");
         var originalUpdatedAt = (await database.Users.SingleAsync()).UpdatedAt;
@@ -45,7 +47,9 @@ public sealed class UserRepositoryTests
     [Test]
     public async Task RegistrationUpdatesChangedEmail()
     {
-        await using var database = CreateCountingDatabase();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var setupDatabase = await testDatabase.CreateContextAsync();
+        await using var database = new CountingContext(testDatabase.CreateOptions());
         var repository = new UserRepository(database);
         await repository.EnsureRegisteredAsync("auth0|user-1", "old@example.test");
         var originalUpdatedAt = (await database.Users.SingleAsync()).UpdatedAt;
@@ -63,9 +67,9 @@ public sealed class UserRepositoryTests
     [Test]
     public async Task RegistrationReloadsAndUpdatesWhenAnotherRequestCreatesTheUserFirst()
     {
-        var databaseName = Guid.NewGuid().ToString("N");
-        var root = new InMemoryDatabaseRoot();
-        await using var database = new ConflictInjectingContext(databaseName, root);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var setupDatabase = await testDatabase.CreateContextAsync();
+        await using var database = new ConflictInjectingContext(testDatabase.CreateOptions(), testDatabase);
 
         await new UserRepository(database).EnsureRegisteredAsync("auth0|user-1", "requested@example.test");
 
@@ -78,7 +82,8 @@ public sealed class UserRepositoryTests
     [Test]
     public async Task UserDataResetDeletesOnlyTheRequestedUsersRecord()
     {
-        await using var database = CreateDatabase();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = await testDatabase.CreateContextAsync();
         database.Users.AddRange(
             new UserDocument
             {
@@ -123,14 +128,6 @@ public sealed class UserRepositoryTests
         }));
     }
 
-    private static DatabaseContext CreateDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
-        .Options);
-
-    private static CountingContext CreateCountingDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
-        .Options);
-
     private sealed class CountingContext(DbContextOptions<DatabaseContext> options) : DatabaseContext(options)
     {
         public int SaveChangesCalls
@@ -146,8 +143,8 @@ public sealed class UserRepositoryTests
         }
     }
 
-    private sealed class ConflictInjectingContext(string databaseName, InMemoryDatabaseRoot root)
-        : DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(databaseName, root).Options)
+    private sealed class ConflictInjectingContext(DbContextOptions<DatabaseContext> options, CosmosTestDatabase testDatabase)
+        : DatabaseContext(options)
     {
         public bool ConflictWasInjected
         {
@@ -160,9 +157,7 @@ public sealed class UserRepositoryTests
             {
                 ConflictWasInjected = true;
 
-                await using var competingRequest = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
-                    .UseInMemoryDatabase(databaseName, root)
-                    .Options);
+                await using var competingRequest = testDatabase.CreateContext();
 
                 competingRequest.Users.Add(new UserDocument
                 {
