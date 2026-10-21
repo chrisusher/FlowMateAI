@@ -116,6 +116,34 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         Assert.That(cut.FindAll(".billing-toggle span"), Is.Empty);
     }
 
+    [Test]
+    public async Task PricingPageHidesSavingsThatRoundToZero()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new BillingPrice("month", "gbp", 1000, "£10 / month"),
+                    new BillingPrice("year", "gbp", 11999, "£119.99 / year")
+                })
+            },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10))
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+
+        await Billing.InitialiseAsync();
+        var cut = Render<PricingPage>();
+
+        Assert.That(Billing.AnnualSavingsLabel, Is.Null);
+        Assert.That(cut.FindAll(".billing-toggle span"), Is.Empty);
+    }
+
     [TestCase(BillingInterval.Annual, "annual")]
     [TestCase(BillingInterval.Monthly, "monthly")]
     [TestCase(null, "subscription")]

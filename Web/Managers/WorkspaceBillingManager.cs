@@ -73,9 +73,10 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
             var monthlyAnnualAmount = monthly.UnitAmount * 12m;
             var saving = (monthlyAnnualAmount - annual.UnitAmount) / monthlyAnnualAmount;
+            var roundedPercentage = Math.Round(saving * 100m, 0, MidpointRounding.AwayFromZero);
 
-            return saving > 0
-                ? $"Save {Math.Round(saving * 100m, 0, MidpointRounding.AwayFromZero):0}%"
+            return roundedPercentage > 0
+                ? $"Save {roundedPercentage:0}%"
                 : null;
         }
     }

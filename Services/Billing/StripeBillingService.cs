@@ -41,10 +41,10 @@ public sealed class StripeBillingService(
     {
         var prices = new List<BillingPrice>();
 
-        foreach (var (id, interval) in new[]
+        foreach (var (id, configuredInterval) in new[]
         {
-            (configuration["Stripe:MonthlyPriceId"], "month"),
-            (configuration["Stripe:AnnualPriceId"], "year")
+            (configuration["Stripe:MonthlyPriceId"], BillingInterval.Monthly),
+            (configuration["Stripe:AnnualPriceId"], BillingInterval.Annual)
         })
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -62,14 +62,24 @@ public sealed class StripeBillingService(
             var root = document.RootElement;
             var currency = root.GetProperty("currency").GetString() ?? "gbp";
             var amount = root.GetProperty("unit_amount").GetInt64();
-            var actualInterval = root.GetProperty("recurring").GetProperty("interval").GetString() ?? interval;
+            var recurring = root.GetProperty("recurring");
+            var actualInterval = recurring.GetProperty("interval").GetString();
+            var actualIntervalCount = recurring.TryGetProperty("interval_count", out var intervalCount)
+                ? intervalCount.GetInt32()
+                : 1;
+
+            if (!MatchesConfiguredInterval(configuredInterval, actualInterval, actualIntervalCount))
+            {
+                continue;
+            }
 
             var currencyCode = Enum.TryParse<CurrencyCode>(currency, true, out var parsedCurrency)
                 ? parsedCurrency
                 : CurrencyCode.Unknown;
 
             var display = CurrencyLogic.FormatPrice(amount / 100m, currencyCode);
-            prices.Add(new(actualInterval, currency, amount, $"{display} / {(actualInterval == "year" ? "year" : "month")}"));
+            var displayInterval = configuredInterval == BillingInterval.Annual ? "year" : "month";
+            prices.Add(new(displayInterval, currency, amount, $"{display} / {displayInterval}"));
         }
 
         return prices;
@@ -504,6 +514,15 @@ public sealed class StripeBillingService(
     }
 
     private static bool IsEntitled(string status) => SubscriptionEntitlementExtensions.FromProviderStatus(status) == SubscriptionEntitlement.Entitled;
+
+    private static bool MatchesConfiguredInterval(BillingInterval configuredInterval, string? actualInterval, int actualIntervalCount) =>
+        configuredInterval switch
+        {
+            BillingInterval.Monthly => actualInterval == "month" && actualIntervalCount == 1,
+            BillingInterval.Annual => (actualInterval == "year" && actualIntervalCount == 1)
+                || (actualInterval == "month" && actualIntervalCount == 12),
+            _ => false
+        };
 
     private static DateTimeOffset? UnixTime(JsonElement root, string field) => root.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Number ? DateTimeOffset.FromUnixTimeSeconds(value.GetInt64()) : null;
 

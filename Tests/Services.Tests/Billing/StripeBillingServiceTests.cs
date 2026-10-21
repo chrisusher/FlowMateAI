@@ -6,6 +6,7 @@ using Services.Repositories;
 using Services.Coach;
 using Services.Workspaces;
 using Shared.Contracts;
+using Shared.Enums;
 using Shared.Models;
 using Services.Tests.Doubles;
 
@@ -20,6 +21,25 @@ public sealed class StripeBillingServiceTests
     public void SetupEachTest()
     {
         _repository = new StubBillingRepository();
+    }
+
+    [Test]
+    public async Task GetPricesTreatsTwelveMonthStripePriceAsTheConfiguredAnnualPrice()
+    {
+        var handler = new StripeHandler
+        {
+            PriceResponses = new Dictionary<string, string>
+            {
+                ["price_monthly"] = "{\"currency\":\"gbp\",\"unit_amount\":1000,\"recurring\":{\"interval\":\"month\",\"interval_count\":1}}",
+                ["price_annual"] = "{\"currency\":\"gbp\",\"unit_amount\":9600,\"recurring\":{\"interval\":\"month\",\"interval_count\":12}}"
+            }
+        };
+        var service = CreateService(handler, _repository!);
+
+        var prices = await service.GetPricesAsync();
+
+        Assert.That(prices.Select(price => price.Interval), Is.EqualTo(new[] { "month", "year" }));
+        Assert.That(prices.Single(price => price.Interval == "year").Display, Is.EqualTo("£96.00 / year"));
     }
 
     [Test]
@@ -473,6 +493,7 @@ public sealed class StripeBillingServiceTests
         }
 
         public string SubscriptionsJson { get; init; } = "{\"data\":[]}";
+        public Dictionary<string, string> PriceResponses { get; init; } = [];
         public Action? BeforePortalCreation
         {
             get; set;
@@ -496,6 +517,12 @@ public sealed class StripeBillingServiceTests
             if (request.RequestUri.AbsolutePath.EndsWith("/customers", StringComparison.Ordinal))
             {
                 return JsonResponse("{\"id\":\"cus_created\"}");
+            }
+
+            if (request.RequestUri.AbsolutePath.Contains("/prices/", StringComparison.Ordinal)
+                && PriceResponses.TryGetValue(request.RequestUri.AbsolutePath[(request.RequestUri.AbsolutePath.LastIndexOf('/') + 1)..], out var priceResponse))
+            {
+                return JsonResponse(priceResponse);
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/subscriptions", StringComparison.Ordinal))
