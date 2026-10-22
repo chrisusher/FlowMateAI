@@ -84,6 +84,8 @@ In the Function App's **Settings → Environment variables** (or Configuration),
 | --- | --- |
 | `Auth0__Authority` | Auth0 issuer URL, e.g. `https://your-tenant.eu.auth0.com/` (include `https://` and the trailing slash) |
 | `Auth0__Audience` | The same API identifier used as `AUTH0_AUDIENCE` |
+| `Auth0__ManagementClientId` | Server-side machine-to-machine client ID with Auth0 Management API `delete:users` permission |
+| `Auth0__ManagementClientSecret` | Server-side secret for the management client; store it as a protected Function App setting |
 | `Cors__AllowedOrigins__0` | Exact Static Web App origin, e.g. `https://<your-site>.azurestaticapps.net` (no path or trailing slash) |
 
 The API validates the issuer, audience, expiry, and RS256 signature using the Auth0 JWKS endpoint at `<Authority>.well-known/jwks.json`. It does not use an Auth0 client secret. The custom Functions middleware uses `Cors:AllowedOrigins` to answer preflight requests and return CORS headers; the origin must match the browser's site origin exactly. If you have multiple frontend origins, add indexed settings such as `Cors__AllowedOrigins__1` for each explicitly allowed origin.
@@ -97,4 +99,4 @@ Apply and save the app settings, then restart the Function App if Azure prompts 
 3. Open the Static Web App and sign in with each enabled provider. A callback mismatch usually means the browser's current URL is missing from **Allowed Callback URLs**; logout requires the return URL in **Allowed Logout URLs**.
 4. Confirm the API is reachable at `https://<your-function-app>.azurewebsites.net/api/health`. Then sign in and load/save a workspace. Protected API calls must include a valid bearer token; an incorrect issuer/audience, an unavailable JWKS endpoint, or an unlisted CORS origin prevents successful browser API calls.
 
-The Function API's health endpoint is public and does not test Auth0 token validation. Workspace and account-specific billing operations require a valid token. Auth0 Management API credentials are only needed for the separate administrative CLI workflows documented in [administrative-cli.md](administrative-cli.md).
+The Function API's health endpoint is public and does not test Auth0 token validation. Workspace, billing and account-deletion operations require a valid token. Account deletion cancels the linked Stripe subscription, removes FlowMate application data and then deletes the Auth0 identity. If any stage fails, the endpoint reports a retryable incomplete deletion; keep the management client enabled in production. The same credentials may be used by the separate administrative CLI workflows documented in [administrative-cli.md](administrative-cli.md).

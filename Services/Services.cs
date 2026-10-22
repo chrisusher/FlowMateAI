@@ -131,6 +131,8 @@ public static class Services
 
         #region EF Core Services
         services.AddScoped<IBillingService, StripeBillingService>();
+        services.AddScoped<IAccountDeletionService, AccountDeletionService>();
+        services.AddScoped<IAuth0IdentityDeletionService, Auth0IdentityDeletionService>();
         services.AddScoped<IUserDataResetService, UserDataResetService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();

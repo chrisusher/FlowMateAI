@@ -16,7 +16,7 @@ Auth0:ManagementClientId        (secret)
 Auth0:ManagementClientSecret    (secret)
 ```
 
-Create an Auth0 machine-to-machine application authorized for the Auth0 Management API with the `read:users` scope. The CLI requests a Management API token and resolves email through `/api/v2/users-by-email`. See [Auth0's production token setup](https://auth0.com/docs/secure/tokens/access-tokens/management-api-access-tokens/get-management-api-access-tokens-for-production).
+Create an Auth0 machine-to-machine application authorized for the Auth0 Management API with the `read:users` scope. The authenticated account-deletion endpoint additionally requires `delete:users`; the CLI itself only resolves email through `/api/v2/users-by-email`. The CLI requests a Management API token through the same server-side settings. See [Auth0's production token setup](https://auth0.com/docs/secure/tokens/access-tokens/management-api-access-tokens/get-management-api-access-tokens-for-production).
 
 ## Grant Pro access for a preview
 

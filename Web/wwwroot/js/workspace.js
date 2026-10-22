@@ -6,6 +6,10 @@ export function write(key, value) {
   localStorage.setItem(key, value);
 }
 
+export function remove(key) {
+  localStorage.removeItem(key);
+}
+
 export function getTimeZone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
