@@ -48,6 +48,7 @@ public class Program
         builder.Services.AddAuthorizationCore();
         builder.Services.AddScoped<AuthenticationStateProvider, Auth0AuthenticationStateProvider>();
         builder.Services.AddScoped<BillingClient>();
+        builder.Services.AddScoped<AccountClient>();
         builder.Services.AddScoped<McpKeysClient>();
         builder.Services.AddScoped<WorkspaceStore>();
 

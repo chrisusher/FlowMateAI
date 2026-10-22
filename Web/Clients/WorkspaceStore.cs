@@ -474,6 +474,17 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         }
     }
 
+    public async Task ClearLocalDataAsync()
+    {
+        var module = await ModuleAsync();
+        await module.InvokeVoidAsync("remove", StorageKey);
+        await module.InvokeVoidAsync("remove", PendingStorageKey);
+        await module.InvokeVoidAsync("remove", RevisionStorageKey);
+        _revision = null;
+        _pendingSync = false;
+        Changed?.Invoke();
+    }
+
     public async Task PreserveForReauthenticationAsync()
     {
         await _saveGate.WaitAsync();

@@ -431,7 +431,9 @@ var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"));
 
 api.WithEnvironment("Auth0__Authority", auth0Authority)
-    .WithEnvironment("Auth0__Audience", builder.Configuration["Auth0:Audience"]);
+    .WithEnvironment("Auth0__Audience", builder.Configuration["Auth0:Audience"])
+    .WithEnvironment("Auth0__ManagementClientId", auth0ClientId)
+    .WithEnvironment("Auth0__ManagementClientSecret", auth0ClientSecret);
 
 var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WaitFor(api)

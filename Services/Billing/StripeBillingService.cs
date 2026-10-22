@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using ChrisUsher.Core.Shared.Currency;
@@ -11,7 +12,8 @@ public sealed class StripeBillingService(
     FlowMateEnvironment environment,
     IConfiguration configuration,
     IHttpClientFactory clients,
-    IBillingRepository repository) : IBillingService
+    IBillingRepository repository,
+    IUserRepository? users = null) : IBillingService
 {
     private const string STRIPE_API = "https://api.stripe.com/v1/";
 
@@ -343,6 +345,37 @@ public sealed class StripeBillingService(
         }
     }
 
+    public async Task<BillingActionResponse> CancelSubscriptionAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(entitlement.StripeSubscriptionId))
+        {
+            return new(true, null, null, null);
+        }
+
+        try
+        {
+            using var response = await SendAsync(
+                HttpMethod.Delete,
+                $"subscriptions/{Uri.EscapeDataString(entitlement.StripeSubscriptionId)}",
+                null,
+                $"flowmate-account-deletion-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId))).ToLowerInvariant()}",
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return new(true, null, null, null);
+            }
+
+            return Failure(BillingActionCode.StripeError, StripeError(await response.Content.ReadAsStringAsync(cancellationToken)));
+        }
+        catch (HttpRequestException)
+        {
+            return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. No account data was removed.");
+        }
+    }
+
     public async Task<bool> ProcessWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default)
     {
         if (!VerifySignature(payload, signature, configuration["Stripe:WebhookSecret"]))
@@ -367,6 +400,13 @@ public sealed class StripeBillingService(
 
             if (!string.IsNullOrWhiteSpace(userId))
             {
+                if (users is not null && string.IsNullOrWhiteSpace(await users.FindEmailByUserIdAsync(userId, cancellationToken)))
+                {
+                    await repository.MarkEventProcessedAsync(eventId, cancellationToken);
+
+                    return true;
+                }
+
                 var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
                 ApplySubscription(entitlement, subscription);
                 await repository.SaveEntitlementAsync(entitlement, cancellationToken);

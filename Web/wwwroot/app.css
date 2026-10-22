@@ -1877,6 +1877,21 @@ a {
     padding: 19px 21px
 }
 
+.danger-panel {
+    border-color: #e4c5c5
+}
+
+.settings-help {
+    color: #72766f;
+    font-size: 10px;
+    line-height: 1.6;
+    max-width: 650px
+}
+
+.danger-button {
+    color: #b65353
+}
+
 .settings-heading {
     display: flex;
     align-items: flex-start;

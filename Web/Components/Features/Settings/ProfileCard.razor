@@ -1,5 +1,6 @@
 @inherits WorkspaceComponentBase
 @inject Auth0Client Auth
+@inject AccountClient Account
 
 <article class="panel settings-panel">
     <div class="settings-heading">
@@ -34,3 +35,40 @@
         }
     </div>
 </article>
+
+@if (Auth.Session.SignedIn)
+{
+    <article class="panel settings-panel danger-panel">
+        <div class="settings-heading">
+            <div>
+                <h3>Delete account</h3>
+                <p>Cancel billing and permanently remove your FlowMate data.</p>
+            </div>
+        </div>
+        @if (!_confirmingDeletion)
+        {
+            <p class="settings-help">This removes your workspace, focus history, reports, coach conversations and assistant keys. Stripe financial records and provider backups may be retained where required by law.</p>
+            <button class="text-button danger-button" @onclick="BeginDeletion">Delete my account</button>
+        }
+        else
+        {
+            <p class="settings-help">To verify this request, enter your account email and type <strong>DELETE MY ACCOUNT</strong>. Deletion cannot be undone.</p>
+            <label class="field-label">
+                Account email
+                <input class="field-input" @bind="_deletionEmail" autocomplete="email" />
+            </label>
+            <label class="field-label">
+                Confirmation
+                <input class="field-input" @bind="_deletionConfirmation" autocomplete="off" />
+            </label>
+            <div class="profile-actions">
+                <button class="quiet-button" @onclick="CancelDeletion">Keep my account</button>
+                <button class="text-button danger-button" @onclick="DeleteAccountAsync" disabled="@_deleting">@(_deleting ? "Deleting…" : "Permanently delete")</button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_deletionMessage))
+            {
+                <p class="billing-message" role="alert">@_deletionMessage</p>
+            }
+        }
+    </article>
+}

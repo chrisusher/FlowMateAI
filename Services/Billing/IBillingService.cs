@@ -11,5 +11,6 @@ public interface IBillingService
     Task<BillingActionResponse> StartTrialAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default);
     Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, bool trial = false);
     Task<BillingActionResponse> CreatePortalAsync(string userId, CancellationToken cancellationToken = default);
+    Task<BillingActionResponse> CancelSubscriptionAsync(string userId, CancellationToken cancellationToken = default);
     Task<bool> ProcessWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default);
 }
