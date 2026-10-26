@@ -40,6 +40,18 @@ public sealed class WorkspaceServiceTests
     }
 
     [Test]
+    public async Task SubmittedPlanCannotGrantPaidEntitlements()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        var requested = new WorkspaceSnapshot { Plan = BillingPlan.Pro };
+
+        var result = await CreateService(repository).SaveAsync("user", new(requested, null));
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Response!.Workspace.Plan, Is.EqualTo(BillingPlan.Free));
+    }
+
+    [Test]
     public async Task TimerOwnedByAnotherClientIsPreservedWhenConflictingSaveIsRejected()
     {
         var current = new WorkspaceSnapshot

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Services.Billing;
+using Services.ApiRequests;
 using Services.Coach;
 using Services.Database;
 using Services.Mcp;
@@ -89,6 +90,7 @@ public static class Services
             .Get<GlobalConfig>() ?? new GlobalConfig();
 
         services.AddDatabase(configuration);
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(sp =>
         {
             var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
@@ -116,6 +118,7 @@ public static class Services
 
         #region Repositories
         services.AddScoped<IBillingRepository, BillingRepository>();
+        services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
         services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
@@ -135,6 +138,7 @@ public static class Services
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<IAuthenticatedApiRateLimiter, AuthenticatedApiRateLimiterService>();
         #endregion
 
         #endregion

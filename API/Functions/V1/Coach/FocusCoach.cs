@@ -5,10 +5,12 @@ using Services.Billing;
 using Services.Workspaces;
 using Services.Users;
 using Shared.Models.Coach;
+using Services.ApiRequests;
+using Shared.Enums;
 
 namespace API.Functions.V1.Coach;
 
-public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces, IBillingService billing, IUserService users)
+public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService coach, IWorkspaceService workspaces, IBillingService billing, IUserService users, IAuthenticatedApiRateLimiter limiter)
 {
 
     [Function("FocusCoach")]
@@ -23,18 +25,33 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
         }
 
+        var rateLimitResponse = await HttpFunction.EnforceRateLimitAsync(request, limiter, userId, AuthenticatedApiRateLimitScope.CoachRequest, cancellationToken);
+
+        if (rateLimitResponse is not null)
+        {
+            return rateLimitResponse;
+        }
+
+        var body = await HttpFunction.ReadBoundedBodyAsync(request, 16 * 1024, cancellationToken);
+
+        if (body is null)
+        {
+            return await HttpFunction.ErrorAsync(request, HttpStatusCode.RequestEntityTooLarge, "request_too_large", "Coach requests are limited to 16 KB.", cancellationToken);
+        }
+
         CoachRequest? input;
 
         try
         {
-            input = await JsonSerializer.DeserializeAsync<CoachRequest>(request.Body, SharedCommon.JsonOptions, cancellationToken);
+            input = JsonSerializer.Deserialize<CoachRequest>(body, SharedCommon.JsonOptions);
         }
         catch (JsonException)
         {
             input = null;
         }
 
-        if (input is null || string.IsNullOrWhiteSpace(input.Prompt) || input.Prompt.Length > 4000)
+        if (input is null || string.IsNullOrWhiteSpace(input.Prompt) || input.Prompt.Length > 4000 ||
+            (input.ConversationId is not null && input.ConversationId.Length > 128))
         {
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.BadRequest, "invalid_request", "Enter a message of up to 4,000 characters.", cancellationToken);
         }
