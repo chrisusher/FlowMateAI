@@ -19,6 +19,13 @@ var host = new HostBuilder()
 
             if (httpContext is not null)
             {
+                httpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                httpContext.Response.Headers["X-Frame-Options"] = "DENY";
+                httpContext.Response.Headers["Referrer-Policy"] = "no-referrer";
+                httpContext.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+                httpContext.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+                httpContext.Response.Headers["Cross-Origin-Resource-Policy"] = "same-site";
+
                 var origin = httpContext.Request.Headers.Origin.ToString();
                 var allowedOrigins = context.InstanceServices.GetRequiredService<IConfiguration>()
                     .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];

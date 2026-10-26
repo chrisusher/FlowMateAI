@@ -15,6 +15,8 @@ public sealed class McpUsageDocument
 
     public List<DateTimeOffset> RecentAdmissions { get; set; } = [];
 
+    public List<ApiRateLimitRecord> ApiAdmissions { get; set; } = [];
+
     public int Ttl { get; set; } = 172800;
 
     public string? ETag

@@ -57,6 +57,12 @@ public class DatabaseContext : DbContext
             entity.Property(x => x.UtcDay).ToJsonProperty("utcDay");
             entity.Property(x => x.DailyCount).ToJsonProperty("dailyCount");
             entity.Property(x => x.RecentAdmissions).ToJsonProperty("recentAdmissions");
+            entity.OwnsMany(x => x.ApiAdmissions, admission =>
+            {
+                admission.ToJsonProperty("apiAdmissions");
+                admission.Property(x => x.Scope).HasConversion<string>().ToJsonProperty("scope");
+                admission.Property(x => x.Timestamp).ToJsonProperty("timestamp");
+            });
             entity.Property(x => x.Ttl).ToJsonProperty("ttl");
             entity.Property(x => x.ETag).IsETagConcurrency();
             entity.HasDefaultTimeToLive(172800);

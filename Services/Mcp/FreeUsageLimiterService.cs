@@ -51,7 +51,8 @@ public sealed class FreeUsageLimiterService(IMcpUsageRepository repository, ICon
                     UserId = userId,
                     UtcDay = today,
                     DailyCount = count + 1,
-                    RecentAdmissions = timestamps.TakeLast(PerMinuteLimit).ToList()
+                    RecentAdmissions = timestamps.TakeLast(PerMinuteLimit).ToList(),
+                    ApiAdmissions = document?.ApiAdmissions ?? []
                 };
 
                 if (await repository.TrySaveAsync(updated, document?.ETag, timeout.Token))

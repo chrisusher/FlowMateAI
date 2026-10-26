@@ -5,10 +5,12 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
 using Services.Users;
 using Shared.Contracts;
+using Services.ApiRequests;
+using Shared.Enums;
 
 namespace API.Functions.V1.Billing;
 
-public sealed class BillingTrial(Auth0TokenValidator tokens, IBillingService billing, IUserService users)
+public sealed class BillingTrial(Auth0TokenValidator tokens, IBillingService billing, IUserService users, IAuthenticatedApiRateLimiter limiter)
 {
     [Function("BillingTrial")]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/billing/trial")] HttpRequestData request, CancellationToken cancellationToken)
@@ -20,11 +22,25 @@ public sealed class BillingTrial(Auth0TokenValidator tokens, IBillingService bil
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid access token is required.", cancellationToken);
         }
 
+        var rateLimitResponse = await HttpFunction.EnforceRateLimitAsync(request, limiter, userId, AuthenticatedApiRateLimitScope.BillingRequest, cancellationToken);
+
+        if (rateLimitResponse is not null)
+        {
+            return rateLimitResponse;
+        }
+
+        var requestBody = await HttpFunction.ReadBoundedBodyAsync(request, 4096, cancellationToken);
+
+        if (requestBody is null)
+        {
+            return await HttpFunction.ErrorAsync(request, HttpStatusCode.RequestEntityTooLarge, "request_too_large", "Billing requests are limited to 4 KB.", cancellationToken);
+        }
+
         CheckoutRequest? body;
 
         try
         {
-            body = await JsonSerializer.DeserializeAsync<CheckoutRequest>(request.Body, SharedCommon.JsonOptions, cancellationToken);
+            body = JsonSerializer.Deserialize<CheckoutRequest>(requestBody, SharedCommon.JsonOptions);
         }
         catch (JsonException)
         {
