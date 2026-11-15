@@ -102,6 +102,7 @@ public sealed class FocusCoach(Auth0TokenValidator tokens, IFocusCoachService co
             Role = ChatMessageRole.Assistant,
             Text = answer.Text
         });
+        WorkspaceRequestValidator.RetainRecentMessages(conversation);
         conversation.UpdatedAt = DateTimeOffset.UtcNow;
         workspace.Workspace.Conversations.Remove(conversation);
         workspace.Workspace.Conversations.Insert(0, conversation);

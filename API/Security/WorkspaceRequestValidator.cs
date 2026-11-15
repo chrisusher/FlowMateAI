@@ -6,6 +6,17 @@ namespace API.Security;
 internal static class WorkspaceRequestValidator
 {
     internal const int MaximumPayloadBytes = 2 * 1024 * 1024;
+    internal const int MaximumConversationMessages = 1000;
+
+    internal static void RetainRecentMessages(ConversationRecord conversation)
+    {
+        var excess = conversation.Messages.Count - MaximumConversationMessages;
+
+        if (excess > 0)
+        {
+            conversation.Messages.RemoveRange(0, excess);
+        }
+    }
 
     internal static string? Validate(WorkspaceSnapshot? workspace)
     {
@@ -42,9 +53,8 @@ internal static class WorkspaceRequestValidator
         if (workspace.Projects.Any(project => !HasLength(project.Name, 1, 200) || !IsHexColor(project.Color)) ||
             workspace.Tasks.Any(task => !HasLength(task.Title, 1, 500) || !HasLength(task.ProjectId, 1, 128) ||
                 !projectIds.Contains(task.ProjectId) || !Enum.IsDefined(task.Priority) || task.FocusMinutesToday is < 0 or > 1440) ||
-            workspace.Sessions.Any(session => !HasLength(session.ProjectId, 1, 128) || !projectIds.Contains(session.ProjectId) ||
-                !HasLength(session.TaskId, 0, 128) || (session.TaskId is not null &&
-                    (!tasksById.TryGetValue(session.TaskId, out var task) || task.ProjectId != session.ProjectId)) ||
+            workspace.Sessions.Any(session => !HasLength(session.ProjectId, 0, 128) ||
+                !HasLength(session.TaskId, 0, 128) ||
                 session.EndedAt < session.StartedAt || session.FocusMinutes is < 0 or > 1440))
         {
             return "Workspace records contain invalid fields or references.";
@@ -52,7 +62,7 @@ internal static class WorkspaceRequestValidator
 
         foreach (var conversation in workspace.Conversations)
         {
-            if (!HasLength(conversation.Title, 0, 200) || !Bounded(conversation.Messages, 1000) ||
+            if (!HasLength(conversation.Title, 0, 200) || !Bounded(conversation.Messages, MaximumConversationMessages) ||
                 conversation.Messages.Any(message => message is null || !Enum.IsDefined(message.Role) || !HasLength(message.Text, 1, 8000)))
             {
                 return "Conversation data exceeds the supported limits.";
