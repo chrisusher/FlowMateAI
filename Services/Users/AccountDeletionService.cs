@@ -21,22 +21,30 @@ public sealed class AccountDeletionService(
                 "Account deletion is temporarily unavailable. Contact support to complete the verified request.");
         }
 
-        var billingResult = await billing.CancelSubscriptionAsync(userId, cancellationToken);
-
-        if (!billingResult.Succeeded)
-        {
-            return new(false, AccountDeletionStage.Billing,
-                billingResult.Message ?? "The subscription could not be cancelled, so no account data was removed.");
-        }
+        bool checkoutInProgress;
 
         try
         {
-            await markers.MarkAsync(userId, cancellationToken);
+            checkoutInProgress = await markers.MarkAsync(userId, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return new(false, AccountDeletionStage.ApplicationData,
                 "Account access could not be disabled. Retry the deletion request or contact support.");
+        }
+
+        if (checkoutInProgress)
+        {
+            return new(false, AccountDeletionStage.Billing,
+                "A checkout request is still being processed. Retry deletion shortly or contact support.");
+        }
+
+        var billingResult = await billing.CancelSubscriptionAsync(userId, cancellationToken);
+
+        if (!billingResult.Succeeded)
+        {
+            return new(false, AccountDeletionStage.Billing,
+                billingResult.Message ?? "The subscription could not be cancelled. Retry deletion or contact support.");
         }
 
         UserDataResetResult data;

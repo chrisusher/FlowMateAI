@@ -21,7 +21,7 @@ public sealed class AccountDeletionServiceTests
         var result = await new AccountDeletionService(billing, data, identity, new StubMarkers(order)).DeleteAsync("auth0|user-1");
 
         Assert.That(result.Succeeded, Is.True);
-        Assert.That(order, Is.EqualTo(new[] { "billing", "marker", "data", "identity" }));
+        Assert.That(order, Is.EqualTo(new[] { "marker", "billing", "data", "identity" }));
         Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Completed));
     }
 
@@ -37,7 +37,7 @@ public sealed class AccountDeletionServiceTests
 
         Assert.That(result.Succeeded, Is.False);
         Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Billing));
-        Assert.That(order, Is.EqualTo(new[] { "billing" }));
+        Assert.That(order, Is.EqualTo(new[] { "marker", "billing" }));
     }
 
     [Test]
@@ -49,7 +49,19 @@ public sealed class AccountDeletionServiceTests
 
         Assert.That(result.Succeeded, Is.False);
         Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.ApplicationData));
-        Assert.That(order, Is.EqualTo(new[] { "billing" }));
+        Assert.That(order, Is.Empty);
+    }
+
+    [Test]
+    public async Task DeletionWaitsForAnAlreadyAdmittedCheckout()
+    {
+        var order = new List<string>();
+        var result = await new AccountDeletionService(new StubBillingService(order), new StubDataResetService(order),
+            new StubIdentityDeletionService(order), new ActiveCheckoutMarkers()).DeleteAsync("auth0|user-1");
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Billing));
+        Assert.That(order, Is.Empty);
     }
 
     [Test]
@@ -63,19 +75,31 @@ public sealed class AccountDeletionServiceTests
         Assert.That(result.Succeeded, Is.False);
         Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Identity));
         Assert.That(result.Data, Is.Not.Null);
-        Assert.That(order, Is.EqualTo(new[] { "billing", "marker", "data", "identity" }));
+        Assert.That(order, Is.EqualTo(new[] { "marker", "billing", "data", "identity" }));
     }
 
     private sealed class StubMarkers(List<string> order) : IAccountDeletionMarkerRepository
     {
-        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) { order.Add("marker"); return Task.CompletedTask; }
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) { order.Add("marker"); return Task.FromResult(false); }
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class FailingMarkers : IAccountDeletionMarkerRepository
     {
-        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromException(new InvalidOperationException());
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromException<bool>(new InvalidOperationException());
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class ActiveCheckoutMarkers : IAccountDeletionMarkerRepository
+    {
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class StubBillingService(List<string> order) : IBillingService

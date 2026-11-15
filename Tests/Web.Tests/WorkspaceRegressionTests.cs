@@ -437,6 +437,38 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task AccountDeletionWaitsForPendingSaveAndPreventsLaterCacheWrites()
+    {
+        await SignInAsync();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Api.Respond = async (_, _) =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        };
+
+        var saving = Store.SaveAsync();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var clearing = Store.ClearLocalDataAsync();
+        Assert.That(clearing.IsCompleted, Is.False);
+        release.TrySetResult();
+        await saving;
+        await clearing;
+        var writes = WorkspaceModule.Invocations.Count(call => call.Identifier == "write");
+
+        await Store.SaveAsync();
+        await Store.PreserveForReauthenticationAsync();
+
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "write"), Is.EqualTo(writes));
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "remove"), Is.EqualTo(3));
+        Assert.That(Store.Data.Tasks, Is.Empty);
+        Assert.That(Store.Data.Conversations, Is.Empty);
+    }
+
+    [Test]
     public async Task WorkspaceOutageKeepsLocalDraftPendingUntilAnExplicitRetrySucceeds()
     {
         await SignInAsync();

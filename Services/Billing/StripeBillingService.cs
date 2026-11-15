@@ -101,6 +101,15 @@ public sealed class StripeBillingService(
             return Failure(BillingActionCode.BillingUnavailable, "Checkout is not configured yet.");
         }
 
+        var operationId = Guid.NewGuid().ToString("N");
+
+        if (!await deletionMarkers.TryBeginCheckoutAsync(userId, operationId, cancellationToken))
+        {
+            return Failure(BillingActionCode.CheckoutInProgress, "Checkout is unavailable while another request or account deletion is in progress.");
+        }
+
+        var checkoutOutcomeUnknown = false;
+
         try
         {
             var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
@@ -163,7 +172,10 @@ public sealed class StripeBillingService(
                 form["subscription_data[trial_settings][end_behavior][missing_payment_method]"] = "cancel";
             }
 
+            checkoutOutcomeUnknown = true;
             using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId), cancellationToken);
+            checkoutOutcomeUnknown = !response.IsSuccessStatusCode && response.StatusCode is not
+                (HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.UnprocessableEntity);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -177,6 +189,14 @@ public sealed class StripeBillingService(
         catch (HttpRequestException)
         {
             return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. Try again in a moment.");
+        }
+        finally
+        {
+            // An ambiguous Stripe response must remain locked for support to reconcile.
+            if (!checkoutOutcomeUnknown)
+            {
+                await deletionMarkers.EndCheckoutAsync(userId, operationId, CancellationToken.None);
+            }
         }
     }
 

@@ -401,13 +401,17 @@ public sealed class Auth0TokenValidatorTests
     }
     private sealed class UnmarkedAccounts : Services.Repositories.IAccountDeletionMarkerRepository
     {
-        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
     private sealed class MarkedAccounts : Services.Repositories.IAccountDeletionMarkerRepository
     {
-        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
 }

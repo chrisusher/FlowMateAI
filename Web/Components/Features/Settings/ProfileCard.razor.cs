@@ -66,6 +66,7 @@ public partial class ProfileCard
                 return;
             }
 
+            await Timer.StopClockAsync();
             await Store.ClearLocalDataAsync();
             await Auth.LogoutAsync();
             Navigation.NavigateTo("", replace: true);

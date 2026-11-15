@@ -30,6 +30,21 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
+    public async Task CheckoutAndDeletionAreCoordinatedByTheSameMarker()
+    {
+        await using var database = CreateDatabase();
+        var markers = new AccountDeletionMarkerRepository(database);
+
+        Assert.That(await markers.TryBeginCheckoutAsync("auth0|user-1", "operation-1"), Is.True);
+        Assert.That(await markers.IsMarkedAsync("auth0|user-1"), Is.False);
+        Assert.That(await markers.MarkAsync("auth0|user-1"), Is.True);
+        Assert.That(await markers.TryBeginCheckoutAsync("auth0|user-1", "operation-2"), Is.False);
+        await markers.EndCheckoutAsync("auth0|user-1", "operation-1");
+        Assert.That(await markers.MarkAsync("auth0|user-1"), Is.False);
+        Assert.That(await markers.IsMarkedAsync("auth0|user-1"), Is.True);
+    }
+
+    [Test]
     public async Task RegistrationStoresTrimmedAndNormalisedEmailAndSupportsBothLookups()
     {
         await using var database = CreateDatabase();
@@ -139,6 +154,7 @@ public sealed class UserRepositoryTests
         {
             nameof(UserDocument.UserId)
         }));
+        Assert.That(entity.FindProperty(nameof(UserDocument.ETag))!.IsConcurrencyToken, Is.True);
     }
 
     private static DatabaseContext CreateDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()

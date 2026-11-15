@@ -100,6 +100,42 @@ public sealed class StripeBillingServiceTests
     }
 
     [Test]
+    public async Task DeletionBlocksNewCheckoutAndWaitsForAnAdmittedCheckout()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var markers = new CoordinatingMarkers();
+        var handler = new StripeHandler
+        {
+            SubscriptionsJson = "{\"data\":[],\"has_more\":false}",
+            BeforeCheckoutCreation = async _ => { entered.TrySetResult(); await release.Task; }
+        };
+        var service = CreateService(handler, _repository!, markers);
+
+        var checkout = service.CreateCheckoutAsync("user", null, false);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.That(await markers.MarkAsync("user"), Is.True);
+        Assert.That((await service.CreateCheckoutAsync("user", null, false)).Succeeded, Is.False);
+        release.TrySetResult();
+        Assert.That((await checkout).Succeeded, Is.True);
+        Assert.That(await markers.MarkAsync("user"), Is.False);
+        Assert.That((await service.CancelSubscriptionAsync("user")).Succeeded, Is.True);
+        Assert.That(handler.Requests, Does.Contain("checkout/sessions/cs_0/expire"));
+    }
+
+    [Test]
+    public async Task AmbiguousCheckoutFailureRemainsLockedForReconciliation()
+    {
+        var markers = new CoordinatingMarkers();
+        var handler = new StripeHandler { ThrowDuringCheckoutCreation = true };
+        var service = CreateService(handler, _repository!, markers);
+
+        Assert.That((await service.CreateCheckoutAsync("user", null, false)).Succeeded, Is.False);
+        Assert.That(await markers.MarkAsync("user"), Is.True);
+        Assert.That((await service.CreateCheckoutAsync("user", null, false)).Succeeded, Is.False);
+    }
+
+    [Test]
     public async Task GetPricesTreatsTwelveMonthStripePriceAsTheConfiguredAnnualPrice()
     {
         var handler = new StripeHandler
@@ -563,8 +599,43 @@ public sealed class StripeBillingServiceTests
 
     private sealed class TestDeletionMarkers(bool marked) : IAccountDeletionMarkerRepository
     {
-        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(marked);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class CoordinatingMarkers : IAccountDeletionMarkerRepository
+    {
+        private bool _marked;
+        private string? _checkout;
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default)
+        {
+            _marked = true;
+
+            return Task.FromResult(_checkout is not null);
+        }
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(_marked);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default)
+        {
+            if (_marked || _checkout is not null)
+            {
+                return Task.FromResult(false);
+            }
+
+            _checkout = operationId;
+
+            return Task.FromResult(true);
+        }
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default)
+        {
+            if (_checkout == operationId)
+            {
+                _checkout = null;
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
@@ -594,6 +665,7 @@ public sealed class StripeBillingServiceTests
 
         public string SubscriptionsJson { get; init; } = "{\"data\":[]}";
         public bool FailCheckoutExpiry { get; init; }
+        public bool ThrowDuringCheckoutCreation { get; init; }
         public Dictionary<string, string>? CheckoutPages { get; init; }
         public Dictionary<string, string> PriceResponses { get; init; } = [];
         public Action? BeforePortalCreation
@@ -688,6 +760,8 @@ public sealed class StripeBillingServiceTests
                 {
                     await BeforeCheckoutCreation(cancellationToken);
                 }
+
+                if (ThrowDuringCheckoutCreation) throw new HttpRequestException("Checkout response was lost.");
 
                 var key = request.Headers.GetValues("Idempotency-Key").Single();
 
