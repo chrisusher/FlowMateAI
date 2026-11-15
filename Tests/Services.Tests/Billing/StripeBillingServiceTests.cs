@@ -49,6 +49,57 @@ public sealed class StripeBillingServiceTests
     }
 
     [Test]
+    public async Task DeletionExpiresOpenSubscriptionCheckoutBeforeListingSubscriptions()
+    {
+        _repository!.Entitlement.StripeCustomerId = "cus_existing";
+        var handler = new StripeHandler { SubscriptionsJson = "{\"data\":[],\"has_more\":false}" };
+        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/session"));
+
+        var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(handler.Requests.IndexOf("checkout/sessions/cs_0/expire"), Is.GreaterThanOrEqualTo(0));
+        Assert.That(handler.Requests.FindIndex(path => path.StartsWith("subscriptions?", StringComparison.Ordinal)),
+            Is.GreaterThan(handler.Requests.IndexOf("checkout/sessions/cs_0/expire")));
+    }
+
+    [Test]
+    public async Task DeletionStopsWhenCheckoutCannotBeExpired()
+    {
+        _repository!.Entitlement.StripeCustomerId = "cus_existing";
+        var handler = new StripeHandler { FailCheckoutExpiry = true };
+        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/session"));
+
+        var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(handler.Requests.Any(path => path.StartsWith("subscriptions?", StringComparison.Ordinal)), Is.False);
+    }
+
+    [Test]
+    public async Task DeletionListsAllCheckoutPagesBeforeExpiringSessions()
+    {
+        _repository!.Entitlement.StripeCustomerId = "cus_existing";
+        var handler = new StripeHandler
+        {
+            SubscriptionsJson = "{\"data\":[],\"has_more\":false}",
+            CheckoutPages = new Dictionary<string, string>
+            {
+                [""] = "{\"data\":[{\"id\":\"cs_one\",\"mode\":\"subscription\"}],\"has_more\":true}",
+                ["cs_one"] = "{\"data\":[{\"id\":\"cs_two\",\"mode\":\"subscription\"}],\"has_more\":false}"
+            }
+        };
+
+        var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
+
+        Assert.That(result.Succeeded, Is.True);
+        var secondPage = handler.Requests.FindIndex(path => path.Contains("starting_after=cs_one", StringComparison.Ordinal));
+        Assert.That(secondPage, Is.GreaterThanOrEqualTo(0));
+        Assert.That(handler.Requests.IndexOf("checkout/sessions/cs_one/expire"), Is.GreaterThan(secondPage));
+        Assert.That(handler.Requests, Does.Contain("checkout/sessions/cs_two/expire"));
+    }
+
+    [Test]
     public async Task GetPricesTreatsTwelveMonthStripePriceAsTheConfiguredAnnualPrice()
     {
         var handler = new StripeHandler
@@ -518,6 +569,8 @@ public sealed class StripeBillingServiceTests
         }
 
         public string SubscriptionsJson { get; init; } = "{\"data\":[]}";
+        public bool FailCheckoutExpiry { get; init; }
+        public Dictionary<string, string>? CheckoutPages { get; init; }
         public Dictionary<string, string> PriceResponses { get; init; } = [];
         public Action? BeforePortalCreation
         {
@@ -558,8 +611,16 @@ public sealed class StripeBillingServiceTests
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal)
                 && request.Method == HttpMethod.Get)
             {
-                var sessions = OpenCheckoutSessions.Select(session => new
+                if (CheckoutPages is not null)
                 {
+                    var key = request.RequestUri.Query.Contains("starting_after=cs_one", StringComparison.Ordinal) ? "cs_one" : "";
+
+                    return JsonResponse(CheckoutPages[key]);
+                }
+
+                var sessions = OpenCheckoutSessions.Select((session, index) => new
+                {
+                    id = $"cs_{index}",
                     mode = session.Mode,
                     url = session.Url,
                     metadata = new
@@ -583,8 +644,16 @@ public sealed class StripeBillingServiceTests
 
                 return JsonResponse(JsonSerializer.Serialize(new
                 {
-                    data = sessions
+                    data = sessions,
+                    has_more = false
                 }));
+            }
+
+            if (request.Method == HttpMethod.Post && request.RequestUri.AbsolutePath.EndsWith("/expire", StringComparison.Ordinal))
+            {
+                return FailCheckoutExpiry
+                    ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("{\"error\":{\"message\":\"Cannot expire\"}}") }
+                    : JsonResponse("{\"status\":\"expired\"}");
             }
 
             if (request.RequestUri.AbsolutePath.EndsWith("/checkout/sessions", StringComparison.Ordinal))

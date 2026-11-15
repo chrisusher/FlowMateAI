@@ -23,6 +23,10 @@
                     Loading your workspace&#8230;
                 </div>
             }
+            else if (Auth.IsDeletionPending)
+            {
+                <Web.Components.Features.Settings.ProfileCard DeletionOnly="true" />
+            }
             else if (Auth.IsConfigured && !Auth.Session.SignedIn && !Auth.IsSessionExpired)
             {
                 <WorkspaceSignIn />

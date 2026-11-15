@@ -365,6 +365,71 @@ public sealed class StripeBillingService(
 
             if (!string.IsNullOrWhiteSpace(entitlement.StripeCustomerId))
             {
+                string? checkoutCursor = null;
+                var checkoutIds = new List<string>();
+
+                do
+                {
+                    var path = $"checkout/sessions?customer={Uri.EscapeDataString(entitlement.StripeCustomerId)}&status=open&limit=100";
+
+                    if (checkoutCursor is not null)
+                    {
+                        path += $"&starting_after={Uri.EscapeDataString(checkoutCursor)}";
+                    }
+
+                    using var sessionsResponse = await SendAsync(HttpMethod.Get, path, null, null, cancellationToken);
+                    var body = await sessionsResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                    if (!sessionsResponse.IsSuccessStatusCode)
+                    {
+                        return Failure(BillingActionCode.StripeError, StripeError(body));
+                    }
+
+                    using var page = JsonDocument.Parse(body);
+                    var sessions = page.RootElement.GetProperty("data").EnumerateArray().ToArray();
+
+                    foreach (var session in sessions)
+                    {
+                        if (session.GetProperty("mode").GetString() != "subscription")
+                        {
+                            continue;
+                        }
+
+                        var id = session.GetProperty("id").GetString();
+
+                        if (string.IsNullOrWhiteSpace(id))
+                        {
+                            return Failure(BillingActionCode.StripeError, "Stripe returned an invalid checkout session.");
+                        }
+
+                        checkoutIds.Add(id);
+                    }
+
+                    var hasMore = page.RootElement.GetProperty("has_more").GetBoolean();
+
+                    if (hasMore && sessions.Length == 0)
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete checkout session list.");
+                    }
+
+                    checkoutCursor = hasMore ? sessions[^1].GetProperty("id").GetString() : null;
+
+                    if (hasMore && string.IsNullOrWhiteSpace(checkoutCursor))
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete checkout session list.");
+                    }
+                } while (checkoutCursor is not null);
+
+                foreach (var id in checkoutIds)
+                {
+                    using var expired = await SendAsync(HttpMethod.Post, $"checkout/sessions/{Uri.EscapeDataString(id)}/expire", null, null, cancellationToken);
+
+                    if (!expired.IsSuccessStatusCode)
+                    {
+                        return Failure(BillingActionCode.StripeError, StripeError(await expired.Content.ReadAsStringAsync(cancellationToken)));
+                    }
+                }
+
                 string? cursor = null;
 
                 do

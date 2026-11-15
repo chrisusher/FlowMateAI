@@ -430,7 +430,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Auth.Session.AccessToken, Is.Null);
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Draft kept through reauthentication"));
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.AuthenticationExpired));
-        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace", "/api/v1/account/deletion-status" }));
         Assert.That(JSInterop.Invocations.Any(call =>
             call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") &&
             Equals(call.Arguments[1], "true")), Is.True);

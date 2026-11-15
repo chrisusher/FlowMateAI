@@ -2,6 +2,9 @@ namespace Web.Components.Features.Settings;
 
 public partial class ProfileCard
 {
+    [Microsoft.AspNetCore.Components.Parameter]
+    public bool DeletionOnly { get; set; }
+
     private bool _confirmingDeletion;
     private bool _deleting;
     private string _deletionEmail = "";
