@@ -8,6 +8,24 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
     private static readonly SemaphoreSlim _initialisationLock = new(1, 1);
     private static bool _initialised;
 
+    public async Task<bool> UpdateExistingEntitlementAsync(string userId, Action<BillingEntitlementDocument> update, CancellationToken cancellationToken = default)
+    {
+        await EnsureCreatedAsync(cancellationToken);
+        var existing = await database.BillingEntitlements.FirstOrDefaultAsync(x => x.Id == "billing" && x.UserId == userId, cancellationToken);
+
+        if (existing is null)
+        {
+            return false;
+        }
+
+        update(existing);
+        // Save a tracked existing document only. A concurrent delete must fail the update,
+        // never turn a delayed webhook into an insert.
+        await database.SaveChangesAsync(cancellationToken);
+
+        return true;
+    }
+
     public async Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default)
     {
         await EnsureCreatedAsync(cancellationToken);

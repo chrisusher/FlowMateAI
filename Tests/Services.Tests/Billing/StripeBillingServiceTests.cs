@@ -433,6 +433,24 @@ public sealed class StripeBillingServiceTests
         Assert.That(_repository!.SavedEntitlements.Single().CancelAtPeriodEnd, Is.True);
     }
 
+    [Test]
+    public async Task SubscriptionWebhookDoesNotWriteForAnAccountBeingDeleted()
+    {
+        var service = CreateService(new StripeHandler(), _repository!, new TestDeletionMarkers(true));
+        var payload = """
+            {"id":"evt_deleted_user","type":"customer.subscription.updated","data":{"object":{
+                "id":"sub_confirmed","customer":"cus_existing","metadata":{"user_id":"user"},"status":"active"
+            }}}
+            """;
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var digest = HMACSHA256.HashData(Encoding.UTF8.GetBytes("whsec_test_placeholder"), Encoding.UTF8.GetBytes($"{timestamp}.{payload}"));
+
+        var accepted = await service.ProcessWebhookAsync(payload, $"t={timestamp},v1={Convert.ToHexString(digest)}");
+
+        Assert.That(accepted, Is.True);
+        Assert.That(_repository!.SavedEntitlements, Is.Empty);
+    }
+
     [TestCase("Pro", "active", "", true)]
     [TestCase("Pro", "active", "sub_stripe", false)]
     [TestCase("Free", "active", "", false)]
@@ -529,7 +547,7 @@ public sealed class StripeBillingServiceTests
         Assert.That(_repository!.Entitlement.PromptCount, Is.Zero);
     }
 
-    private static StripeBillingService CreateService(StripeHandler handler, IBillingRepository repository)
+    private static StripeBillingService CreateService(StripeHandler handler, IBillingRepository repository, IAccountDeletionMarkerRepository? markers = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -540,7 +558,13 @@ public sealed class StripeBillingServiceTests
             ["WebApp:Origin"] = "https://app.example.test"
         }).Build();
 
-        return new(new FlowMateEnvironment(configuration), configuration, new TestHttpClientFactory(handler), repository);
+        return new(new FlowMateEnvironment(configuration), configuration, new TestHttpClientFactory(handler), repository, markers ?? new TestDeletionMarkers(false));
+    }
+
+    private sealed class TestDeletionMarkers(bool marked) : IAccountDeletionMarkerRepository
+    {
+        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(marked);
     }
 
     private sealed class TestHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

@@ -13,6 +13,7 @@ public sealed class StripeBillingService(
     IConfiguration configuration,
     IHttpClientFactory clients,
     IBillingRepository repository,
+    IAccountDeletionMarkerRepository deletionMarkers,
     IUserRepository? users = null) : IBillingService
 {
     private const string STRIPE_API = "https://api.stripe.com/v1/";
@@ -533,16 +534,15 @@ public sealed class StripeBillingService(
 
             if (!string.IsNullOrWhiteSpace(userId))
             {
-                if (users is not null && string.IsNullOrWhiteSpace(await users.FindEmailByUserIdAsync(userId, cancellationToken)))
+                if (await deletionMarkers.IsMarkedAsync(userId, cancellationToken) ||
+                    (users is not null && string.IsNullOrWhiteSpace(await users.FindEmailByUserIdAsync(userId, cancellationToken))))
                 {
                     await repository.MarkEventProcessedAsync(eventId, cancellationToken);
 
                     return true;
                 }
 
-                var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
-                ApplySubscription(entitlement, subscription);
-                await repository.SaveEntitlementAsync(entitlement, cancellationToken);
+                await repository.UpdateExistingEntitlementAsync(userId, entitlement => ApplySubscription(entitlement, subscription), cancellationToken);
             }
         }
         await repository.MarkEventProcessedAsync(eventId, cancellationToken);
