@@ -21,11 +21,11 @@ public sealed class AccountDeletionService(
                 "Account deletion is temporarily unavailable. Contact support to complete the verified request.");
         }
 
-        bool checkoutInProgress;
+        bool activityInProgress;
 
         try
         {
-            checkoutInProgress = await markers.MarkAsync(userId, cancellationToken);
+            activityInProgress = await markers.MarkAsync(userId, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -33,10 +33,10 @@ public sealed class AccountDeletionService(
                 "Account access could not be disabled. Retry the deletion request or contact support.");
         }
 
-        if (checkoutInProgress)
+        if (activityInProgress)
         {
-            return new(false, AccountDeletionStage.Billing,
-                "A checkout request is still being processed. Retry deletion shortly or contact support.");
+            return new(false, AccountDeletionStage.ApplicationData,
+                "An account request is still being processed. Retry deletion shortly or contact support.");
         }
 
         var billingResult = await billing.CancelSubscriptionAsync(userId, cancellationToken);

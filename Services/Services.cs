@@ -163,6 +163,7 @@ public static class Services
 
         services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
         services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();
+        services.AddScoped<IAccountDeletionMarkerRepository, AccountDeletionMarkerRepository>();
 
         var client = string.IsNullOrWhiteSpace(settings.AccountKey)
             ? new CosmosClient(settings.AccountEndpoint, new DefaultAzureCredential())

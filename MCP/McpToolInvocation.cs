@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Services.Mcp;
 using Services.Reporting;
+using Services.Repositories;
 using Shared.Contracts;
 using Shared.Enums;
 using Shared.Models;
@@ -17,7 +18,7 @@ public interface IMcpToolInvocation
     Task<IMcpToolResponse> InvokeAsync(ToolInvocationContext context, string? period = null, string? date = null, string? cursor = null, string? projectId = null, bool projectsOnly = false, CancellationToken cancellationToken = default);
 }
 
-public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiterService limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger) : IMcpToolInvocation
+public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiterService limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger, IAccountDeletionMarkerRepository markers) : IMcpToolInvocation
 {
     private static readonly Meter Meter = new("FlowMateAI.MCP");
     private static readonly Histogram<double> ToolDuration = Meter.CreateHistogram<double>("flowmate.mcp.tool.duration", "ms");
@@ -65,6 +66,26 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
 
             return Error("temporarily_unavailable", "Account credentials are temporarily unavailable.");
         }
+
+        var operationId = Guid.NewGuid().ToString("N");
+
+        if (!await markers.TryBeginOperationAsync(validated.UserId, operationId, cancellationToken))
+        {
+            return Error("unauthorized", "The account is unavailable.");
+        }
+
+        try
+        {
+            return await InvokeAuthenticatedAsync(validated, isPro, period, date, cursor, projectId, projectsOnly, cancellationToken);
+        }
+        finally
+        {
+            await markers.EndOperationAsync(validated.UserId, operationId, CancellationToken.None);
+        }
+    }
+
+    private async Task<IMcpToolResponse> InvokeAuthenticatedAsync(ValidatedMcpKey validated, bool isPro, string? period, string? date, string? cursor, string? projectId, bool projectsOnly, CancellationToken cancellationToken)
+    {
         var periodValue = period ?? ReportPeriod.Day.ToWireValue();
 
         if (!ReportPeriodExtensions.TryParseWireValue(periodValue, out var reportPeriod))

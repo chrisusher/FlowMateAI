@@ -41,7 +41,7 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
             }
             else if (marker.DeletionStarted != false)
             {
-                return !string.IsNullOrEmpty(marker.CheckoutOperationId);
+                return !string.IsNullOrEmpty(marker.CheckoutOperationId) || (marker.ActiveOperationIds?.Count ?? 0) > 0;
             }
             else
             {
@@ -52,7 +52,7 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
             {
                 await database.SaveChangesAsync(cancellationToken);
 
-                return !string.IsNullOrEmpty(marker.CheckoutOperationId);
+                return !string.IsNullOrEmpty(marker.CheckoutOperationId) || (marker.ActiveOperationIds?.Count ?? 0) > 0;
             }
             catch (DbUpdateException) when (attempt < 7)
             {
@@ -114,6 +114,73 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
             }
 
             marker.CheckoutOperationId = null;
+
+            try
+            {
+                await database.SaveChangesAsync(cancellationToken);
+
+                return;
+            }
+            catch (DbUpdateException) when (attempt < 7)
+            {
+            }
+        }
+    }
+
+    public async Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default)
+    {
+        await EnsureCreatedAsync(cancellationToken);
+        var id = MarkerId(userId);
+
+        for (var attempt = 0; ; attempt++)
+        {
+            database.ChangeTracker.Clear();
+            var marker = await database.Users.FirstOrDefaultAsync(user => user.UserId == id && user.Id == id, cancellationToken);
+
+            if (marker is null)
+            {
+                marker = new UserDocument { Id = id, UserId = id, DeletionStarted = false };
+                database.Users.Add(marker);
+            }
+            else if (marker.DeletionStarted != false)
+            {
+                return false;
+            }
+
+            if ((marker.ActiveOperationIds?.Count ?? 0) >= 64)
+            {
+                throw new InvalidOperationException("Too many concurrent account operations.");
+            }
+
+            marker.ActiveOperationIds ??= [];
+            marker.ActiveOperationIds.Add(operationId);
+
+            try
+            {
+                await database.SaveChangesAsync(cancellationToken);
+
+                return true;
+            }
+            catch (DbUpdateException) when (attempt < 7)
+            {
+            }
+        }
+    }
+
+    public async Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default)
+    {
+        await EnsureCreatedAsync(cancellationToken);
+        var id = MarkerId(userId);
+
+        for (var attempt = 0; ; attempt++)
+        {
+            database.ChangeTracker.Clear();
+            var marker = await database.Users.FirstOrDefaultAsync(user => user.UserId == id && user.Id == id, cancellationToken);
+
+            if (marker?.ActiveOperationIds is null || !marker.ActiveOperationIds.Remove(operationId))
+            {
+                return;
+            }
 
             try
             {

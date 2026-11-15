@@ -60,7 +60,7 @@ public sealed class AccountDeletionServiceTests
             new StubIdentityDeletionService(order), new ActiveCheckoutMarkers()).DeleteAsync("auth0|user-1");
 
         Assert.That(result.Succeeded, Is.False);
-        Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Billing));
+        Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.ApplicationData));
         Assert.That(order, Is.Empty);
     }
 
@@ -84,6 +84,8 @@ public sealed class AccountDeletionServiceTests
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class FailingMarkers : IAccountDeletionMarkerRepository
@@ -92,6 +94,8 @@ public sealed class AccountDeletionServiceTests
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class ActiveCheckoutMarkers : IAccountDeletionMarkerRepository
@@ -100,6 +104,8 @@ public sealed class AccountDeletionServiceTests
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class StubBillingService(List<string> order) : IBillingService

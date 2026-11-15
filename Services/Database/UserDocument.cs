@@ -18,5 +18,7 @@ public sealed class UserDocument
 
     public string? CheckoutOperationId { get; set; }
 
+    public List<string> ActiveOperationIds { get; set; } = [];
+
     public string? ETag { get; set; }
 }

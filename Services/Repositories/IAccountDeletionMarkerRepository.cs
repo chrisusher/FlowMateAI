@@ -6,4 +6,6 @@ public interface IAccountDeletionMarkerRepository
     Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default);
     Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default);
     Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default);
+    Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default);
+    Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default);
 }
