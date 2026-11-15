@@ -12,6 +12,24 @@ namespace Services.Tests.Repositories;
 public sealed class UserRepositoryTests
 {
     [Test]
+    public async Task DeletionMarkerSurvivesUserDataResetWithoutStoringTheSubject()
+    {
+        await using var database = CreateDatabase();
+        var markers = new AccountDeletionMarkerRepository(database);
+        await markers.MarkAsync("auth0|user-1");
+        await markers.MarkAsync("auth0|user-1");
+
+        var reset = new UserDataResetRepository(database, new ConfigurationBuilder().Build());
+        await reset.DeleteUserRecordsAsync("auth0|user-1");
+
+        Assert.That(await new AccountDeletionMarkerRepository(database).IsMarkedAsync("auth0|user-1"), Is.True);
+        Assert.That(await markers.IsMarkedAsync("auth0|user-2"), Is.False);
+        var marker = await database.Users.AsNoTracking().SingleAsync();
+        Assert.That(marker.UserId, Does.Not.Contain("auth0|user-1"));
+        Assert.That(marker.Email, Is.Empty);
+    }
+
+    [Test]
     public async Task RegistrationStoresTrimmedAndNormalisedEmailAndSupportsBothLookups()
     {
         await using var database = CreateDatabase();

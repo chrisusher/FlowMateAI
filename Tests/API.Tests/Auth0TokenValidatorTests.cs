@@ -8,6 +8,7 @@ using API.Security;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using API.Functions.V1;
 using Services.Users;
 
@@ -54,6 +55,16 @@ public sealed class Auth0TokenValidatorTests
         var principal = await validator.ValidateAsync($"Bearer {token}");
 
         Assert.That(principal?.FindFirst("sub")?.Value, Is.EqualTo("auth0|customer-1"));
+    }
+
+    [Test]
+    public async Task DeletedSubjectCannotUseTokenButCanRetryDeletion()
+    {
+        using var key = RSA.Create(2048);
+        var validator = CreateValidator(key, markers: new MarkedAccounts());
+        var token = $"Bearer {CreateToken(key, subject: "auth0|customer-1")}";
+        Assert.That(await validator.ValidateAsync(token), Is.Null);
+        Assert.That(await validator.ValidateForDeletionAsync(token), Is.Not.Null);
     }
 
     [TestCase("")]
@@ -205,7 +216,8 @@ public sealed class Auth0TokenValidatorTests
         HttpStatusCode status = HttpStatusCode.OK,
         bool includeConfiguration = true,
         bool timeout = false,
-        TestHttpMessageHandler? handler = null)
+        TestHttpMessageHandler? handler = null,
+        Services.Repositories.IAccountDeletionMarkerRepository? markers = null)
     {
         var settings = new Dictionary<string, string?>();
 
@@ -234,7 +246,11 @@ public sealed class Auth0TokenValidatorTests
         });
         var clients = new TestHttpClientFactory(handler ?? new TestHttpMessageHandler(status, jwks, timeout));
 
-        return new Auth0TokenValidator(configuration, clients);
+        var provider = new ServiceCollection()
+            .AddSingleton<Services.Repositories.IAccountDeletionMarkerRepository>(markers ?? new UnmarkedAccounts())
+            .BuildServiceProvider();
+
+        return new Auth0TokenValidator(configuration, clients, provider.GetRequiredService<IServiceScopeFactory>());
     }
 
     private static TestHttpMessageHandler CreateHandler(RSA key, string? profileJson = null)
@@ -383,4 +399,15 @@ public sealed class Auth0TokenValidatorTests
         public override IInvocationFeatures Features => null!;
         public override CancellationToken CancellationToken => CancellationToken.None;
     }
+    private sealed class UnmarkedAccounts : Services.Repositories.IAccountDeletionMarkerRepository
+    {
+        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+    }
+    private sealed class MarkedAccounts : Services.Repositories.IAccountDeletionMarkerRepository
+    {
+        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+    }
+
 }

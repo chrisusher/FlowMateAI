@@ -19,7 +19,16 @@ public sealed class DeleteAccount(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "v1/account")] HttpRequestData request,
         CancellationToken cancellationToken)
     {
-        var (userId, email) = await HttpFunction.UserAsync(request, tokens, users, cancellationToken);
+        var authorization = request.Headers.TryGetValues("Authorization", out var values) ? values.FirstOrDefault() : null;
+        var principal = await tokens.ValidateForDeletionAsync(authorization, cancellationToken);
+        var userId = principal?.FindFirst("sub")?.Value;
+        var email = principal?.FindFirst("email")?.Value;
+
+        if (!string.IsNullOrWhiteSpace(userId) && string.IsNullOrWhiteSpace(email))
+        {
+            email = await users.FindEmailByUserIdAsync(userId, cancellationToken)
+                ?? await tokens.GetEmailAsync(authorization, userId, cancellationToken);
+        }
 
         if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(email))
         {

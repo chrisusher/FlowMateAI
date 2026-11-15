@@ -121,6 +121,7 @@ public static class Services
         services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IAccountDeletionMarkerRepository, AccountDeletionMarkerRepository>();
         services.
         AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();

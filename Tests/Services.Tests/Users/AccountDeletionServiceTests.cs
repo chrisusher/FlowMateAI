@@ -1,5 +1,6 @@
 using Services.Billing;
 using Services.Users;
+using Services.Repositories;
 using Shared.Contracts;
 using Shared.Enums;
 using Shared.Models;
@@ -17,10 +18,10 @@ public sealed class AccountDeletionServiceTests
         var data = new StubDataResetService(order);
         var identity = new StubIdentityDeletionService(order);
 
-        var result = await new AccountDeletionService(billing, data, identity).DeleteAsync("auth0|user-1");
+        var result = await new AccountDeletionService(billing, data, identity, new StubMarkers(order)).DeleteAsync("auth0|user-1");
 
         Assert.That(result.Succeeded, Is.True);
-        Assert.That(order, Is.EqualTo(new[] { "billing", "data", "identity" }));
+        Assert.That(order, Is.EqualTo(new[] { "billing", "marker", "data", "identity" }));
         Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Completed));
     }
 
@@ -32,10 +33,22 @@ public sealed class AccountDeletionServiceTests
         var data = new StubDataResetService(order);
         var identity = new StubIdentityDeletionService(order);
 
-        var result = await new AccountDeletionService(billing, data, identity).DeleteAsync("auth0|user-1");
+        var result = await new AccountDeletionService(billing, data, identity, new StubMarkers(order)).DeleteAsync("auth0|user-1");
 
         Assert.That(result.Succeeded, Is.False);
         Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Billing));
+        Assert.That(order, Is.EqualTo(new[] { "billing" }));
+    }
+
+    [Test]
+    public async Task DeletionDoesNotRemoveDataWhenAccessCannotBeDisabled()
+    {
+        var order = new List<string>();
+        var result = await new AccountDeletionService(new StubBillingService(order), new StubDataResetService(order),
+            new StubIdentityDeletionService(order), new FailingMarkers()).DeleteAsync("auth0|user-1");
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.ApplicationData));
         Assert.That(order, Is.EqualTo(new[] { "billing" }));
     }
 
@@ -45,12 +58,24 @@ public sealed class AccountDeletionServiceTests
         var order = new List<string>();
         var identity = new StubIdentityDeletionService(order) { DeleteException = new InvalidOperationException("not configured") };
 
-        var result = await new AccountDeletionService(new StubBillingService(order), new StubDataResetService(order), identity).DeleteAsync("auth0|user-1");
+        var result = await new AccountDeletionService(new StubBillingService(order), new StubDataResetService(order), identity, new StubMarkers(order)).DeleteAsync("auth0|user-1");
 
         Assert.That(result.Succeeded, Is.False);
         Assert.That(result.Stage, Is.EqualTo(AccountDeletionStage.Identity));
         Assert.That(result.Data, Is.Not.Null);
-        Assert.That(order, Is.EqualTo(new[] { "billing", "data", "identity" }));
+        Assert.That(order, Is.EqualTo(new[] { "billing", "marker", "data", "identity" }));
+    }
+
+    private sealed class StubMarkers(List<string> order) : IAccountDeletionMarkerRepository
+    {
+        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) { order.Add("marker"); return Task.CompletedTask; }
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+    }
+
+    private sealed class FailingMarkers : IAccountDeletionMarkerRepository
+    {
+        public Task MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromException(new InvalidOperationException());
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
     }
 
     private sealed class StubBillingService(List<string> order) : IBillingService

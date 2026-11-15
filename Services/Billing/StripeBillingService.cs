@@ -349,30 +349,98 @@ public sealed class StripeBillingService(
     {
         var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
 
-        if (string.IsNullOrWhiteSpace(entitlement.StripeSubscriptionId))
+        if (string.IsNullOrWhiteSpace(entitlement.StripeCustomerId) && string.IsNullOrWhiteSpace(entitlement.StripeSubscriptionId))
         {
             return new(true, null, null, null);
         }
 
         try
         {
-            using var response = await SendAsync(
-                HttpMethod.Delete,
-                $"subscriptions/{Uri.EscapeDataString(entitlement.StripeSubscriptionId)}",
-                null,
-                $"flowmate-account-deletion-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId))).ToLowerInvariant()}",
-                cancellationToken);
+            var subscriptionIds = new HashSet<string>(StringComparer.Ordinal);
 
-            if (response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NotFound)
+            if (!string.IsNullOrWhiteSpace(entitlement.StripeSubscriptionId))
             {
-                return new(true, null, null, null);
+                subscriptionIds.Add(entitlement.StripeSubscriptionId);
             }
 
-            return Failure(BillingActionCode.StripeError, StripeError(await response.Content.ReadAsStringAsync(cancellationToken)));
+            if (!string.IsNullOrWhiteSpace(entitlement.StripeCustomerId))
+            {
+                string? cursor = null;
+
+                do
+                {
+                    var path = $"subscriptions?customer={Uri.EscapeDataString(entitlement.StripeCustomerId)}&status=all&limit=100";
+
+                    if (cursor is not null)
+                    {
+                        path += $"&starting_after={Uri.EscapeDataString(cursor)}";
+                    }
+
+                    using var listResponse = await SendAsync(HttpMethod.Get, path, null, null, cancellationToken);
+                    var body = await listResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                    if (!listResponse.IsSuccessStatusCode)
+                    {
+                        return Failure(BillingActionCode.StripeError, StripeError(body));
+                    }
+
+                    using var page = JsonDocument.Parse(body);
+                    var items = page.RootElement.GetProperty("data").EnumerateArray().ToArray();
+
+                    foreach (var item in items)
+                    {
+                        var id = item.GetProperty("id").GetString();
+                        var status = item.GetProperty("status").GetString();
+
+                        if (!string.IsNullOrWhiteSpace(id))
+                        {
+                            if (status is "canceled" or "incomplete_expired")
+                            {
+                                subscriptionIds.Remove(id);
+                            }
+                            else
+                            {
+                                subscriptionIds.Add(id);
+                            }
+                        }
+                    }
+
+                    var hasMore = page.RootElement.GetProperty("has_more").GetBoolean();
+
+                    if (hasMore && items.Length == 0)
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete subscription list.");
+                    }
+
+                    cursor = hasMore ? items[^1].GetProperty("id").GetString() : null;
+
+                    if (hasMore && string.IsNullOrWhiteSpace(cursor))
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete subscription list.");
+                    }
+                } while (cursor is not null);
+            }
+
+            foreach (var subscriptionId in subscriptionIds)
+            {
+                using var response = await SendAsync(HttpMethod.Delete, $"subscriptions/{Uri.EscapeDataString(subscriptionId)}", null,
+                    $"flowmate-account-deletion-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + "\n" + subscriptionId))).ToLowerInvariant()}", cancellationToken);
+
+                if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+                {
+                    return Failure(BillingActionCode.StripeError, StripeError(await response.Content.ReadAsStringAsync(cancellationToken)));
+                }
+            }
+
+            return new(true, null, null, null);
         }
         catch (HttpRequestException)
         {
             return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. No account data was removed.");
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return Failure(BillingActionCode.StripeError, "Stripe returned an invalid subscription list. No account data was removed.");
         }
     }
 

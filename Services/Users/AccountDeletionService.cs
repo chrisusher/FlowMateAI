@@ -1,13 +1,15 @@
 using Shared.Enums;
 using Shared.Models;
 using Services.Billing;
+using Services.Repositories;
 
 namespace Services.Users;
 
 public sealed class AccountDeletionService(
     IBillingService billing,
     IUserDataResetService dataReset,
-    IAuth0IdentityDeletionService identity) : IAccountDeletionService
+    IAuth0IdentityDeletionService identity,
+    IAccountDeletionMarkerRepository markers) : IAccountDeletionService
 {
     public async Task<AccountDeletionResult> DeleteAsync(string userId, CancellationToken cancellationToken = default)
     {
@@ -25,6 +27,16 @@ public sealed class AccountDeletionService(
         {
             return new(false, AccountDeletionStage.Billing,
                 billingResult.Message ?? "The subscription could not be cancelled, so no account data was removed.");
+        }
+
+        try
+        {
+            await markers.MarkAsync(userId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new(false, AccountDeletionStage.ApplicationData,
+                "Account access could not be disabled. Retry the deletion request or contact support.");
         }
 
         UserDataResetResult data;

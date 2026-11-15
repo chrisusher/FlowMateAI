@@ -24,6 +24,31 @@ public sealed class StripeBillingServiceTests
     }
 
     [Test]
+    public async Task DeletionCancelsSubscriptionsFoundAtStripeBeforeWebhookArrives()
+    {
+        _repository!.Entitlement.StripeCustomerId = "cus_existing";
+        var handler = new StripeHandler
+        {
+            SubscriptionsJson = "{\"data\":[{\"id\":\"sub_new\",\"status\":\"active\"}],\"has_more\":false}"
+        };
+        var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(handler.Requests, Does.Contain("subscriptions/sub_new"));
+    }
+
+    [Test]
+    public async Task DeletionFailsWhenStripeSubscriptionListIsMalformed()
+    {
+        _repository!.Entitlement.StripeCustomerId = "cus_existing";
+        var handler = new StripeHandler { SubscriptionsJson = "{\"data\":[]}" };
+
+        var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
+
+        Assert.That(result.Succeeded, Is.False);
+        Assert.That(result.Code, Is.EqualTo(BillingActionCode.StripeError));
+    }
+
+    [Test]
     public async Task GetPricesTreatsTwelveMonthStripePriceAsTheConfiguredAnnualPrice()
     {
         var handler = new StripeHandler
