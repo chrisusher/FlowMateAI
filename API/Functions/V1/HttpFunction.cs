@@ -1,9 +1,6 @@
 using API.Security;
-using Microsoft.Azure.Functions.Worker.Http;
-using Shared.Contracts;
 using Services.Users;
 using Services.ApiRequests;
-using Shared.Enums;
 using System.Globalization;
 
 namespace API.Functions.V1;

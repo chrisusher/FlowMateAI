@@ -1,5 +1,3 @@
-using Shared.Enums;
-
 namespace Services.Database;
 
 public sealed class ApiRateLimitRecord

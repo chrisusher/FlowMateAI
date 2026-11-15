@@ -1,7 +1,5 @@
-using Microsoft.Extensions.Configuration;
 using Services.Database;
 using Services.Repositories;
-using Shared.Enums;
 
 namespace Services.ApiRequests;
 
@@ -17,7 +15,7 @@ public sealed class AuthenticatedApiRateLimiterService(
     IConfiguration configuration,
     TimeProvider clock) : IAuthenticatedApiRateLimiter
 {
-    private static readonly TimeSpan Window = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan _window = TimeSpan.FromMinutes(1);
 
     public async Task<ApiRateLimitAdmission> AdmitAsync(string userId, AuthenticatedApiRateLimitScope scope, CancellationToken cancellationToken = default)
     {
@@ -39,22 +37,27 @@ public sealed class AuthenticatedApiRateLimiterService(
                 var now = clock.GetUtcNow();
                 var usage = await repository.GetAsync(userId, timeout.Token);
                 var admissions = (usage?.ApiAdmissions ?? [])
-                    .Where(admission => admission.Scope == scope && admission.Timestamp > now - Window)
+                    .Where(admission => admission.Scope == scope && admission.Timestamp > now - _window)
                     .OrderBy(admission => admission.Timestamp)
                     .ToList();
 
                 if (admissions.Count >= limit)
                 {
-                    var retry = admissions[0].Timestamp + Window - now;
+                    var retry = admissions[0].Timestamp + _window - now;
 
                     return new(false, Math.Max(1, (int)Math.Ceiling(retry.TotalSeconds)));
                 }
 
                 var retained = (usage?.ApiAdmissions ?? [])
-                    .Where(admission => admission.Timestamp > now - Window)
+                    .Where(admission => admission.Timestamp > now - _window)
                     .TakeLast(999)
                     .ToList();
-                retained.Add(new ApiRateLimitRecord { Scope = scope, Timestamp = now });
+
+                retained.Add(new ApiRateLimitRecord
+                {
+                    Scope = scope,
+                    Timestamp = now
+                });
                 var updated = new McpUsageDocument
                 {
                     UserId = userId,

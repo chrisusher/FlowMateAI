@@ -4,6 +4,8 @@ public sealed class McpUsageDocument
 {
     public string Id { get; set; } = "usage";
 
+    public List<ApiRateLimitRecord> ApiAdmissions { get; set; } = [];
+
     public string UserId { get; set; } = "";
 
     public string UtcDay { get; set; } = "";
@@ -14,8 +16,6 @@ public sealed class McpUsageDocument
     }
 
     public List<DateTimeOffset> RecentAdmissions { get; set; } = [];
-
-    public List<ApiRateLimitRecord> ApiAdmissions { get; set; } = [];
 
     public int Ttl { get; set; } = 172800;
 

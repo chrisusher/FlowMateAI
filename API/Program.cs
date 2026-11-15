@@ -1,6 +1,5 @@
 using API.Security;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

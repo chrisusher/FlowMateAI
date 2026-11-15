@@ -1,12 +1,8 @@
 using API.Security;
 using ChrisUsher.Core.Shared;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
 using Services.Users;
-using Shared.Contracts;
 using Services.ApiRequests;
-using Shared.Enums;
 
 namespace API.Functions.V1.Billing;
 

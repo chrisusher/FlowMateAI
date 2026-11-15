@@ -1,11 +1,7 @@
 using API.Security;
 using ChrisUsher.Core.Shared;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Workspaces;
 using Services.Users;
-using Shared.Contracts;
-using Shared.Enums;
 using Services.ApiRequests;
 
 namespace API.Functions.V1.Workspace;
@@ -45,7 +41,7 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
             return rateLimitResponse;
         }
 
-        var body = await HttpFunction.ReadBoundedBodyAsync(request, WorkspaceRequestValidator.MaximumPayloadBytes, cancellationToken);
+        var body = await HttpFunction.ReadBoundedBodyAsync(request, WorkspaceRequestValidator.MAXIMUM_PAYLOAD_BYTES, cancellationToken);
 
         if (body is null)
         {

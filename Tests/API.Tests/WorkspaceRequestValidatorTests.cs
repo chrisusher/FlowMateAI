@@ -60,7 +60,7 @@ public sealed class WorkspaceRequestValidatorTests
         var workspace = CreateWorkspace();
         var conversation = new ConversationRecord
         {
-            Messages = Enumerable.Range(0, WorkspaceRequestValidator.MaximumConversationMessages + 2)
+            Messages = Enumerable.Range(0, WorkspaceRequestValidator.MAXIMUM_CONVERSATION_MESSAGES + 2)
                 .Select(index => new ChatMessageRecord
                 {
                     Role = ChatMessageRole.User,
@@ -73,7 +73,7 @@ public sealed class WorkspaceRequestValidatorTests
         Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.Not.Null);
         WorkspaceRequestValidator.RetainRecentMessages(conversation);
 
-        Assert.That(conversation.Messages, Has.Count.EqualTo(WorkspaceRequestValidator.MaximumConversationMessages));
+        Assert.That(conversation.Messages, Has.Count.EqualTo(WorkspaceRequestValidator.MAXIMUM_CONVERSATION_MESSAGES));
         Assert.That(conversation.Messages[0].Text, Is.EqualTo("Message 2"));
         Assert.That(conversation.Messages[^1].Text, Is.EqualTo("Message 1001"));
         Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.Null);

@@ -1,10 +1,7 @@
 using API.Security;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
 using Services.Users;
 using Services.ApiRequests;
-using Shared.Enums;
 
 namespace API.Functions.V1.Billing;
 

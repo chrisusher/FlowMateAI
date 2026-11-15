@@ -1,16 +1,13 @@
-using Shared.Enums;
-using Shared.Models;
-
 namespace API.Security;
 
 internal static class WorkspaceRequestValidator
 {
-    internal const int MaximumPayloadBytes = 2 * 1024 * 1024;
-    internal const int MaximumConversationMessages = 1000;
+    internal const int MAXIMUM_PAYLOAD_BYTES = 2 * 1024 * 1024;
+    internal const int MAXIMUM_CONVERSATION_MESSAGES = 1000;
 
     internal static void RetainRecentMessages(ConversationRecord conversation)
     {
-        var excess = conversation.Messages.Count - MaximumConversationMessages;
+        var excess = conversation.Messages.Count - MAXIMUM_CONVERSATION_MESSAGES;
 
         if (excess > 0)
         {
@@ -62,7 +59,7 @@ internal static class WorkspaceRequestValidator
 
         foreach (var conversation in workspace.Conversations)
         {
-            if (!HasLength(conversation.Title, 0, 200) || !Bounded(conversation.Messages, MaximumConversationMessages) ||
+            if (!HasLength(conversation.Title, 0, 200) || !Bounded(conversation.Messages, MAXIMUM_CONVERSATION_MESSAGES) ||
                 conversation.Messages.Any(message => message is null || !Enum.IsDefined(message.Role) || !HasLength(message.Text, 1, 8000)))
             {
                 return "Conversation data exceeds the supported limits.";

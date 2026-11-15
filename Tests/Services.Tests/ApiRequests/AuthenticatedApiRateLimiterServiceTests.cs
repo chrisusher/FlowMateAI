@@ -1,8 +1,6 @@
-using Microsoft.Extensions.Configuration;
 using Services.ApiRequests;
 using Services.Database;
 using Services.Repositories;
-using Shared.Enums;
 
 namespace Services.Tests.ApiRequests;
 
@@ -72,7 +70,11 @@ public sealed class AuthenticatedApiRateLimiterServiceTests
             UtcDay = document.UtcDay,
             DailyCount = document.DailyCount,
             RecentAdmissions = [.. document.RecentAdmissions],
-            ApiAdmissions = [.. document.ApiAdmissions.Select(admission => new ApiRateLimitRecord { Scope = admission.Scope, Timestamp = admission.Timestamp })],
+            ApiAdmissions = [.. document.ApiAdmissions.Select(admission => new ApiRateLimitRecord
+            {
+                Scope = admission.Scope,
+                Timestamp = admission.Timestamp
+            })],
             ETag = document.ETag
         };
     }
