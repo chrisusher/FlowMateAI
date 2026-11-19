@@ -237,10 +237,13 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     {
         await SignInAsync();
         Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath == "/api/v1/account/deletion-status"
-            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(true) }
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(true)
+            }
             : new HttpResponseMessage(HttpStatusCode.Unauthorized));
 
-        var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Workspace body"))));
+        var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, b => b.AddContent(0, "Workspace body")));
         cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Retry deletion")));
 
         Assert.That(Auth.Session.SignedIn, Is.True);

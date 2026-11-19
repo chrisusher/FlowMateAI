@@ -2,8 +2,6 @@ using Services.Billing;
 using Services.Users;
 using Services.Repositories;
 using Shared.Contracts;
-using Shared.Enums;
-using Shared.Models;
 
 namespace Services.Tests.Users;
 
@@ -68,7 +66,10 @@ public sealed class AccountDeletionServiceTests
     public async Task DeletionReportsRetryableIdentityFailureAfterDataCleanup()
     {
         var order = new List<string>();
-        var identity = new StubIdentityDeletionService(order) { DeleteException = new InvalidOperationException("not configured") };
+        var identity = new StubIdentityDeletionService(order)
+        {
+            DeleteException = new InvalidOperationException("not configured")
+        };
 
         var result = await new AccountDeletionService(new StubBillingService(order), new StubDataResetService(order), identity, new StubMarkers(order)).DeleteAsync("auth0|user-1");
 
@@ -80,7 +81,12 @@ public sealed class AccountDeletionServiceTests
 
     private sealed class StubMarkers(List<string> order) : IAccountDeletionMarkerRepository
     {
-        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) { order.Add("marker"); return Task.FromResult(false); }
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default)
+        {
+            order.Add("marker");
+
+            return Task.FromResult(false);
+        }
         public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
         public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
         public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -142,7 +148,10 @@ public sealed class AccountDeletionServiceTests
     private sealed class StubIdentityDeletionService(List<string> order) : IAuth0IdentityDeletionService
     {
         public bool IsConfigured => true;
-        public Exception? DeleteException { get; init; }
+        public Exception? DeleteException
+        {
+            get; init;
+        }
 
         public Task DeleteAsync(string userId, CancellationToken cancellationToken = default)
         {

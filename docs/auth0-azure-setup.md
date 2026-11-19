@@ -85,12 +85,14 @@ In the Function App's **Settings → Environment variables** (or Configuration),
 | `Auth0__Authority` | Auth0 issuer URL, e.g. `https://your-tenant.eu.auth0.com/` (include `https://` and the trailing slash) |
 | `Auth0__Audience` | The same API identifier used as `AUTH0_AUDIENCE` |
 | `Auth0__ManagementClientId` | Server-side machine-to-machine client ID with Auth0 Management API `delete:users` permission |
-| `Auth0__ManagementClientSecret` | Server-side secret for the management client; store it as a protected Function App setting |
+| `Auth0__ManagementClientSecret` | Server-side secret for the management client |
 | `Cors__AllowedOrigins__0` | Exact Static Web App origin, e.g. `https://<your-site>.azurestaticapps.net` (no path or trailing slash) |
 
 The API validates the issuer, audience, expiry, and RS256 signature using the Auth0 JWKS endpoint at `<Authority>.well-known/jwks.json`. It does not use an Auth0 client secret. The custom Functions middleware uses `Cors:AllowedOrigins` to answer preflight requests and return CORS headers; the origin must match the browser's site origin exactly. If you have multiple frontend origins, add indexed settings such as `Cors__AllowedOrigins__1` for each explicitly allowed origin.
 
-Apply and save the app settings, then restart the Function App if Azure prompts you to. These Auth0 settings are separate from the other server-side settings listed in [deployment.md](deployment.md) and `API/appsettings.example.json`.
+Store the management client ID and secret in Key Vault as `auth0-management-client-id` and `auth0-management-client-secret`. Deploy `infra/api-auth0-keyvault.bicep` in the resource group containing the existing API Function App and vault, passing `appName` and `keyVaultName`. The app must have a system-assigned managed identity, and the vault must use Azure RBAC. The deployment grants that identity Key Vault Secrets User and merges Key Vault references into the existing app settings; the deployer needs permission to assign that role. Secret values are not supplied to Bicep. Allow time for role assignment propagation. For local Aspire, configure `Auth0:ManagementClientId` and `Auth0:ManagementClientSecret` in AppHost user secrets; Aspire adds them to its vault and passes references to the API.
+
+Apply and save the other app settings, then restart the Function App if Azure prompts you to. These Auth0 settings are separate from the other server-side settings listed in [deployment.md](deployment.md) and `API/appsettings.example.json`.
 
 ## 6. Deploy and verify
 

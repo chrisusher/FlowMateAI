@@ -26,7 +26,10 @@ public sealed class BillingRepositoryTests
         var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options;
         await using var database = new DatabaseContext(options);
         await using var cleanup = new DatabaseContext(options);
-        database.BillingEntitlements.Add(new BillingEntitlementDocument { UserId = "user" });
+        database.BillingEntitlements.Add(new BillingEntitlementDocument
+        {
+            UserId = "user"
+        });
         await database.SaveChangesAsync();
         database.ChangeTracker.Clear();
         var repository = new BillingRepository(database);

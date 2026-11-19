@@ -118,7 +118,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
 
             return response.IsSuccessStatusCode && await response.Content.ReadFromJsonAsync<bool>(cancellationToken: cancellationToken);
         }
-        catch (Exception exception) when (exception is HttpRequestException or System.Text.Json.JsonException ||
+        catch (Exception exception) when (exception is HttpRequestException or JsonException ||
                                            exception is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             return false;

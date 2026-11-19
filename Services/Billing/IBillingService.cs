@@ -1,5 +1,3 @@
-using Shared.Contracts;
-
 namespace Services.Billing;
 
 public interface IBillingService

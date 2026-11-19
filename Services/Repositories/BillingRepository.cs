@@ -31,7 +31,10 @@ public sealed class BillingRepository(DatabaseContext database) : IBillingReposi
         await EnsureCreatedAsync(cancellationToken);
 
         return await database.BillingEntitlements.FirstOrDefaultAsync(x => x.Id == "billing" && x.UserId == userId, cancellationToken)
-            ?? new BillingEntitlementDocument { UserId = userId };
+            ?? new BillingEntitlementDocument
+            {
+                UserId = userId
+            };
     }
 
     public async Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default)

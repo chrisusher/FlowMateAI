@@ -40,7 +40,10 @@ public sealed class StripeBillingServiceTests
     public async Task DeletionFailsWhenStripeSubscriptionListIsMalformed()
     {
         _repository!.Entitlement.StripeCustomerId = "cus_existing";
-        var handler = new StripeHandler { SubscriptionsJson = "{\"data\":[]}" };
+        var handler = new StripeHandler
+        {
+            SubscriptionsJson = "{\"data\":[]}"
+        };
 
         var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
 
@@ -52,7 +55,10 @@ public sealed class StripeBillingServiceTests
     public async Task DeletionExpiresOpenSubscriptionCheckoutBeforeListingSubscriptions()
     {
         _repository!.Entitlement.StripeCustomerId = "cus_existing";
-        var handler = new StripeHandler { SubscriptionsJson = "{\"data\":[],\"has_more\":false}" };
+        var handler = new StripeHandler
+        {
+            SubscriptionsJson = "{\"data\":[],\"has_more\":false}"
+        };
         handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/session"));
 
         var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
@@ -67,7 +73,10 @@ public sealed class StripeBillingServiceTests
     public async Task DeletionStopsWhenCheckoutCannotBeExpired()
     {
         _repository!.Entitlement.StripeCustomerId = "cus_existing";
-        var handler = new StripeHandler { FailCheckoutExpiry = true };
+        var handler = new StripeHandler
+        {
+            FailCheckoutExpiry = true
+        };
         handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/session"));
 
         var result = await CreateService(handler, _repository).CancelSubscriptionAsync("user");
@@ -108,7 +117,11 @@ public sealed class StripeBillingServiceTests
         var handler = new StripeHandler
         {
             SubscriptionsJson = "{\"data\":[],\"has_more\":false}",
-            BeforeCheckoutCreation = async _ => { entered.TrySetResult(); await release.Task; }
+            BeforeCheckoutCreation = async _ =>
+            {
+                entered.TrySetResult();
+                await release.Task;
+            }
         };
         var service = CreateService(handler, _repository!, markers);
 
@@ -668,9 +681,22 @@ public sealed class StripeBillingServiceTests
         }
 
         public string SubscriptionsJson { get; init; } = "{\"data\":[]}";
-        public bool FailCheckoutExpiry { get; init; }
-        public bool ThrowDuringCheckoutCreation { get; init; }
-        public Dictionary<string, string>? CheckoutPages { get; init; }
+
+        public bool FailCheckoutExpiry
+        {
+            get; init;
+        }
+
+        public bool ThrowDuringCheckoutCreation
+        {
+            get; init;
+        }
+
+        public Dictionary<string, string>? CheckoutPages
+        {
+            get; init;
+        }
+
         public Dictionary<string, string> PriceResponses { get; init; } = [];
         public Action? BeforePortalCreation
         {
@@ -752,7 +778,10 @@ public sealed class StripeBillingServiceTests
             if (request.Method == HttpMethod.Post && request.RequestUri.AbsolutePath.EndsWith("/expire", StringComparison.Ordinal))
             {
                 return FailCheckoutExpiry
-                    ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("{\"error\":{\"message\":\"Cannot expire\"}}") }
+                    ? new HttpResponseMessage(HttpStatusCode.BadRequest)
+                    {
+                        Content = new StringContent("{\"error\":{\"message\":\"Cannot expire\"}}")
+                    }
                     : JsonResponse("{\"status\":\"expired\"}");
             }
 
@@ -765,7 +794,10 @@ public sealed class StripeBillingServiceTests
                     await BeforeCheckoutCreation(cancellationToken);
                 }
 
-                if (ThrowDuringCheckoutCreation) throw new HttpRequestException("Checkout response was lost.");
+                if (ThrowDuringCheckoutCreation)
+                {
+                    throw new HttpRequestException("Checkout response was lost.");
+                }
 
                 var key = request.Headers.GetValues("Idempotency-Key").Single();
 

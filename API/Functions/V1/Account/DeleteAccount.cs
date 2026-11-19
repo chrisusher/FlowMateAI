@@ -1,9 +1,6 @@
 using API.Security;
 using ChrisUsher.Core.Shared;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Users;
-using Shared.Contracts;
 
 namespace API.Functions.V1.Account;
 
@@ -12,7 +9,7 @@ public sealed class DeleteAccount(
     IUserService users,
     IAccountDeletionService deletion)
 {
-    private const string Confirmation = "DELETE MY ACCOUNT";
+    private const string CONFIRMATION = "DELETE MY ACCOUNT";
 
     [Function(nameof(DeleteAccount))]
     public async Task<HttpResponseData> Run(
@@ -47,11 +44,11 @@ public sealed class DeleteAccount(
         }
 
         if (body is null
-            || !string.Equals(body.Confirmation, Confirmation, StringComparison.Ordinal)
+            || !string.Equals(body.Confirmation, CONFIRMATION, StringComparison.Ordinal)
             || !string.Equals(body.Email.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             return await HttpFunction.ErrorAsync(request, HttpStatusCode.BadRequest, "confirmation_required",
-                $"Enter your account email and type {Confirmation} exactly to confirm deletion.", cancellationToken);
+                $"Enter your account email and type {CONFIRMATION} exactly to confirm deletion.", cancellationToken);
         }
 
         var result = await deletion.DeleteAsync(userId, cancellationToken);

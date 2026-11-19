@@ -1,6 +1,4 @@
 using API.Security;
-using Microsoft.Azure.Functions.Worker.Http;
-using Shared.Contracts;
 
 namespace API.Functions.V1.McpKeys;
 

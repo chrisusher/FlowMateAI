@@ -8,7 +8,7 @@ namespace Services.Repositories;
 // Checkout and deletion coordinate on one ETag-protected, pseudonymous document.
 public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : IAccountDeletionMarkerRepository
 {
-    private static readonly SemaphoreSlim InitialisationLock = new(1, 1);
+    private static readonly SemaphoreSlim _initialisationLock = new(1, 1);
     private static bool _initialised;
 
     private static string MarkerId(string userId) => "deleted:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId))).ToLowerInvariant();
@@ -36,7 +36,12 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
 
             if (marker is null)
             {
-                marker = new UserDocument { Id = id, UserId = id, DeletionStarted = true };
+                marker = new UserDocument
+                {
+                    Id = id,
+                    UserId = id,
+                    DeletionStarted = true
+                };
                 database.Users.Add(marker);
             }
             else if (marker.DeletionStarted != false)
@@ -73,7 +78,13 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
 
             if (marker is null)
             {
-                marker = new UserDocument { Id = id, UserId = id, DeletionStarted = false, CheckoutOperationId = operationId };
+                marker = new UserDocument
+                {
+                    Id = id,
+                    UserId = id,
+                    DeletionStarted = false,
+                    CheckoutOperationId = operationId
+                };
                 database.Users.Add(marker);
             }
             else
@@ -139,7 +150,12 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
 
             if (marker is null)
             {
-                marker = new UserDocument { Id = id, UserId = id, DeletionStarted = false };
+                marker = new UserDocument
+                {
+                    Id = id,
+                    UserId = id,
+                    DeletionStarted = false
+                };
                 database.Users.Add(marker);
             }
             else if (marker.DeletionStarted != false)
@@ -201,7 +217,7 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
             return;
         }
 
-        await InitialisationLock.WaitAsync(cancellationToken);
+        await _initialisationLock.WaitAsync(cancellationToken);
 
         try
         {
@@ -213,7 +229,7 @@ public sealed class AccountDeletionMarkerRepository(DatabaseContext database) : 
         }
         finally
         {
-            InitialisationLock.Release();
+            _initialisationLock.Release();
         }
     }
 }

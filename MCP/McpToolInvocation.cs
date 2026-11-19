@@ -9,7 +9,6 @@ using Services.Reporting;
 using Services.Repositories;
 using Shared.Contracts;
 using Shared.Enums;
-using Shared.Models;
 
 namespace MCP;
 
@@ -20,8 +19,8 @@ public interface IMcpToolInvocation
 
 public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiterService limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger, IAccountDeletionMarkerRepository markers) : IMcpToolInvocation
 {
-    private static readonly Meter Meter = new("FlowMateAI.MCP");
-    private static readonly Histogram<double> ToolDuration = Meter.CreateHistogram<double>("flowmate.mcp.tool.duration", "ms");
+    private static readonly Meter _meter = new("FlowMateAI.MCP");
+    private static readonly Histogram<double> _toolDuration = _meter.CreateHistogram<double>("flowmate.mcp.tool.duration", "ms");
 
     public async Task<IMcpToolResponse> InvokeAsync(ToolInvocationContext context, string? period = null, string? date = null, string? cursor = null, string? projectId = null, bool projectsOnly = false, CancellationToken cancellationToken = default)
     {
@@ -33,7 +32,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         }
         finally
         {
-            ToolDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, new KeyValuePair<string, object?>("tool", context.Name));
+            _toolDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, new KeyValuePair<string, object?>("tool", context.Name));
         }
     }
 
