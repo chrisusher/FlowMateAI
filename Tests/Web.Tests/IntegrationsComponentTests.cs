@@ -33,8 +33,11 @@ public sealed class IntegrationsComponentTests : WorkspaceComponentTest
         cut.Find("input").Change("Laptop");
         cut.FindAll("button").Single(b => b.TextContent.Contains("Create key")).Click();
         cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("secret-value")));
+        cut.Find("input").Change("Another assistant");
+        Assert.That(cut.FindAll("button").Single(b => b.TextContent.Contains("Create key")).HasAttribute("disabled"), Is.True);
         cut.FindAll("button").Single(b => b.TextContent == "Done").Click();
         Assert.That(cut.Markup, Does.Not.Contain("secret-value"));
+        Assert.That(cut.FindAll("button").Single(b => b.TextContent.Contains("Create key")).HasAttribute("disabled"), Is.False);
     }
     [Test]
     public async Task RevocationRefreshesSafeMetadataAndDisplaysRevokedState()
