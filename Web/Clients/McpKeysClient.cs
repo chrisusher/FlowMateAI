@@ -9,7 +9,9 @@ public sealed class McpKeysClient(HttpClient http, Auth0Client auth)
         using var request = Authorized(HttpMethod.Get, "api/v1/mcp-keys");
         using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
 
-        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<List<McpKeySummary>>(cancellationToken: cancellationToken) ?? [] : [];
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<List<McpKeySummary>>(cancellationToken: cancellationToken) ?? [];
     }
 
     public async Task<McpKeyCreatedResponse?> CreateAsync(string name, int expiryDays, CancellationToken cancellationToken = default)

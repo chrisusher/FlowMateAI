@@ -6,7 +6,7 @@ The read-only MCP server is available to Free and Pro accounts. It exposes Strea
 https://<mcp-function-app>/runtime/webhooks/mcp
 ```
 
-Create an API key in **Settings → MCP & API keys**. Keys are shown once. Configure the MCP client to send it in the `X-Api-Key` header. Never paste a key into a prompt, commit it, or store it in browser local storage. Replace a credential by creating a new key, updating the client, then revoking the old key.
+Create an API key in **Settings → Integrations**. Keys are shown once. Configure the MCP client to send it in the `X-Api-Key` header. Never paste a key into a prompt, commit it, or store it in browser local storage. Replace a credential by creating a new key, updating the client, then revoking the old key.
 
 ## Client configuration
 

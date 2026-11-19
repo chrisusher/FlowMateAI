@@ -75,12 +75,13 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void SettingsPageComposesTheThreeSettingsCardsAndAnchorLinks()
+    public void SettingsPageComposesSettingsCardsAndAnchorLinks()
     {
         var cut = Render<SettingsPage>();
-        Assert.That(cut.FindAll(".settings-panel").Count, Is.EqualTo(3));
+        Assert.That(cut.FindAll(".settings-panel").Count, Is.EqualTo(4));
         Assert.That(cut.FindAll(".settings-nav a")[1].GetAttribute("href"), Is.EqualTo("settings#preferences"));
         Assert.That(cut.Find("#preferences").Id, Is.EqualTo("preferences"));
+        Assert.That(cut.Find("#integrations").Id, Is.EqualTo("integrations"));
         Assert.That(cut.Find("#billing").Id, Is.EqualTo("billing"));
     }
 
