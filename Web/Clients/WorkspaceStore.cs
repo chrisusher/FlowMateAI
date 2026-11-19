@@ -15,6 +15,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private string RevisionStorageKey => StorageKey + ".revision";
     private string? _revision;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
+    private bool _clearedForDeletion;
     private WorkspaceResponse? _remoteConflict;
     private bool _pendingSync;
     private bool _invalidPendingDraft;
@@ -217,6 +218,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     private async Task SaveAsync(bool reclaimTimer)
     {
+        if (_clearedForDeletion)
+        {
+            return;
+        }
+
         BindAccount();
 
         if (_invalidPendingDraft || !string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
@@ -235,6 +241,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         try
         {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
             if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
             {
                 SetSyncState(WorkspaceSyncState.Pending, "Your account changed. This draft is saved for its original account; switch back to sync it.");
@@ -367,6 +378,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     public async Task RetrySaveAsync()
     {
+        if (_clearedForDeletion)
+        {
+            return;
+        }
+
         BindAccount();
 
         if (!_remoteLoadFailed)
@@ -388,6 +404,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         try
         {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
             if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
             {
                 SetSyncState(WorkspaceSyncState.Pending, "Saved on this device. Sign in to load and sync the latest workspace.");
@@ -474,12 +495,41 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         }
     }
 
+    public async Task ClearLocalDataAsync()
+    {
+        _clearedForDeletion = true;
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            var module = await ModuleAsync();
+            await module.InvokeVoidAsync("remove", StorageKey);
+            await module.InvokeVoidAsync("remove", PendingStorageKey);
+            await module.InvokeVoidAsync("remove", RevisionStorageKey);
+            Data = new();
+            _revision = null;
+            _pendingSync = false;
+            _remoteConflict = null;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+
+        Changed?.Invoke();
+    }
+
     public async Task PreserveForReauthenticationAsync()
     {
         await _saveGate.WaitAsync();
 
         try
         {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
             Data.ClientId = ClientId;
             await SetPendingSyncAsync(true);
             SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
@@ -498,34 +548,53 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     public async Task UseServerVersionAsync()
     {
-        if (_remoteConflict is null)
-        {
-            return;
-        }
+        await _saveGate.WaitAsync();
 
-        Data = _remoteConflict.Workspace;
-        Data.ClientId = ClientId;
-        _revision = _remoteConflict.Revision;
-        _remoteConflict = null;
-        SetSyncState(WorkspaceSyncState.Saved, "Using the latest server version.");
-        await PersistLocalAsync();
-        await PersistRevisionAsync();
-        await SetPendingSyncAsync(false);
-        Changed?.Invoke();
+        try
+        {
+            if (_clearedForDeletion || _remoteConflict is null)
+            {
+                return;
+            }
+
+            Data = _remoteConflict.Workspace;
+            Data.ClientId = ClientId;
+            _revision = _remoteConflict.Revision;
+            _remoteConflict = null;
+            SetSyncState(WorkspaceSyncState.Saved, "Using the latest server version.");
+            await PersistLocalAsync();
+            await PersistRevisionAsync();
+            await SetPendingSyncAsync(false);
+            Changed?.Invoke();
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     public async Task KeepLocalVersionAsync()
     {
-        if (_remoteConflict is null)
+        await _saveGate.WaitAsync();
+
+        try
         {
-            return;
+            if (_clearedForDeletion || _remoteConflict is null)
+            {
+                return;
+            }
+
+            _revision = _remoteConflict.Revision;
+            _remoteConflict = null;
+            await PersistRevisionAsync();
+            await SetPendingSyncAsync(true);
+            SetSyncState(WorkspaceSyncState.Saving, "Retrying your local draft against the latest revision.");
+        }
+        finally
+        {
+            _saveGate.Release();
         }
 
-        _revision = _remoteConflict.Revision;
-        _remoteConflict = null;
-        await PersistRevisionAsync();
-        await SetPendingSyncAsync(true);
-        SetSyncState(WorkspaceSyncState.Saving, "Retrying your local draft against the latest revision.");
         await SaveAsync();
     }
 
@@ -708,19 +777,33 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
             if (result is not null)
             {
-                if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+                await _saveGate.WaitAsync(cancellationToken);
+
+                try
                 {
-                    SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Your account changed while the coach was replying. Sign in again before continuing.");
+                    if (_clearedForDeletion)
+                    {
+                        return null;
+                    }
 
-                    return null;
+                    if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+                    {
+                        SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Your account changed while the coach was replying. Sign in again before continuing.");
+
+                        return null;
+                    }
+
+                    _revision = result.Revision;
+                    Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
+                    Data.Conversations.Insert(0, result.Conversation);
+
+                    await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
+                    Changed?.Invoke();
                 }
-
-                _revision = result.Revision;
-                Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
-                Data.Conversations.Insert(0, result.Conversation);
-
-                await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
-                Changed?.Invoke();
+                finally
+                {
+                    _saveGate.Release();
+                }
             }
 
             return result;

@@ -233,6 +233,27 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task DeletionPendingAfterReloadShowsRetryWithoutExpiringSession()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath == "/api/v1/account/deletion-status"
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(true)
+            }
+            : new HttpResponseMessage(HttpStatusCode.Unauthorized));
+
+        var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, b => b.AddContent(0, "Workspace body")));
+        cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Retry deletion")));
+
+        Assert.That(Auth.Session.SignedIn, Is.True);
+        Assert.That(Auth.IsSessionExpired, Is.False);
+        Assert.That(cut.Markup, Does.Not.Contain("Workspace body"));
+        cut.Find(".danger-button").Click();
+        Assert.That(cut.Markup, Does.Contain("Permanently delete"));
+    }
+
+    [Test]
     public void IdleExpiryShowsReauthenticationAndKeepsTheCurrentPageMounted()
     {
         Configuration["Auth0:Domain"] = "auth.example.test";

@@ -46,7 +46,14 @@ var host = new HostBuilder()
                 }
             }
 
-            await next(context);
+            try
+            {
+                await next(context);
+            }
+            finally
+            {
+                await AccountOperation.CompleteAsync(context);
+            }
         }));
     })
     .ConfigureServices((context, services) =>

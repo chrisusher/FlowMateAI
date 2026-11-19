@@ -80,6 +80,7 @@ public class DatabaseContext : DbContext
             entity.ToContainer("Users");
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.UserId);
+            entity.Property(x => x.ETag).IsETagConcurrency();
         });
 
         base.OnModelCreating(modelBuilder);

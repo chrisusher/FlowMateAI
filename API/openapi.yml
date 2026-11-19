@@ -198,6 +198,38 @@ paths:
           $ref: '#/components/responses/BillingAction'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /v1/account:
+    delete:
+      operationId: deleteAccount
+      summary: Delete the authenticated user's account
+      description: Cancels the Stripe subscription before deleting application data and the Auth0 identity. The request requires the authenticated email and the exact confirmation phrase.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDeletionRequest'
+      responses:
+        '204':
+          description: Account and application data deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The subscription could not be cancelled, so no application data was removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Deletion is incomplete and can be retried.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /v1/webhooks/stripe:
     post:
       operationId: receiveStripeWebhook
@@ -327,6 +359,16 @@ components:
       properties:
         annual:
           type: boolean
+    AccountDeletionRequest:
+      type: object
+      required: [confirmation, email]
+      properties:
+        confirmation:
+          type: string
+          example: DELETE MY ACCOUNT
+        email:
+          type: string
+          format: email
     CoachRequest:
       type: object
       required: [prompt]

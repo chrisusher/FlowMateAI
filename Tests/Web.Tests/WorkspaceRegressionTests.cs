@@ -430,10 +430,42 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Auth.Session.AccessToken, Is.Null);
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Draft kept through reauthentication"));
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.AuthenticationExpired));
-        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace", "/api/v1/account/deletion-status" }));
         Assert.That(JSInterop.Invocations.Any(call =>
             call.Identifier == "write" && Equals(call.Arguments[0], "flowmate.workspace.v1.test-user.pending") &&
             Equals(call.Arguments[1], "true")), Is.True);
+    }
+
+    [Test]
+    public async Task AccountDeletionWaitsForPendingSaveAndPreventsLaterCacheWrites()
+    {
+        await SignInAsync();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Api.Respond = async (_, _) =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        };
+
+        var saving = Store.SaveAsync();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var clearing = Store.ClearLocalDataAsync();
+        Assert.That(clearing.IsCompleted, Is.False);
+        release.TrySetResult();
+        await saving;
+        await clearing;
+        var writes = WorkspaceModule.Invocations.Count(call => call.Identifier == "write");
+
+        await Store.SaveAsync();
+        await Store.PreserveForReauthenticationAsync();
+
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "write"), Is.EqualTo(writes));
+        Assert.That(WorkspaceModule.Invocations.Count(call => call.Identifier == "remove"), Is.EqualTo(3));
+        Assert.That(Store.Data.Tasks, Is.Empty);
+        Assert.That(Store.Data.Conversations, Is.Empty);
     }
 
     [Test]

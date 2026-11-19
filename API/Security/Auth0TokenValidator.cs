@@ -3,16 +3,24 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Services.Repositories;
 
 namespace API.Security;
 
-public sealed class Auth0TokenValidator(IConfiguration configuration, IHttpClientFactory clients)
+public sealed class Auth0TokenValidator(IConfiguration configuration, IHttpClientFactory clients, IServiceScopeFactory scopes)
 {
     private readonly SemaphoreSlim _keyLock = new(1, 1);
     private Dictionary<string, JsonElement> _keys = new(StringComparer.Ordinal);
     private DateTimeOffset _keysExpireAt;
 
-    public async Task<ClaimsPrincipal?> ValidateAsync(string? authorization, CancellationToken cancellationToken = default)
+    public Task<ClaimsPrincipal?> ValidateAsync(string? authorization, CancellationToken cancellationToken = default) =>
+        ValidateCoreAsync(authorization, false, cancellationToken);
+
+    public Task<ClaimsPrincipal?> ValidateForDeletionAsync(string? authorization, CancellationToken cancellationToken = default) =>
+        ValidateCoreAsync(authorization, true, cancellationToken);
+
+    private async Task<ClaimsPrincipal?> ValidateCoreAsync(string? authorization, bool allowDeletionRetry, CancellationToken cancellationToken)
     {
         var token = authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true
             ? authorization[7..].Trim()
@@ -91,6 +99,17 @@ public sealed class Auth0TokenValidator(IConfiguration configuration, IHttpClien
             if (!rsa.VerifyData(Encoding.ASCII.GetBytes(pieces[0] + "." + pieces[1]), Decode(pieces[2]), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
             {
                 return null;
+            }
+
+            if (!allowDeletionRetry)
+            {
+                using var scope = scopes.CreateScope();
+                var markers = scope.ServiceProvider.GetRequiredService<IAccountDeletionMarkerRepository>();
+
+                if (await markers.IsMarkedAsync(subject.GetString()!, cancellationToken))
+                {
+                    return null;
+                }
             }
 
             var claims = new List<Claim>();

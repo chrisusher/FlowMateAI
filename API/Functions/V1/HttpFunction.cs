@@ -72,6 +72,11 @@ internal static class HttpFunction
         var userId = principal?.FindFirst("sub")?.Value;
         var email = principal?.FindFirst("email")?.Value;
 
+        if (!string.IsNullOrWhiteSpace(userId) && !await AccountOperation.BeginAsync(request, userId, cancellationToken))
+        {
+            return (null, null);
+        }
+
         var userAlreadyRegistered = false;
 
         if (!string.IsNullOrWhiteSpace(userId) && string.IsNullOrWhiteSpace(email))
