@@ -33,6 +33,7 @@ public sealed class IntegrationsComponentTests : WorkspaceComponentTest
         cut.Find("input").Change("Laptop");
         cut.FindAll("button").Single(b => b.TextContent.Contains("Create key")).Click();
         cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("secret-value")));
-        cut.FindAx¶‰žËkºwµçHŠK”Ú[™ÛJˆOˆ‹•^ÛÛ[OH‘Û™HŠKÛXÚÊ
-NÂˆ\ÜÙ\•]
-Ý]“X\šÝ\Ù\Ë“›ÝÛÛZ[ŠœÙXÜ™]]˜[YHŠJNÂˆBŸCB
+        cut.FindAll("button").Single(b => b.TextContent == "Done").Click();
+        Assert.That(cut.Markup, Does.Not.Contain("secret-value"));
+    }
+}
