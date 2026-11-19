@@ -35,6 +35,7 @@ Configure this repository variable:
 - `AZURE_FUNCTIONAPP_NAME`: existing Function App name.
 - `AZURE_MCP_FUNCTIONAPP_NAME`: separate Linux Flex Consumption Function App for MCP.
 - `MCP_ENDPOINT`: MCP endpoint URL including `/runtime/webhooks/mcp` for the Settings instructions.
+- `SUPPORT_URL`: public HTTPS support page or `mailto:` address for the Integrations unavailable state. Verify that the destination is monitored before release.
 - `API_BASE_URL`: HTTPS origin of the Functions API.
 - `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_AUDIENCE`: browser-safe Auth0 SPA configuration. These values are public client settings, not secrets.
 

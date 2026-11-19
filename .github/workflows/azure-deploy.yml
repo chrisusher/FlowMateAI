@@ -25,6 +25,7 @@ jobs:
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           MCP_ENDPOINT: ${{ vars.MCP_ENDPOINT }}
+          SUPPORT_URL: ${{ vars.SUPPORT_URL }}
           AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
           AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
           AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
@@ -32,6 +33,7 @@ jobs:
           $settings = Get-Content -LiteralPath 'Web/wwwroot/appsettings.example.json' -Raw | ConvertFrom-Json -AsHashtable
           $settings['ApiBaseUrl'] = $env:API_BASE_URL
           $settings['McpEndpoint'] = $env:MCP_ENDPOINT
+          $settings['SupportUrl'] = $env:SUPPORT_URL
           $settings['Auth0']['Domain'] = $env:AUTH0_DOMAIN
           $settings['Auth0']['ClientId'] = $env:AUTH0_CLIENT_ID
           $settings['Auth0']['Audience'] = $env:AUTH0_AUDIENCE

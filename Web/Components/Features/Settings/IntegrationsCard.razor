@@ -10,7 +10,16 @@
     <p>Free and Pro can both connect. Free includes today and the previous 29 calendar days, with 10 calls per rolling minute and 100 per UTC day across keys and clients. Pro includes one year of history and is exempt from MCP rate limits.</p>
     @if (Endpoint is null)
     {
-        <p role="status">The assistant connection endpoint is not configured. Please contact FlowMate support for help.</p>
+        <p role="status">The assistant connection endpoint is not configured.
+            @if (SupportUrl is not null)
+            {
+                <a href="@SupportUrl">Contact FlowMate support</a><span> for help.</span>
+            }
+            else
+            {
+                <span>Support contact details are not available yet. Please try again later.</span>
+            }
+        </p>
     }
     else
     {
@@ -67,6 +76,11 @@
     private string? Endpoint => Uri.TryCreate(Configuration["McpEndpoint"], UriKind.Absolute, out var uri) &&
         (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)) && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment)
         ? (uri.AbsolutePath == "/" ? new Uri(uri, "runtime/webhooks/mcp").ToString() : uri.ToString()) : null;
+    private string? SupportUrl => Uri.TryCreate(Configuration["SupportUrl"], UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo) ||
+         uri.Scheme == Uri.UriSchemeMailto && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) &&
+         System.Net.Mail.MailAddress.TryCreate(uri.OriginalString[7..], out var address) && address.Address == uri.OriginalString[7..])
+        ? uri.ToString() : null;
 
     protected override async Task OnInitializedAsync()
     {

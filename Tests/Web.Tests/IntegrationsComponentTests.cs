@@ -7,6 +7,24 @@ namespace Web.Tests;
 
 public sealed class IntegrationsComponentTests : WorkspaceComponentTest
 {
+    [TestCase("https://support.example.test/help", true)]
+    [TestCase("mailto:help@example.test", true)]
+    [TestCase("javascript:alert(1)", false)]
+    [TestCase("", false)]
+    public void MissingEndpointOffersOnlyConfiguredSafeSupportLinks(string supportUrl, bool expectLink)
+    {
+        Configuration["SupportUrl"] = supportUrl;
+        var cut = Render<IntegrationsCard>();
+
+        Assert.That(cut.Markup, Does.Contain("endpoint is not configured"));
+        Assert.That(cut.FindAll("a").Any(a => a.TextContent.Contains("Contact FlowMate support")), Is.EqualTo(expectLink));
+
+        if (!expectLink)
+        {
+            Assert.That(cut.Markup, Does.Contain("Support contact details are not available yet"));
+        }
+    }
+
     [Test]
     public async Task FailedKeyListCanBeRetriedWithoutShowingAnEmptyList()
     {
