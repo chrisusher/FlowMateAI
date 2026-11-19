@@ -34,7 +34,7 @@ public sealed class BillingRepositoryTests
         database.ChangeTracker.Clear();
         var repository = new BillingRepository(database);
 
-        Assert.ThrowsAsync<DbUpdateConcurrencyException>(async () => await repository.UpdateExistingEntitlementAsync("user", entitlement =>
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(async () => await repository.UpdateExistingEntitlementAsync("user", entitlement =>
         {
             var deleted = cleanup.BillingEntitlements.Single();
             cleanup.BillingEntitlements.Remove(deleted);

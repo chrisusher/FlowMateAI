@@ -592,7 +592,7 @@ public sealed class StripeBillingServiceTests
             new StubWorkspaceService(),
             billing);
 
-        Assert.ThrowsAsync<HttpRequestException>(() => coach.AskAsync("user", "Help me choose a task.", []));
+        await Assert.ThrowsAsync<HttpRequestException>(() => coach.AskAsync("user", "Help me choose a task.", []));
         Assert.That(_repository!.Entitlement.PromptCount, Is.Zero);
     }
 
