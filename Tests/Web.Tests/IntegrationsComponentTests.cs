@@ -36,4 +36,30 @@ public sealed class IntegrationsComponentTests : WorkspaceComponentTest
         cut.FindAll("button").Single(b => b.TextContent == "Done").Click();
         Assert.That(cut.Markup, Does.Not.Contain("secret-value"));
     }
+    [Test]
+    public async Task RevocationRefreshesSafeMetadataAndDisplaysRevokedState()
+    {
+        await SignInAsync();
+        var revoked = false;
+        var now = DateTimeOffset.UtcNow;
+        Api.Respond = (request, _) =>
+        {
+            if (request.Method == HttpMethod.Delete)
+            {
+                revoked = true;
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent));
+            }
+
+            var keys = new[] { new McpKeySummary("key-1", "Laptop", "fm_abc", now, now.AddDays(30), revoked) };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(keys) });
+        };
+        var cut = Render<IntegrationsCard>();
+        cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Active")));
+        cut.FindAll("button").Single(b => b.TextContent.Contains("Revoke")).Click();
+        cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Revoked")));
+        Assert.That(cut.FindAll("button").Any(b => b.TextContent.Contains("Revoke")), Is.False);
+        Assert.That(Api.Paths, Does.Contain("/api/v1/mcp-keys/key-1"));
+    }
 }
