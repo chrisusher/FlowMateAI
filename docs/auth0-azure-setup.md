@@ -15,14 +15,15 @@ Copy-Item Web/wwwroot/appsettings.example.json Web/wwwroot/appsettings.json
 
 The deployment workflow reads the committed example, writes the actual `appsettings.json` using GitHub Actions variables, and then publishes it. A clean checkout does not need local settings files for CI deployment.
 
-Aspire declares the issuer as the `auth0-authority` parameter and passes it to the API and administrative CLI as `Auth0__Authority`. Set its value in AppHost user secrets or provide it through Aspire parameter configuration:
+Aspire declares the issuer, SPA client ID and API audience as parameters. It passes the issuer and audience to the API, and supplies these public values to the frontend through the gateway. Store them in AppHost user secrets or provide equivalent Aspire parameter configuration:
 
 ```powershell
 dotnet user-secrets set "Parameters:auth0-authority" "https://YOUR_TENANT.us.auth0.com/" --project AppHost/AppHost.csproj
-dotnet user-secrets set "Auth0:Audience" "https://api.example.com" --project AppHost/AppHost.csproj
+dotnet user-secrets set "Parameters:auth0-client-id" "YOUR_SPA_CLIENT_ID" --project AppHost/AppHost.csproj
+dotnet user-secrets set "Parameters:auth0-audience" "https://api.example.com" --project AppHost/AppHost.csproj
 ```
 
-Use the same API audience in the browser and API. The audience is the API identifier, not an Auth0 dashboard resource ID. Management API credentials remain server-side.
+Restart the AppHost after changing these settings. The audience is the API identifier, not an Auth0 dashboard resource ID. The SPA client ID is public; do not provide its client secret. Management API credentials remain server-side. Outside Aspire, use the frontend settings file described above.
 
 The local Aspire gateway uses HTTPS port `7237` and HTTP port `5133`, configured by `Frontend:HttpsPort` and `Frontend:HttpPort` in `AppHost/appsettings.Development.json`. Open `https://localhost:7237/frontend/`. Register the exact callback/logout URLs under `/frontend/` for the routes `/`, `/today`, `/projects`, `/tasks`, `/reports`, `/coach`, `/pricing`, and `/settings`. Use origins without paths in Allowed Web Origins. Additional gateway hostnames need their own allowlist entries. The AppHost dashboard URL is not the frontend URL.
 
