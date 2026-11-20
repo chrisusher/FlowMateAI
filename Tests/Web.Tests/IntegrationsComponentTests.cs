@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using Shared.Contracts;
 using Web.Components.Features.Settings;
 
