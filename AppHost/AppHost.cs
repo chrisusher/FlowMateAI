@@ -172,7 +172,7 @@ var cli = builder.AddProject<Projects.CLI>("cli")
 
 var buildConfiguration = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.Name ?? "Debug";
 var cliAssemblyPath = Path.GetFullPath(Path.Combine(
-    AppContext.BaseDirectory, "..", "..", "..", "..", "CLI", "bin", buildConfiguration, "net10.0", "CLI.dll"));
+    AppContext.BaseDirectory, "..", "..", "..", "..", "CLI", "bin", buildConfiguration, "net11.0", "CLI.dll"));
 
 var cliWorkingDirectory = Path.GetDirectoryName(cliAssemblyPath)!;
 var auth0ClientId = builder.Configuration["Auth0:ManagementClientId"];
