@@ -6,6 +6,25 @@ namespace Web.Tests;
 
 public sealed class IntegrationsComponentTests : WorkspaceComponentTest
 {
+    [Test]
+    public async Task FreeAccountCanRevokeExistingKeysButCannotCreateOne()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(Array.Empty<BillingPrice>()) },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new BillingSummary("Free", "none", true, null, 0, 10)) },
+            _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new[] { new McpKeySummary("key", "Old key", "fm", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(1), false) }) }
+        });
+        await Billing.InitialiseAsync();
+        var cut = Render<IntegrationsCard>();
+
+        cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Old key")));
+        Assert.That(cut.Markup, Does.Contain("Start a Pro trial or subscribe"));
+        Assert.That(cut.FindAll("button").Any(button => button.TextContent.Contains("Create key")), Is.False);
+        Assert.That(cut.FindAll("button").Any(button => button.TextContent.Contains("Revoke")), Is.True);
+    }
+
     [TestCase("https://support.example.test/help", true)]
     [TestCase("mailto:help@example.test", true)]
     [TestCase("javascript:alert(1)", false)]
@@ -42,6 +61,7 @@ public sealed class IntegrationsComponentTests : WorkspaceComponentTest
     public async Task CreatedSecretIsShownOnceAndCanBeDismissed()
     {
         await SignInAsync();
+        await Billing.InitialiseAsync();
         Configuration["McpEndpoint"] = "https://mcp.example.test/runtime/webhooks/mcp";
         Api.Respond = (request, _) => Task.FromResult(request.Method == HttpMethod.Post
             ? new HttpResponseMessage(HttpStatusCode.Created) { Content = JsonContent.Create(new McpKeyCreatedResponse("id", "Laptop", "fm", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(90), "secret-value")) }

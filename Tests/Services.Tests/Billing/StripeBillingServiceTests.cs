@@ -596,6 +596,56 @@ public sealed class StripeBillingServiceTests
         Assert.That(_repository!.Entitlement.PromptCount, Is.Zero);
     }
 
+    [Test]
+    public async Task TrialDoesNotRequirePaymentMethodAndCancelsWhenNoneIsAdded()
+    {
+        var handler = new StripeHandler();
+        var result = await CreateService(handler, _repository!).StartTrialAsync("user", null, false);
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(handler.LastCheckoutForm, Does.Contain("payment_method_collection=if_required"));
+        Assert.That(handler.LastCheckoutForm, Does.Contain("subscription_data%5Btrial_period_days%5D=14"));
+        Assert.That(handler.LastCheckoutForm, Does.Contain("subscription_data%5Btrial_settings%5D%5Bend_behavior%5D%5Bmissing_payment_method%5D=cancel"));
+    }
+
+    [Test]
+    public async Task OldCardRequiredTrialCheckoutIsNotReused()
+    {
+        var handler = new StripeHandler();
+        handler.OpenCheckoutSessions.Add(new("subscription", "price_monthly", "https://checkout.example.test/old", true, false));
+        var result = await CreateService(handler, _repository!).StartTrialAsync("user", null, false);
+
+        Assert.That(result.Code, Is.EqualTo(BillingActionCode.CheckoutInProgress));
+        Assert.That(handler.CheckoutSessionCreations, Is.Zero);
+    }
+
+    [Test]
+    public async Task CurrencySelectionUsesItsConfiguredPriceAndDoesNotReuseAnotherCurrency()
+    {
+        var handler = new StripeHandler();
+        handler.PriceResponses["price_usd_monthly"] = "{\"currency\":\"usd\",\"unit_amount\":599,\"recurring\":{\"interval\":\"month\"}}";
+        var service = CreateService(handler, _repository!);
+        var prices = await service.GetPricesAsync();
+        Assert.That(prices.Any(price => price.Currency == "usd" && price.UnitAmount == 599), Is.True);
+
+        var result = await service.StartTrialAsync("user", null, false, currency: OfferCurrency.Usd);
+        Assert.That(result.Url, Is.EqualTo("https://checkout.example.test/session/price_usd_monthly"));
+        var differentCurrency = await service.StartTrialAsync("user", null, false, currency: OfferCurrency.Gbp);
+        Assert.That(differentCurrency.Code, Is.EqualTo(BillingActionCode.CheckoutInProgress));
+    }
+
+    [Test]
+    public async Task UnconfiguredOrMismatchedCurrencyCannotStartCheckout()
+    {
+        var handler = new StripeHandler();
+        handler.PriceResponses["price_eur_monthly"] = "{\"currency\":\"usd\",\"unit_amount\":599,\"recurring\":{\"interval\":\"month\"}}";
+        var service = CreateService(handler, _repository!);
+
+        Assert.That((await service.GetPricesAsync()).Any(price => price.Currency == "eur"), Is.False);
+        Assert.That((await service.CreateCheckoutAsync("user", null, false, currency: OfferCurrency.Eur)).Succeeded, Is.False);
+        Assert.That(handler.CheckoutSessionCreations, Is.Zero);
+    }
+
     private static StripeBillingService CreateService(StripeHandler handler, IBillingRepository repository, IAccountDeletionMarkerRepository? markers = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -604,6 +654,8 @@ public sealed class StripeBillingServiceTests
             ["Stripe:WebhookSecret"] = "whsec_test_placeholder",
             ["Stripe:MonthlyPriceId"] = "price_monthly",
             ["Stripe:AnnualPriceId"] = "price_annual",
+            ["Stripe:Usd:MonthlyPriceId"] = "price_usd_monthly",
+            ["Stripe:Eur:MonthlyPriceId"] = "price_eur_monthly",
             ["WebApp:Origin"] = "https://app.example.test"
         }).Build();
 
@@ -697,7 +749,11 @@ public sealed class StripeBillingServiceTests
             get; init;
         }
 
-        public Dictionary<string, string> PriceResponses { get; init; } = [];
+        public Dictionary<string, string> PriceResponses { get; init; } = new()
+        {
+            ["price_monthly"] = "{\"currency\":\"gbp\",\"unit_amount\":499,\"recurring\":{\"interval\":\"month\"}}",
+            ["price_annual"] = "{\"currency\":\"gbp\",\"unit_amount\":5000,\"recurring\":{\"interval\":\"year\"}}"
+        };
         public Action? BeforePortalCreation
         {
             get; set;
@@ -712,6 +768,7 @@ public sealed class StripeBillingServiceTests
         {
             get; private set;
         }
+        public string? LastCheckoutForm { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -749,6 +806,7 @@ public sealed class StripeBillingServiceTests
                     id = $"cs_{index}",
                     mode = session.Mode,
                     url = session.Url,
+                    payment_method_collection = session.Trial && session.Cardless ? "if_required" : "always",
                     metadata = new
                     {
                         flowmate_trial = session.Trial ? "true" : "false"
@@ -819,6 +877,7 @@ public sealed class StripeBillingServiceTests
                     }
 
                     CheckoutSessionCreations++;
+                    LastCheckoutForm = form;
                     LastCheckoutCancelUrl = FormValue(form, "cancel_url");
                     var priceId = FormValue(form, "line_items[0][price]")!;
                     var url = $"https://checkout.example.test/session/{priceId}";
@@ -867,6 +926,6 @@ public sealed class StripeBillingServiceTests
             return null;
         }
 
-        public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url, bool Trial = false);
+        public sealed record OpenCheckoutSession(string Mode, string PriceId, string Url, bool Trial = false, bool Cardless = true);
     }
 }

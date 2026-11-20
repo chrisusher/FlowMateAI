@@ -6,7 +6,7 @@ using Shared.Contracts;
 
 namespace API.Functions.V1.McpKeys;
 
-public sealed class CreateMcpKey(Auth0TokenValidator tokens, IMcpCredentialService credentials)
+public sealed class CreateMcpKey(Auth0TokenValidator tokens, IMcpCredentialService credentials, McpAccessService access)
 {
     [Function(nameof(CreateMcpKey))]
     public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/mcp-keys")] HttpRequestData request, CancellationToken cancellationToken)
@@ -36,6 +36,11 @@ public sealed class CreateMcpKey(Auth0TokenValidator tokens, IMcpCredentialServi
 
         try
         {
+            if (!await access.IsAllowedAsync(owner, cancellationToken))
+            {
+                return await McpKeyHttpHelpers.ErrorAsync(request, HttpStatusCode.Forbidden, "pro_required", "Assistant connections require an active Pro trial or subscription.", cancellationToken);
+            }
+
             var created = await credentials.CreateAsync(owner, body.Name, body.ExpiryDays, cancellationToken);
             var response = request.CreateResponse(HttpStatusCode.Created);
             await response.WriteAsJsonAsync(new McpKeyCreatedResponse(

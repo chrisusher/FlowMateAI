@@ -11,11 +11,36 @@ namespace Web.Tests;
 public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
 {
     [Test]
+    public async Task PricingSelectionUsesMatchingCurrencyAndDoesNotOfferMissingPrice()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/billing/prices" => new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new[]
+            {
+                new BillingPrice("month", "gbp", 499, "£4.99 / month"),
+                new BillingPrice("month", "usd", 599, "$5.99 / month")
+            }) },
+            "/api/v1/billing" => new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new BillingSummary("Free", "none", false, null, 0, 10)) },
+            _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        });
+        await Billing.InitialiseAsync();
+        var cut = Render<PricingPage>();
+
+        Assert.That(Billing.PriceLabel, Is.EqualTo("£4.99 / month"));
+        cut.Find("#billing-currency").Change("Usd");
+        Assert.That(Billing.PriceLabel, Is.EqualTo("$5.99 / month"));
+        cut.Find("#billing-currency").Change("Eur");
+        Assert.That(Billing.PriceLabel, Is.EqualTo("Pricing unavailable"));
+        Assert.That(Billing.HasSelectedPrice, Is.False);
+    }
+
+    [Test]
     public void FreePlanCardDisplaysIncludedFeaturesAndDisabledCurrentPlan()
     {
         var cut = Render<FreePlanCard>();
-        Assert.That(Content(cut.Find(".price")), Does.Contain("£0"));
-        Assert.That(cut.FindAll("li").Count, Is.EqualTo(7));
+        Assert.That(Content(cut.Find(".price")), Does.Contain("Free"));
+        Assert.That(cut.FindAll("li").Count, Is.EqualTo(6));
         Assert.That(cut.Find("button").HasAttribute("disabled"), Is.True);
         Assert.That(Content(cut.Find("button")), Is.EqualTo("Checking plan…"));
     }
@@ -166,11 +191,11 @@ public sealed class BillingAndSettingsComponentTests : WorkspaceComponentTest
         await Billing.InitialiseAsync();
         Assert.That(Billing.Annual, Is.False);
         var cut = Render<ProPlanCard>();
-        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"avoid the {chargeLabel} charge"));
+        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"the {chargeLabel} charge follows unless you cancel"));
 
         await cut.InvokeAsync(() => Billing.Annual = true);
         cut.Render();
-        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"avoid the {chargeLabel} charge"));
+        Assert.That(cut.Find("p.trial-copy").TextContent, Does.Contain($"the {chargeLabel} charge follows unless you cancel"));
     }
 
     [Test]

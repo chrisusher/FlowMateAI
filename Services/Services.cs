@@ -131,6 +131,7 @@ public static class Services
 
         services.AddScoped<IFocusCoachService, FoundryFocusCoachService>();
         services.AddScoped<IMcpCredentialService, McpCredentialService>();
+        services.AddScoped<McpAccessService>();
 
         #region EF Core Services
         services.AddScoped<IBillingService, StripeBillingService>();
@@ -174,6 +175,7 @@ public static class Services
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
         services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IMcpCredentialService, McpCredentialService>();
+        services.AddScoped<McpAccessService>();
 
         return services;
     }

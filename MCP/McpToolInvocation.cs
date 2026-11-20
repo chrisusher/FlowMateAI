@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Services.Mcp;
 using Services.Reporting;
@@ -17,7 +16,7 @@ public interface IMcpToolInvocation
     Task<IMcpToolResponse> InvokeAsync(ToolInvocationContext context, string? period = null, string? date = null, string? cursor = null, string? projectId = null, bool projectsOnly = false, CancellationToken cancellationToken = default);
 }
 
-public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiterService limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger, IAccountDeletionMarkerRepository markers) : IMcpToolInvocation
+public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, McpAccessService access, ILogger<McpToolInvocation> logger, IAccountDeletionMarkerRepository markers) : IMcpToolInvocation
 {
     private static readonly Meter _meter = new("FlowMateAI.MCP");
     private static readonly Histogram<double> _toolDuration = _meter.CreateHistogram<double>("flowmate.mcp.tool.duration", "ms");
@@ -45,7 +44,6 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
             return Error("unauthorized", "Provide a valid X-Api-Key header.");
         }
         ValidatedMcpKey? validated;
-        bool isPro;
 
         try
         {
@@ -57,9 +55,19 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
 
                 return Error("unauthorized", "The API key is invalid, expired, or revoked.");
             }
-            isPro = await IsProAsync(validated.UserId, cancellationToken);
+
+            if (!await access.IsAllowedAsync(validated.UserId, cancellationToken))
+            {
+                return Error("pro_required", "Assistant connections require an active Pro trial or subscription.");
+            }
         }
         catch (CosmosException)
+        {
+            logger.LogWarning("MCP credential or entitlement dependency failed.");
+
+            return Error("temporarily_unavailable", "Account credentials are temporarily unavailable.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             logger.LogWarning("MCP credential or entitlement dependency failed.");
 
@@ -75,7 +83,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
 
         try
         {
-            return await InvokeAuthenticatedAsync(validated, isPro, period, date, cursor, projectId, projectsOnly, cancellationToken);
+            return await InvokeAuthenticatedAsync(validated, period, date, cursor, projectId, projectsOnly, cancellationToken);
         }
         finally
         {
@@ -83,7 +91,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         }
     }
 
-    private async Task<IMcpToolResponse> InvokeAuthenticatedAsync(ValidatedMcpKey validated, bool isPro, string? period, string? date, string? cursor, string? projectId, bool projectsOnly, CancellationToken cancellationToken)
+    private async Task<IMcpToolResponse> InvokeAuthenticatedAsync(ValidatedMcpKey validated, string? period, string? date, string? cursor, string? projectId, bool projectsOnly, CancellationToken cancellationToken)
     {
         var periodValue = period ?? ReportPeriod.Day.ToWireValue();
 
@@ -109,27 +117,6 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
             return Error("invalid_arguments", "cursor is invalid.");
         }
 
-        if (!isPro)
-        {
-            try
-            {
-                var admission = await limiter.AdmitAsync(validated.UserId, cancellationToken);
-
-                if (!admission.Admitted)
-                {
-                    logger.LogInformation("MCP Free account throttled by a configured rate limit.");
-
-                    return new McpRateLimitErrorResponse(true, "rate_limited", admission.PerMinuteLimit, admission.PerDayLimit, admission.MinuteRemaining, admission.DayRemaining, admission.RetryAfterSeconds, admission.MinuteResetAt, admission.DayResetAt);
-                }
-            }
-            catch (UsageAdmissionUnavailableException)
-            {
-                logger.LogWarning("MCP rate-limit admission failed.");
-
-                return Error("temporarily_unavailable", "Rate limit admission is temporarily unavailable. Retry shortly.");
-            }
-        }
-
         try
         {
             var report = await reports.GetAsync(validated.UserId, reportPeriod, selectedDate, cancellationToken);
@@ -141,8 +128,8 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
                     report.TimeZone,
                     report.AvailableHistoryStart,
                     report.AvailableHistoryEnd,
-                    isPro ? null : new McpRateLimitPolicy(limiter.PerMinuteLimit, limiter.PerDayLimit),
-                    isPro);
+                    null,
+                    true);
             }
 
             if (projectId is not null && !report.ProjectTotals.Any(p => p.ProjectId == projectId))
@@ -201,22 +188,6 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         }
     }
 
-    private async Task<bool> IsProAsync(string userId, CancellationToken token)
-    {
-        var database = configuration["Database:DatabaseName"] ?? configuration["Database__DatabaseName"] ?? "flowmate-Development";
-
-        try
-        {
-            var item = await cosmos.GetContainer(database, "BillingEntitlements").ReadItemAsync<Entitlement>("billing", new PartitionKey(userId), cancellationToken: token);
-
-            return BillingPlanExtensions.ParseOrFree(item.Resource.Plan) == BillingPlan.Pro &&
-                SubscriptionEntitlementExtensions.FromProviderStatus(item.Resource.SubscriptionStatus) == SubscriptionEntitlement.Entitled;
-        }
-        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
-        {
-            return false;
-        }
-    }
     private static McpToolErrorResponse Error(string code, string message) => new(true, code, message);
 
     private static McpTimesheetResponse ToTimesheetResponse(WorkspaceReport report, IEnumerable<ReportEntry> entries, string? nextCursor) => new(
@@ -233,7 +204,4 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
     private static string CreateFirstCursor(string userId, ReportPeriod period, WorkspaceReport report) =>
         ReportPageCursor.Encode(userId, period, report.QueryDate, 100, report.Revision);
 
-    private sealed class Entitlement { public string Plan { get; set; } = BillingPlan.Free.ToString(); 
-    
-    public string SubscriptionStatus { get; set; } = "none"; }
 }
