@@ -1,3 +1,3 @@
 namespace Shared.Contracts;
 
-public sealed record CheckoutRequest(bool Annual);
+public sealed record CheckoutRequest(bool Annual, string? Currency = null);

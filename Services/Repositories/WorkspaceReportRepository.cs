@@ -44,7 +44,9 @@ public sealed class WorkspaceReportRepository(CosmosClient cosmos, IConfiguratio
             
             return new(
                 BillingPlanExtensions.ParseOrFree(response.Resource.Plan),
-                SubscriptionEntitlementExtensions.FromProviderStatus(response.Resource.SubscriptionStatus));
+                SubscriptionEntitlementExtensions.FromProviderStatus(response.Resource.SubscriptionStatus),
+                SubscriptionStatusExtensions.FromProviderStatus(response.Resource.SubscriptionStatus),
+                response.Resource.PeriodEndsAt);
         }
         catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
         {
@@ -62,5 +64,6 @@ public sealed class WorkspaceReportRepository(CosmosClient cosmos, IConfiguratio
     {
         public string Plan { get; set; } = BillingPlan.Free.ToString();
         public string SubscriptionStatus { get; set; } = "none";
+        public DateTimeOffset? PeriodEndsAt { get; set; }
     }
 }

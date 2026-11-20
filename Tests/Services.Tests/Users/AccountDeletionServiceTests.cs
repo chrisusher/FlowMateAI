@@ -129,8 +129,8 @@ public sealed class AccountDeletionServiceTests
         public Task<(bool Allowed, int Used, int Limit)> ConsumePromptAsync(string userId, string month, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task ReleasePromptAsync(string userId, string month, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<BillingPrice>> GetPricesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<BillingActionResponse> StartTrialAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, bool trial = false) => throw new NotSupportedException();
+        public Task<BillingActionResponse> StartTrialAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, OfferCurrency currency = OfferCurrency.Gbp) => throw new NotSupportedException();
+        public Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, bool trial = false, OfferCurrency currency = OfferCurrency.Gbp) => throw new NotSupportedException();
         public Task<BillingActionResponse> CreatePortalAsync(string userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<bool> ProcessWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
