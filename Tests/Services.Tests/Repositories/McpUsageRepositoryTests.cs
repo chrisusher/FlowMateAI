@@ -73,11 +73,11 @@ public sealed class McpUsageRepositoryTests
     }
 
     [Test]
-    public void OtherStorageFailuresDoNotCountAsConflicts()
+    public async Task OtherStorageFailuresDoNotCountAsConflicts()
     {
         using var database = new RecordingContext { Failure = new DbUpdateException("unavailable") };
 
-        Assert.ThrowsAsync<McpUsageStorageUnavailableException>(() =>
+        await Assert.ThrowsAsync<McpUsageStorageUnavailableException>(() =>
             new McpUsageRepository(database).TrySaveAsync(new McpUsageDocument { UserId = "user" }, null));
         Assert.That(database.ChangeTracker.Entries<McpUsageDocument>(), Is.Empty);
     }

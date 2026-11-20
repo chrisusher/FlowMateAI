@@ -96,38 +96,38 @@ public sealed class FreeUsageLimiterTests
     }
 
     [Test]
-    public void RepeatedConflictsStopAfterFiveAttempts()
+    public async Task RepeatedConflictsStopAfterFiveAttempts()
     {
         var repository = new StubRepository { Save = (_, _) => false };
 
-        Assert.ThrowsAsync<UsageAdmissionUnavailableException>(() => CreateLimiter(repository).AdmitAsync("user"));
+        await Assert.ThrowsAsync<UsageAdmissionUnavailableException>(() => CreateLimiter(repository).AdmitAsync("user"));
         Assert.That(repository.Reads, Is.EqualTo(5));
         Assert.That(repository.Writes, Is.EqualTo(5));
     }
 
     [Test]
-    public void StorageFailureBecomesAdmissionUnavailable()
+    public async Task StorageFailureBecomesAdmissionUnavailable()
     {
         var failure = new McpUsageStorageUnavailableException(new InvalidOperationException("unavailable"));
         var repository = new StubRepository { Read = _ => throw failure };
-        var exception = Assert.ThrowsAsync<UsageAdmissionUnavailableException>(() => CreateLimiter(repository).AdmitAsync("user"));
+        var exception = await Assert.ThrowsAsync<UsageAdmissionUnavailableException>(() => CreateLimiter(repository).AdmitAsync("user"));
 
         Assert.That(exception!.InnerException, Is.SameAs(failure));
     }
 
     [Test]
-    public void CallerCancellationPropagates()
+    public async Task CallerCancellationPropagates()
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         var repository = new StubRepository();
 
-        Assert.CatchAsync<OperationCanceledException>(() => CreateLimiter(repository).AdmitAsync("user", cancellation.Token));
+        await Assert.CatchAsync<OperationCanceledException>(() => CreateLimiter(repository).AdmitAsync("user", cancellation.Token));
         Assert.That(repository.Writes, Is.Zero);
     }
 
     [Test]
-    public void StorageTimeoutBecomesAdmissionUnavailable()
+    public async Task StorageTimeoutBecomesAdmissionUnavailable()
     {
         var repository = new StubRepository
         {
@@ -139,7 +139,7 @@ public sealed class FreeUsageLimiterTests
             }
         };
 
-        Assert.ThrowsAsync<UsageAdmissionUnavailableException>(() => CreateLimiter(repository).AdmitAsync("user"));
+        await Assert.ThrowsAsync<UsageAdmissionUnavailableException>(() => CreateLimiter(repository).AdmitAsync("user"));
         Assert.That(repository.Writes, Is.Zero);
     }
 

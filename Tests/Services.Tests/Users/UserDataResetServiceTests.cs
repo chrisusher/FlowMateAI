@@ -24,12 +24,12 @@ public sealed class UserDataResetServiceTests
     }
 
     [Test]
-    public void FailureAfterUserRecordDeletionIncludesItsCountInTheCompletedReport()
+    public async Task FailureAfterUserRecordDeletionIncludesItsCountInTheCompletedReport()
     {
         var repository = new StubUserDataResetRepository { FailMcpUsageDelete = true };
         var service = CreateService(repository);
 
-        var exception = Assert.ThrowsAsync<UserDataResetException>(() => service.ResetAsync("auth0|user-1"));
+        var exception = await Assert.ThrowsAsync<UserDataResetException>(() => service.ResetAsync("auth0|user-1"));
 
         Assert.That(exception!.Stage, Is.EqualTo(UserDataResetStage.McpUsage));
         Assert.That(exception.Completed.UserRecords, Is.EqualTo(2));
