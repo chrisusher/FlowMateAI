@@ -62,6 +62,14 @@ public class StubBillingRepository : IBillingRepository
 
     public Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(Entitlement);
 
+    public Task<bool> UpdateExistingEntitlementAsync(string userId, Action<BillingEntitlementDocument> update, CancellationToken cancellationToken = default)
+    {
+        update(Entitlement);
+        SavedEntitlements.Add(JsonSerializer.Deserialize<BillingEntitlementDocument>(JsonSerializer.Serialize(Entitlement))!);
+
+        return Task.FromResult(true);
+    }
+
     public Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default)
     {
         SavedEntitlements.Add(JsonSerializer.Deserialize<BillingEntitlementDocument>(JsonSerializer.Serialize(entitlement))!);

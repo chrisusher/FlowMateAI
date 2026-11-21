@@ -59,6 +59,8 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
         var cut = Render<WorkspaceSidebar>(p => p.Add(c => c.View, "projects"));
         Assert.That(cut.Find(".side-link.active").GetAttribute("aria-label"), Is.EqualTo("Projects"));
         Assert.That(cut.Find(".side-link.active").GetAttribute("aria-current"), Is.EqualTo("page"));
+        Assert.That(cut.Find(".assistant-link").GetAttribute("href"), Is.EqualTo("settings#integrations"));
+        Assert.That(cut.Find(".assistant-link").GetAttribute("aria-label"), Is.EqualTo("Connect your AI assistant"));
         Assert.That(Content(cut.Find(".nav-count")), Is.EqualTo("1"));
         PlannedTask.PlannedToday = false;
         await cut.InvokeAsync(Store.SaveAsync);

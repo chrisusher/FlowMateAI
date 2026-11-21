@@ -13,4 +13,12 @@ public sealed class UserDocument
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public bool? DeletionStarted { get; set; }
+
+    public string? CheckoutOperationId { get; set; }
+
+    public List<string> ActiveOperationIds { get; set; } = [];
+
+    public string? ETag { get; set; }
 }

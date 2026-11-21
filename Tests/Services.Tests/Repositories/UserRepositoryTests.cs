@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Configuration;
 using Services.Database;
 using Services.Repositories;
 
@@ -11,6 +10,55 @@ namespace Services.Tests.Repositories;
 [TestFixture]
 public sealed class UserRepositoryTests
 {
+    [Test]
+    public async Task DeletionMarkerSurvivesUserDataResetWithoutStoringTheSubject()
+    {
+        await using var database = CreateDatabase();
+        var markers = new AccountDeletionMarkerRepository(database);
+        await markers.MarkAsync("auth0|user-1");
+        await markers.MarkAsync("auth0|user-1");
+
+        var reset = new UserDataResetRepository(database, new ConfigurationBuilder().Build());
+        await reset.DeleteUserRecordsAsync("auth0|user-1");
+
+        Assert.That(await new AccountDeletionMarkerRepository(database).IsMarkedAsync("auth0|user-1"), Is.True);
+        Assert.That(await markers.IsMarkedAsync("auth0|user-2"), Is.False);
+        var marker = await database.Users.AsNoTracking().SingleAsync();
+        Assert.That(marker.UserId, Does.Not.Contain("auth0|user-1"));
+        Assert.That(marker.Email, Is.Empty);
+    }
+
+    [Test]
+    public async Task CheckoutAndDeletionAreCoordinatedByTheSameMarker()
+    {
+        await using var database = CreateDatabase();
+        var markers = new AccountDeletionMarkerRepository(database);
+
+        Assert.That(await markers.TryBeginCheckoutAsync("auth0|user-1", "operation-1"), Is.True);
+        Assert.That(await markers.IsMarkedAsync("auth0|user-1"), Is.False);
+        Assert.That(await markers.MarkAsync("auth0|user-1"), Is.True);
+        Assert.That(await markers.TryBeginCheckoutAsync("auth0|user-1", "operation-2"), Is.False);
+        await markers.EndCheckoutAsync("auth0|user-1", "operation-1");
+        Assert.That(await markers.MarkAsync("auth0|user-1"), Is.False);
+        Assert.That(await markers.IsMarkedAsync("auth0|user-1"), Is.True);
+    }
+
+    [Test]
+    public async Task DeletionWaitsForAdmittedOperationsAndRejectsNewOnes()
+    {
+        await using var database = CreateDatabase();
+        var markers = new AccountDeletionMarkerRepository(database);
+
+        Assert.That(await markers.TryBeginOperationAsync("auth0|user-1", "write-1"), Is.True);
+        Assert.That(await markers.TryBeginOperationAsync("auth0|user-1", "write-2"), Is.True);
+        Assert.That(await markers.MarkAsync("auth0|user-1"), Is.True);
+        Assert.That(await markers.TryBeginOperationAsync("auth0|user-1", "write-3"), Is.False);
+        await markers.EndOperationAsync("auth0|user-1", "write-1");
+        Assert.That(await markers.MarkAsync("auth0|user-1"), Is.True);
+        await markers.EndOperationAsync("auth0|user-1", "write-2");
+        Assert.That(await markers.MarkAsync("auth0|user-1"), Is.False);
+    }
+
     [Test]
     public async Task RegistrationStoresTrimmedAndNormalisedEmailAndSupportsBothLookups()
     {
@@ -121,6 +169,7 @@ public sealed class UserRepositoryTests
         {
             nameof(UserDocument.UserId)
         }));
+        Assert.That(entity.FindProperty(nameof(UserDocument.ETag))!.IsConcurrencyToken, Is.True);
     }
 
     private static DatabaseContext CreateDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()

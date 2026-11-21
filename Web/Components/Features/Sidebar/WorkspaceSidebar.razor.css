@@ -1,0 +1,13 @@
+a.assistant-link span.assistant-compact {
+    display: none;
+}
+
+@media (max-width: 560px) {
+    a.assistant-link span.assistant-full {
+        display: none;
+    }
+
+    a.assistant-link span.assistant-compact {
+        display: flex;
+    }
+}

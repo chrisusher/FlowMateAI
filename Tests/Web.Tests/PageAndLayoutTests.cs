@@ -75,12 +75,13 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void SettingsPageComposesTheThreeSettingsCardsAndAnchorLinks()
+    public void SettingsPageComposesSettingsCardsAndAnchorLinks()
     {
         var cut = Render<SettingsPage>();
-        Assert.That(cut.FindAll(".settings-panel").Count, Is.EqualTo(3));
+        Assert.That(cut.FindAll(".settings-panel").Count, Is.EqualTo(4));
         Assert.That(cut.FindAll(".settings-nav a")[1].GetAttribute("href"), Is.EqualTo("settings#preferences"));
         Assert.That(cut.Find("#preferences").Id, Is.EqualTo("preferences"));
+        Assert.That(cut.Find("#integrations").Id, Is.EqualTo("integrations"));
         Assert.That(cut.Find("#billing").Id, Is.EqualTo("billing"));
     }
 
@@ -230,6 +231,27 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
         Assert.That(cut.Markup, Does.Contain("Your session expired."));
         Assert.That(cut.Markup, Does.Contain("Draft editor stays mounted"));
         Assert.That(cut.FindAll(".workspace-session-expired button"), Has.Exactly(1).Items);
+    }
+
+    [Test]
+    public async Task DeletionPendingAfterReloadShowsRetryWithoutExpiringSession()
+    {
+        await SignInAsync();
+        Api.Respond = (request, _) => Task.FromResult(request.RequestUri!.AbsolutePath == "/api/v1/account/deletion-status"
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(true)
+            }
+            : new HttpResponseMessage(HttpStatusCode.Unauthorized));
+
+        var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, b => b.AddContent(0, "Workspace body")));
+        cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Retry deletion")));
+
+        Assert.That(Auth.Session.SignedIn, Is.True);
+        Assert.That(Auth.IsSessionExpired, Is.False);
+        Assert.That(cut.Markup, Does.Not.Contain("Workspace body"));
+        cut.Find(".danger-button").Click();
+        Assert.That(cut.Markup, Does.Contain("Permanently delete"));
     }
 
     [Test]

@@ -10,6 +10,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
     public AuthSession Session { get; private set; } = new();
     public AuthSessionStatus Status { get; private set; } = AuthSessionStatus.Uninitialized;
     public bool IsSessionExpired => Status == AuthSessionStatus.Expired;
+    public bool IsDeletionPending { get; private set; }
     public event Action? SessionChanged;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(configuration["Auth0:Domain"]) &&
@@ -88,10 +89,40 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
         if (response.StatusCode == HttpStatusCode.Unauthorized &&
             (request.Headers.Authorization is not null || Status == AuthSessionStatus.SignedIn))
         {
-            MarkSessionExpired();
+            if (await IsDeletionPendingAsync(http, request, cancellationToken))
+            {
+                IsDeletionPending = true;
+                SessionChanged?.Invoke();
+            }
+            else
+            {
+                MarkSessionExpired();
+            }
         }
 
         return response;
+    }
+
+    private async Task<bool> IsDeletionPendingAsync(HttpClient http, HttpRequestMessage original, CancellationToken cancellationToken)
+    {
+        if (original.Headers.Authorization is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/account/deletion-status");
+            request.Headers.Authorization = original.Headers.Authorization;
+            using var response = await http.SendAsync(request, cancellationToken);
+
+            return response.IsSuccessStatusCode && await response.Content.ReadFromJsonAsync<bool>(cancellationToken: cancellationToken);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException ||
+                                           exception is TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     private void MarkSessionExpired()
@@ -104,6 +135,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
         Session.SignedIn = false;
         Session.AccessToken = null;
         Session.SessionExpired = true;
+        IsDeletionPending = false;
         Status = AuthSessionStatus.Expired;
         SessionChanged?.Invoke();
     }
@@ -134,6 +166,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
         Session.SignedIn = false;
         Session.AccessToken = null;
         Session.SessionExpired = false;
+        IsDeletionPending = false;
         Status = AuthSessionStatus.SignedOut;
         SessionChanged?.Invoke();
     }

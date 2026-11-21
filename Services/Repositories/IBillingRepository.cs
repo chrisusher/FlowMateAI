@@ -6,6 +6,7 @@ public interface IBillingRepository
 {
     Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default);
     Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default);
+    Task<bool> UpdateExistingEntitlementAsync(string userId, Action<BillingEntitlementDocument> update, CancellationToken cancellationToken = default);
 
     Task<(bool Allowed, int Used, int Limit)> TryConsumePromptAsync(
         string userId, string month, int freeLimit, int proLimit, CancellationToken cancellationToken = default) =>

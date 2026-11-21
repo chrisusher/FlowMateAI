@@ -8,6 +8,7 @@
 @inject WorkspaceCoachManager Coach
 @inject WorkspaceAppearanceManager Appearance
 @inject NavigationManager Navigation
+@using Web.Components.Features.Settings
 
 <PageTitle>@Title &#8212; FlowMate</PageTitle>
 
@@ -22,6 +23,10 @@
                     <span class="loading-spinner" aria-hidden="true"></span>
                     Loading your workspace&#8230;
                 </div>
+            }
+            else if (Auth.IsDeletionPending)
+            {
+                <ProfileCard DeletionOnly="true" />
             }
             else if (Auth.IsConfigured && !Auth.Session.SignedIn && !Auth.IsSessionExpired)
             {

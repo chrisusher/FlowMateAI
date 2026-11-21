@@ -25,6 +25,7 @@ public sealed class McpUsageRepositoryTests
         Assert.That(entity.FindProperty(nameof(McpUsageDocument.UtcDay))!.GetJsonPropertyName(), Is.EqualTo("utcDay"));
         Assert.That(entity.FindProperty(nameof(McpUsageDocument.DailyCount))!.GetJsonPropertyName(), Is.EqualTo("dailyCount"));
         Assert.That(entity.FindProperty(nameof(McpUsageDocument.RecentAdmissions))!.GetJsonPropertyName(), Is.EqualTo("recentAdmissions"));
+        Assert.That(entity.FindNavigation(nameof(McpUsageDocument.ApiAdmissions))!.TargetEntityType.IsOwned(), Is.True);
         Assert.That(entity.FindProperty(nameof(McpUsageDocument.Ttl))!.GetJsonPropertyName(), Is.EqualTo("ttl"));
         Assert.That(entity.GetDefaultTimeToLive(), Is.EqualTo(172800));
         var etag = entity.FindProperty(nameof(McpUsageDocument.ETag))!;
@@ -72,11 +73,11 @@ public sealed class McpUsageRepositoryTests
     }
 
     [Test]
-    public void OtherStorageFailuresDoNotCountAsConflicts()
+    public async Task OtherStorageFailuresDoNotCountAsConflicts()
     {
         using var database = new RecordingContext { Failure = new DbUpdateException("unavailable") };
 
-        Assert.ThrowsAsync<McpUsageStorageUnavailableException>(() =>
+        await Assert.ThrowsAsync<McpUsageStorageUnavailableException>(() =>
             new McpUsageRepository(database).TrySaveAsync(new McpUsageDocument { UserId = "user" }, null));
         Assert.That(database.ChangeTracker.Entries<McpUsageDocument>(), Is.Empty);
     }
