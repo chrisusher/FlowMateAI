@@ -446,22 +446,13 @@ var marketing = builder.AddBlazorWasmApp("marketing", "../Marketing/Marketing.cs
 builder.AddBlazorGateway("marketing-gateway")
     .WithExternalHttpEndpoints()
     .WithBlazorClientApp(marketing)
-    .WithEnvironment(async context =>
+    .WithEnvironment(context =>
     {
         // The Blazor gateway only forwards service references automatically. Add the
         // public app address to its browser configuration without exposing secrets.
-        var appUrl = await gateway.GetEndpoint("http").GetValueAsync(context.CancellationToken);
         const string configurationKey = "ClientApps__marketing__ConfigResponse";
-        var existing = context.EnvironmentVariables.TryGetValue(configurationKey, out var value)
-            ? value is IValueProvider provider ? await provider.GetValueAsync(context.CancellationToken) : value?.ToString()
-            : null;
-        var configuration = System.Text.Json.Nodes.JsonNode.Parse(existing ?? "{}")!.AsObject();
-        var webAssembly = configuration["webAssembly"] as System.Text.Json.Nodes.JsonObject ?? new();
-        var environment = webAssembly["environment"] as System.Text.Json.Nodes.JsonObject ?? new();
-        environment["AppUrl"] = $"{appUrl}/frontend/";
-        webAssembly["environment"] = environment.DeepClone();
-        configuration["webAssembly"] = webAssembly.DeepClone();
-        context.EnvironmentVariables[configurationKey] = configuration.ToJsonString();
+        context.EnvironmentVariables.TryGetValue(configurationKey, out var generated);
+        context.EnvironmentVariables[configurationKey] = new MarketingClientConfiguration(generated, gateway.GetEndpoint("http"));
     });
 // The Blazor gateway generates its own client configuration and does not forward
 // arbitrary WithEnvironment values from the WASM resource. Add only public SPA
@@ -512,6 +503,26 @@ internal sealed class Auth0ClientConfiguration(object? generated, IValueProvider
         clientEnvironment["Auth0__Domain"] = await authority.GetValueAsync(cancellationToken);
         clientEnvironment["Auth0__ClientId"] = await clientId.GetValueAsync(cancellationToken);
         clientEnvironment["Auth0__Audience"] = await audience.GetValueAsync(cancellationToken);
+
+        return configuration.ToJsonString();
+    }
+}
+
+internal sealed class MarketingClientConfiguration(object? generated, IValueProvider appEndpoint) : IValueProvider
+{
+    public async ValueTask<string?> GetValueAsync(CancellationToken cancellationToken = default)
+    {
+        var json = generated is IValueProvider provider
+            ? await provider.GetValueAsync(cancellationToken)
+            : generated?.ToString();
+
+        var configuration = JsonNode.Parse(json ?? "{}")!.AsObject();
+        var webAssembly = configuration["webAssembly"] as JsonObject ?? new();
+        var environment = webAssembly["environment"] as JsonObject ?? new();
+
+        environment["AppUrl"] = $"{await appEndpoint.GetValueAsync(cancellationToken)}/frontend/";
+        webAssembly["environment"] = environment.DeepClone();
+        configuration["webAssembly"] = webAssembly.DeepClone();
 
         return configuration.ToJsonString();
     }
