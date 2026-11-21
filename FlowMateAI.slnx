@@ -11,6 +11,7 @@
   <Project Path="Tests/Services.Tests/Services.Tests.csproj" />
   <Project Path="Tests/API.Tests/API.Tests.csproj" />
   <Project Path="Web/Web.csproj" />
+  <Project Path="Marketing/Marketing.csproj" />
   <Folder Name="/Tests/">
     <Project Path="Tests/Web.Tests/Web.Tests.csproj" />
   </Folder>

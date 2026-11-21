@@ -14,6 +14,7 @@
     <ProjectReference Include="..\MCP\MCP.csproj" />
     <ProjectReference Include="..\CLI\CLI.csproj" />
     <ProjectReference Include="..\Web\Web.csproj" />
+    <ProjectReference Include="..\Marketing\Marketing.csproj" />
   </ItemGroup>
 
   <ItemGroup>
