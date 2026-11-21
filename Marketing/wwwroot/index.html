@@ -1,2 +1,23 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="/"><script>if (location.pathname.startsWith("/marketing/")) document.querySelector("base").href = "/marketing/";</script><title>FlowMate AI — make space for focused work</title><meta name="description" content="Track focused work and turn your time into useful timesheets with FlowMate AI."><link rel="stylesheet" href="app.css"></head><body><div id="app"><div class="loading">FlowMate AI</div></div><script src="_framework/blazor.webassembly.js" autostart="false"></script><script type="module" src="js/blazor-startup.js"></script></body></html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <base href="/">
+    <script>if (location.pathname === "/marketing" || location.pathname.startsWith("/marketing/")) document.querySelector("base").href = "/marketing/";</script>
+    <title>FlowMate AI — make space for focused work</title>
+    <meta name="description" content="Track focused work and turn your time into useful timesheets with FlowMate AI.">
+    <link rel="icon" type="image/svg+xml" href="branding/flowmate-app-icon.svg">
+    <link rel="stylesheet" href="app.css">
+</head>
+
+<body>
+    <div id="app">
+        <div class="loading">FlowMate AI</div>
+    </div>
+    <script src="_framework/blazor.webassembly.js" autostart="false"></script>
+    <script type="module" src="js/blazor-startup.js"></script>
+</body>
+
+</html>
