@@ -441,12 +441,28 @@ var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WithHttpHealthCheck("/frontend/")
     .WithBlazorClientApp(frontend);
 
-var marketing = builder.AddBlazorWasmApp("marketing", "../Marketing/Marketing.csproj")
-    .WithEnvironment("AppUrl", ReferenceExpression.Create($"{gateway.GetEndpoint("http")}/frontend/"));
+var marketing = builder.AddBlazorWasmApp("marketing", "../Marketing/Marketing.csproj");
 
 builder.AddBlazorGateway("marketing-gateway")
     .WithExternalHttpEndpoints()
-    .WithBlazorClientApp(marketing);
+    .WithBlazorClientApp(marketing)
+    .WithEnvironment(async context =>
+    {
+        // The Blazor gateway only forwards service references automatically. Add the
+        // public app address to its browser configuration without exposing secrets.
+        var appUrl = await gateway.GetEndpoint("http").GetValueAsync(context.CancellationToken);
+        const string configurationKey = "ClientApps__marketing__ConfigResponse";
+        var existing = context.EnvironmentVariables.TryGetValue(configurationKey, out var value)
+            ? value is IValueProvider provider ? await provider.GetValueAsync(context.CancellationToken) : value?.ToString()
+            : null;
+        var configuration = System.Text.Json.Nodes.JsonNode.Parse(existing ?? "{}")!.AsObject();
+        var webAssembly = configuration["webAssembly"] as System.Text.Json.Nodes.JsonObject ?? new();
+        var environment = webAssembly["environment"] as System.Text.Json.Nodes.JsonObject ?? new();
+        environment["AppUrl"] = $"{appUrl}/frontend/";
+        webAssembly["environment"] = environment.DeepClone();
+        configuration["webAssembly"] = webAssembly.DeepClone();
+        context.EnvironmentVariables[configurationKey] = configuration.ToJsonString();
+    });
 
 api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"))
     .WithEnvironment("WebApp__Origin", gateway.GetEndpoint("https"))
