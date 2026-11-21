@@ -441,6 +441,13 @@ var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WithHttpHealthCheck("/frontend/")
     .WithBlazorClientApp(frontend);
 
+var marketing = builder.AddBlazorWasmApp("marketing", "../Marketing/Marketing.csproj")
+    .WithEnvironment("AppUrl", ReferenceExpression.Create($"{gateway.GetEndpoint("http")}/frontend/"));
+
+builder.AddBlazorGateway("marketing-gateway")
+    .WithExternalHttpEndpoints()
+    .WithBlazorClientApp(marketing);
+
 api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"))
     .WithEnvironment("WebApp__Origin", gateway.GetEndpoint("https"))
     .WithEnvironment("WebApp__BasePath", "/frontend");
