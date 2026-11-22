@@ -1,5 +1,6 @@
 param name string
 param location string
+
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
   location: location
@@ -11,4 +12,5 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     softDeleteRetentionInDays: 90
   }
 }
+
 output uri string = vault.properties.vaultUri
