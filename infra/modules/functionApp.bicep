@@ -4,6 +4,7 @@ param storageAccountName string
 param deploymentUrl string
 param insightsConnectionString string
 param appSettings array
+param allowedOrigins array = []
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: storageAccountName
@@ -34,7 +35,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
-    siteConfig: {
+    siteConfig: union({
       minTlsVersion: '1.2'
       appSettings: concat(
         [
@@ -57,7 +58,11 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         ],
         appSettings
       )
-    }
+    }, empty(allowedOrigins) ? {} : {
+      cors: {
+        allowedOrigins: allowedOrigins
+      }
+    })
     functionAppConfig: {
       deployment: {
         storage: {

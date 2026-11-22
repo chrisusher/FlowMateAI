@@ -97,6 +97,9 @@ module api '../../modules/functionApp.bicep' = {
     storageAccountName: storage.outputs.name
     deploymentUrl: '${storage.outputs.blobEndpoint}deployments-api'
     insightsConnectionString: monitoring.outputs.connectionString
+    allowedOrigins: [
+      'https://${web.outputs.hostname}'
+    ]
     appSettings: concat(commonSettings, [
       {
         name: 'KeyVault__VaultUri'
