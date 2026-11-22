@@ -60,10 +60,10 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         BindAccount();
 
         var module = await ModuleAsync();
-        ClientId = await module.InvokeAsync<string>("getClientId");
-        var json = await module.InvokeAsync<string?>("read", StorageKey);
-        var pending = await module.InvokeAsync<string?>("read", PendingStorageKey);
-        var revision = await module.InvokeAsync<string?>("read", RevisionStorageKey);
+        ClientId = await module.InvokeCheckedAsync<string>("getClientId");
+        var json = await module.InvokeCheckedAsync<string?>("read", StorageKey);
+        var pending = await module.InvokeCheckedAsync<string?>("read", PendingStorageKey);
+        var revision = await module.InvokeCheckedAsync<string?>("read", RevisionStorageKey);
         _revision = string.IsNullOrWhiteSpace(revision) ? null : revision;
         var cache = ReadWorkspaceCache(json);
 
@@ -503,9 +503,9 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         try
         {
             var module = await ModuleAsync();
-            await module.InvokeVoidAsync("remove", StorageKey);
-            await module.InvokeVoidAsync("remove", PendingStorageKey);
-            await module.InvokeVoidAsync("remove", RevisionStorageKey);
+            await module.InvokeCheckedVoidAsync("remove", StorageKey);
+            await module.InvokeCheckedVoidAsync("remove", PendingStorageKey);
+            await module.InvokeCheckedVoidAsync("remove", RevisionStorageKey);
             Data = new();
             _revision = null;
             _pendingSync = false;
@@ -641,13 +641,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     {
         var json = JsonSerializer.Serialize(new WorkspaceCacheRecord(_storageAccountId, _revision, _pendingSync, Data, DateTimeOffset.UtcNow, _serverClockOffset), SharedCommon.JsonOptions);
 
-        await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", StorageKey, json);
     }
 
     private async Task PersistRevisionAsync()
     {
         await PersistLocalAsync();
-        await (await ModuleAsync()).InvokeVoidAsync("write", RevisionStorageKey, _revision ?? "");
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", RevisionStorageKey, _revision ?? "");
     }
 
     private async Task SetPendingSyncAsync(bool pending)
@@ -655,8 +655,8 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         _pendingSync = pending;
         await PersistLocalAsync();
         var value = pending ? "true" : "false";
-        await (await ModuleAsync()).InvokeVoidAsync("write", PendingStorageKey, value);
-        await (await ModuleAsync()).InvokeVoidAsync("write", RevisionStorageKey, _revision ?? "");
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", PendingStorageKey, value);
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", RevisionStorageKey, _revision ?? "");
     }
 
     private void SetSyncState(WorkspaceSyncState state, string message)
@@ -797,7 +797,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
                     Data.Conversations.Insert(0, result.Conversation);
 
-                    await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
+                    await (await ModuleAsync()).InvokeCheckedVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
                     Changed?.Invoke();
                 }
                 finally
@@ -994,5 +994,5 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     }
 
     private async Task<IJSObjectReference> ModuleAsync() =>
-        _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/workspace.js");
+        _module ??= await js.InvokeCheckedAsync<IJSObjectReference>("import", "./js/workspace.js");
 }

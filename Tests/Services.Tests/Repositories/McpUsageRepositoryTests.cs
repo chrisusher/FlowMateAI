@@ -2,6 +2,9 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Cosmos.Storage.Internal;
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
+using System.Text.Json;
 using Services.Database;
 using Services.Repositories;
 
@@ -37,13 +40,26 @@ public sealed class McpUsageRepositoryTests
     [TestCase("revision", EntityState.Modified)]
     public async Task SaveUsesExpectedRevisionAndDetaches(string? revision, EntityState expectedState)
     {
-        using var database = new RecordingContext();
-        var document = new McpUsageDocument { UserId = "user", DailyCount = 1 };
+        using var database = new RecordingContext { SerializeOnSave = true };
+        var document = new McpUsageDocument
+        {
+            UserId = "user",
+            DailyCount = 1,
+            ApiAdmissions =
+            [
+                new ApiRateLimitRecord { Scope = AuthenticatedApiRateLimitScope.WorkspaceWrite, Timestamp = DateTimeOffset.UtcNow },
+                new ApiRateLimitRecord { Scope = AuthenticatedApiRateLimitScope.BillingRequest, Timestamp = DateTimeOffset.UtcNow }
+            ]
+        };
 
         Assert.That(await new McpUsageRepository(database).TrySaveAsync(document, revision), Is.True);
         Assert.That(database.SavedState, Is.EqualTo(expectedState));
         Assert.That(database.OriginalRevision, Is.EqualTo(revision));
+        Assert.That(database.SavedAdmissions, Is.EqualTo(2));
+        using var json = JsonDocument.Parse(database.SavedJson!);
+        Assert.That(json.RootElement.GetProperty("apiAdmissions").GetArrayLength(), Is.EqualTo(2));
         Assert.That(database.ChangeTracker.Entries<McpUsageDocument>(), Is.Empty);
+        Assert.That(database.ChangeTracker.Entries<ApiRateLimitRecord>(), Is.Empty);
     }
 
     [TestCase(HttpStatusCode.Conflict, null)]
@@ -97,12 +113,25 @@ public sealed class McpUsageRepositoryTests
         {
             get; set;
         }
+        public int SavedAdmissions { get; private set; }
+        public bool SerializeOnSave { get; init; }
+        public byte[]? SavedJson { get; private set; }
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             var entry = ChangeTracker.Entries<McpUsageDocument>().Single();
             SavedState = entry.State;
             OriginalRevision = entry.Property(x => x.ETag).OriginalValue;
+            SavedAdmissions = ChangeTracker.Entries<ApiRateLimitRecord>().Count();
+
+            if (SerializeOnSave)
+            {
+#pragma warning disable EF1001 // Exercise the Cosmos provider's real document serializer.
+                this.GetService<IStateManager>().GetEntriesToSave(cascadeChanges: true);
+                var serializer = this.GetService<ICosmosStructuralTypeSerializerProvider>().Get(entry.Metadata);
+                SavedJson = serializer.Serialize(entry.GetInfrastructure()).ToArray();
+#pragma warning restore EF1001
+            }
 
             if (Failure is not null)
             {

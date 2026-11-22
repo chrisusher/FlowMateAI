@@ -4,6 +4,7 @@ param storageAccountName string
 param deploymentUrl string
 param insightsConnectionString string
 param appSettings array
+param allowedOrigins array = []
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: storageAccountName
@@ -77,6 +78,16 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         maximumInstanceCount: 40
         instanceMemoryMB: 2048
       }
+    }
+  }
+}
+
+resource corsConfig 'Microsoft.Web/sites/config@2024-04-01' = if (!empty(allowedOrigins)) {
+  parent: app
+  name: 'web'
+  properties: {
+    cors: {
+      allowedOrigins: allowedOrigins
     }
   }
 }

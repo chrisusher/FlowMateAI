@@ -39,7 +39,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
         }
 
         var module = await ModuleAsync();
-        Session = await module.InvokeAsync<AuthSession>("initialize", new
+        Session = await module.InvokeCheckedAsync<AuthSession>("initialize", new
         {
             domain = Domain,
             clientId = ClientId,
@@ -145,7 +145,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
         Content = JsonContent.Create(new ApiError("session_expired", "Your session expired. Sign in again to continue."))
     };
 
-    public async Task LoginAsync(string? connection = null) => await (await ModuleAsync()).InvokeVoidAsync(
+    public async Task LoginAsync(string? connection = null) => await (await ModuleAsync()).InvokeCheckedVoidAsync(
         "login",
         new
         {
@@ -157,7 +157,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
 
     public async Task LogoutAsync()
     {
-        await (await ModuleAsync()).InvokeVoidAsync("logout", new
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("logout", new
         {
             domain = Domain,
             clientId = ClientId,
@@ -171,7 +171,7 @@ public sealed class Auth0Client(IJSRuntime js, IConfiguration configuration) : I
         SessionChanged?.Invoke();
     }
 
-    private async Task<IJSObjectReference> ModuleAsync() => _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/auth0.js");
+    private async Task<IJSObjectReference> ModuleAsync() => _module ??= await js.InvokeCheckedAsync<IJSObjectReference>("import", "./js/auth0.js");
 
     public async ValueTask DisposeAsync()
     {

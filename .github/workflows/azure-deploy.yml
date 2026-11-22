@@ -52,7 +52,7 @@ jobs:
           dotnet restore Web/Web.csproj --configfile NuGet.config
 
           # Keep the source app under /frontend/ in Aspire. Prepare the deployment copy of index.html
-          # before publish so compressed variants and .NET 10 fingerprinting use the deployed paths.
+          # before publish so compressed variants and fingerprinted assets use the deployed paths.
           $indexPath = 'Web/wwwroot/index.html'
           $index = Get-Content -LiteralPath $indexPath -Raw
           $frontendBase = '<base href="/frontend/" />'
@@ -75,13 +75,14 @@ jobs:
           dotnet publish Web/Web.csproj -c Release --no-restore -o artifacts/web-publish
           $publishedIndexPath = 'artifacts/web-publish/wwwroot/index.html'
           $publishedIndex = Get-Content -LiteralPath $publishedIndexPath -Raw
-          $loaderName = [regex]::Match($publishedIndex, '_framework/(blazor[.]webassembly[.][^" ]+[.]js)').Groups[1].Value
+          # .NET 11 may publish the loader without a fingerprint while fingerprinting runtime modules.
+          $loaderName = [regex]::Match($publishedIndex, 'src="_framework/(blazor[.]webassembly(?:[.][a-zA-Z0-9_-]+)?[.]js)"').Groups[1].Value
 
           if ([string]::IsNullOrWhiteSpace($loaderName) -or -not (Test-Path -LiteralPath "artifacts/web-publish/wwwroot/_framework/$loaderName")) {
-            throw 'Published index.html does not reference an existing fingerprinted Blazor WebAssembly loader.'
+            throw 'Published index.html does not reference an existing Blazor WebAssembly loader.'
           }
           if (-not $publishedIndex.Contains('<script type="importmap">')) {
-            throw 'Published index.html is missing the import map required by fingerprinted .NET 10 assets.'
+            throw 'Published index.html is missing the import map required by fingerprinted runtime assets.'
           }
           
           New-Item -ItemType Directory -Path 'artifacts/web' -Force | Out-Null
