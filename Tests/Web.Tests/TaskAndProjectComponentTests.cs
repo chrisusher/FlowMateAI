@@ -9,6 +9,53 @@ namespace Web.Tests;
 public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
 {
     [Test]
+    public void ProjectTaskStartsFocusAndOpensToday()
+    {
+        var task = Store.Data.Tasks[1];
+        Navigation.NavigateTo("projects/project-one");
+        var cut = Render<AllTasksCard>(p => p.Add(c => c.ProjectId, Project.Id));
+
+        cut.Find($"button[aria-label='Start focus on {task.Title}']").Click();
+
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Focus));
+        Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(task.Id));
+        Assert.That(Store.Data.Timer.ProjectId, Is.EqualTo(Project.Id));
+        Assert.That(Store.Data.Timer.DurationSeconds, Is.EqualTo(1500));
+        Assert.That(Navigation.Uri, Does.EndWith("/"));
+    }
+
+    [TestCase(TimerPhase.Focus)]
+    [TestCase(TimerPhase.Paused)]
+    [TestCase(TimerPhase.ShortBreak)]
+    [TestCase(TimerPhase.LongBreak)]
+    public async Task ExistingTimerCannotBeReassignedByTaskActions(TimerPhase phase)
+    {
+        Store.Data.Timer.Phase = phase;
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+        var otherTask = Store.Data.Tasks[1];
+        var cut = Render<AllTasksCard>(p => p.Add(c => c.ProjectId, Project.Id));
+
+        Assert.That(cut.Find($"button[aria-label='Start focus on {otherTask.Title}']").HasAttribute("disabled"), Is.True);
+        Assert.That(cut.Find(".task-focus-notice").TextContent, Does.Contain("already in progress"));
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.False);
+        await Tasks.SelectTask(otherTask);
+        Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(PlannedTask.Id));
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(phase));
+    }
+
+    [Test]
+    public async Task FocusCannotStartForCompletedOrArchivedTasks()
+    {
+        PlannedTask.IsComplete = true;
+        Assert.That(await Timer.StartFocusForTaskAsync(PlannedTask.Id), Is.False);
+        PlannedTask.IsComplete = false;
+        Project.IsArchived = true;
+        Assert.That(await Timer.StartFocusForTaskAsync(PlannedTask.Id), Is.False);
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Idle));
+    }
+
+    [Test]
     public void AllTasksCardSortsAndHandlesTaskActions()
     {
         var cut = Render<AllTasksCard>();

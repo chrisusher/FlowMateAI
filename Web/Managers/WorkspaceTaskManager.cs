@@ -61,6 +61,14 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
 
     public async Task SelectTask(TaskRecord task)
     {
+        if (Store.Data.Timer.Phase != TimerPhase.Idle && Store.Data.Timer.TaskId != task.Id)
+        {
+            ActionMessage = "Finish the current focus session or break before choosing another task.";
+            NotifyChanged();
+
+            return;
+        }
+
         if (Store.Project(task.ProjectId) is not { IsArchived: false })
         {
             ActionMessage = "Move this task to an active project before focusing it.";
