@@ -35,7 +35,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
-    siteConfig: union({
+    siteConfig: {
       minTlsVersion: '1.2'
       appSettings: concat(
         [
@@ -58,11 +58,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         ],
         appSettings
       )
-    }, empty(allowedOrigins) ? {} : {
-      cors: {
-        allowedOrigins: allowedOrigins
-      }
-    })
+    }
     functionAppConfig: {
       deployment: {
         storage: {
@@ -82,6 +78,16 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         maximumInstanceCount: 40
         instanceMemoryMB: 2048
       }
+    }
+  }
+}
+
+resource corsConfig 'Microsoft.Web/sites/config@2024-04-01' = if (!empty(allowedOrigins)) {
+  parent: app
+  name: 'web'
+  properties: {
+    cors: {
+      allowedOrigins: allowedOrigins
     }
   }
 }
