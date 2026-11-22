@@ -1,0 +1,49 @@
+.conversation-list {
+    padding: 16px 13px
+}
+
+.conversation-list .panel-heading {
+    padding: 0 6px 12px
+}
+
+.conversation-item {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: none;
+    border-radius: 8px;
+    padding: 10px 9px;
+    display: grid;
+    gap: 4px;
+    color: var(--text)
+}
+
+.conversation-item.selected {
+    background: var(--accent-soft)
+}
+
+.conversation-item strong {
+    font-size: 0.875rem;
+    font-weight: 600;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis
+}
+
+.conversation-item small {
+    font-size: 0.875rem;
+    color: #999
+}
+
+@media(max-width:560px) {
+    .conversation-list {
+            max-height: 160px;
+            overflow: auto
+        }
+}
+
+.conversation-item:disabled {
+    opacity: .65;
+    cursor: wait
+}
+

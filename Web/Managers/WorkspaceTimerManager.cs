@@ -336,6 +336,33 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
 
     public Task StartFocus() => ExecuteAsync(StartFocusCore, requiresOwnership: false);
 
+    public async Task<bool> StartFocusForTaskAsync(string taskId)
+    {
+        await _gate.WaitAsync();
+
+        try
+        {
+            var task = Store.Task(taskId);
+
+            if (Store.Data.Timer.Phase != TimerPhase.Idle || task is null || task.IsComplete ||
+                Store.Project(task.ProjectId) is not { IsArchived: false })
+            {
+                return false;
+            }
+
+            Store.Data.Timer.TaskId = task.Id;
+            Store.Data.Timer.ProjectId = task.ProjectId;
+            StartFocusInternal();
+            await Store.SaveAsync();
+
+            return Store.Data.Timer.Phase == TimerPhase.Focus && Store.Data.Timer.TaskId == taskId;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public Task PauseTimer() => ExecuteAsync(PauseTimerCore);
 
     public Task ResumeTimer() => ExecuteAsync(ResumeTimerCore);

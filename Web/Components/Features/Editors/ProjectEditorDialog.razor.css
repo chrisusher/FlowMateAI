@@ -1,0 +1,12 @@
+.field-hint {
+    display: block;
+    color: var(--muted);
+    font-size: 0.875rem
+}
+
+.field-error {
+    margin: 8px 0 0;
+    color: #b13c48;
+    font-size: 0.9375rem
+}
+

@@ -1,5 +1,6 @@
 @inherits WorkspaceComponentBase
 @inject WorkspaceStatistics Stats
+@inject WorkspaceTaskManager Tasks
 
 <article class="panel project-card">
     <div class="project-card-head">
@@ -12,7 +13,7 @@
             </div>
         </details>
     </div>
-    <h3>@Project.Name</h3>
+    <h3><a class="project-card-link" href="@($"projects/{Uri.EscapeDataString(Project.Id)}")">@Project.Name</a></h3>
     <p>@ProjectTasks.Count(t => !t.IsComplete) active tasks</p>
     <div class="project-progress">
         <span>
@@ -24,4 +25,5 @@
         <span>&#9679; @Stats.ProjectMinutes(Project.Id) min focused</span>
         <span class="project-color-dot" style="background:@Project.Color"></span>
     </div>
+    <button type="button" class="project-add-task" aria-label="Add task to @Project.Name" @onclick="() => Tasks.AddTaskForProject(Project.Id)">+ Add task</button>
 </article>

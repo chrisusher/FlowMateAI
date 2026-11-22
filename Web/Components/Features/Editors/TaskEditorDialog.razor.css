@@ -1,0 +1,19 @@
+.dialog-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px
+}
+
+.dialog-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.875rem;
+    color: #737770;
+    margin: 15px 0
+}
+
+.dialog-checkbox input {
+    accent-color: #626ee4
+}
+

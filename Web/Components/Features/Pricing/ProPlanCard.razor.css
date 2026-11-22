@@ -1,0 +1,66 @@
+.pro-card {
+    border: 1.5px solid #858bf0;
+    box-shadow: 0 7px 22px #636ce716
+}
+
+.popular-tag {
+    position: absolute;
+    right: 18px;
+    top: 17px;
+    color: #7178db;
+    font-size: 0.875rem;
+    letter-spacing: .7px;
+    font-weight: 700
+}
+
+.plan-button.primary {
+    border: 0;
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--accent) 24%, transparent)
+}
+
+.plan-button.primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 88%, #161a42);
+    box-shadow: 0 6px 15px color-mix(in srgb, var(--accent) 32%, transparent);
+    transform: translateY(-1px)
+}
+
+.checkout-button {
+    width: 100%;
+    min-height: 40px;
+    margin-top: 10px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: border-color .15s ease, color .15s ease, background-color .15s ease
+}
+
+.checkout-button:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent)
+}
+
+.checkout-button:disabled {
+    cursor: not-allowed;
+    opacity: .6
+}
+
+.trial-copy {
+    display: block;
+    text-align: center;
+    color: #a1a39e;
+    font-size: 0.875rem;
+    margin-top: 7px
+}
+
+@media(max-width:560px) {
+    .popular-tag {
+            font-size: 0.875rem
+        }
+}
+

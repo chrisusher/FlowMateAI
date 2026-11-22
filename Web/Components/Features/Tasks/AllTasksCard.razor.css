@@ -1,0 +1,162 @@
+.all-tasks {
+    padding: 7px 20px 12px
+}
+
+.task-filters {
+    height: 50px;
+    display: flex;
+    align-items: center;
+    gap: 8px
+}
+
+.filter-chip {
+    border: 0;
+    background: none;
+    color: #858982;
+    padding: 6px 9px;
+    border-radius: 7px;
+    font-size: 0.875rem
+}
+
+.filter-chip.active {
+    background: var(--accent-soft);
+    color: #666bd2
+}
+
+.filter-chip span {
+    margin-left: 5px;
+    opacity: .7
+}
+
+.filter-spacer {
+    flex: 1
+}
+
+.filter-caption {
+    font-size: 0.875rem;
+    color: #a3a69f
+}
+
+.all-tasks .task-row {
+    min-height: 54px
+}
+
+.task-start-focus {
+    flex: none;
+    border: 0;
+    border-radius: 7px;
+    padding: 7px 10px;
+    background: #5b68e8;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600
+}
+
+.task-start-focus:disabled {
+    opacity: .5;
+    cursor: not-allowed
+}
+
+.task-focus-notice {
+    color: var(--muted);
+    font-size: 0.875rem
+}
+
+.task-focus-notice a {
+    color: var(--accent);
+    text-decoration: underline
+}
+
+@media (max-width: 800px) {
+    .all-tasks .task-row {
+        flex-wrap: wrap;
+        padding: 10px 0
+    }
+
+    .task-title {
+        min-width: 45%
+    }
+}
+
+.task-project {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #91948e;
+    font-size: 0.875rem;
+    width: 120px
+}
+
+.plan-toggle {
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 8px;
+    color: #93968f;
+    font-size: 0.875rem
+}
+
+.plan-toggle.planned {
+    color: #688876;
+    background: #f0f8f3;
+    border-color: #e5f2e9
+}
+
+@media(max-width:560px) {
+    .task-project {
+            display: none
+        }
+}
+
+@media(max-width:560px) {
+    .plan-toggle {
+            padding: 5px 6px;
+            font-size: 0.875rem
+        }
+}
+
+@media(max-width:560px) {
+    .all-tasks {
+            padding: 7px 12px 12px
+        }
+}
+
+@media(max-width:560px) {
+    .filter-caption {
+            display: none
+        }
+}
+
+.task-edit {
+    border: 0;
+    background: none;
+    color: #989b95;
+    font-size: 0.9375rem;
+    padding: 5px
+}
+
+.task-remove {
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 0.875rem;
+    padding: 5px
+}
+
+.task-remove:hover,
+.task-edit:hover {
+    color: var(--accent)
+}
+
+.task-action-message {
+    margin: 0 0 12px;
+    color: var(--accent);
+    font-size: 0.9375rem
+}
+
+.archived-task-label {
+    margin-left: 4px;
+    color: var(--muted);
+    font-size: 0.875rem
+}
+

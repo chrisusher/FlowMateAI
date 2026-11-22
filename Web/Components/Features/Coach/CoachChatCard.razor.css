@@ -1,0 +1,140 @@
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden
+}
+
+.chat-header {
+    height: 62px;
+    border-bottom: 1px solid var(--line);
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px
+}
+
+.chat-header>div {
+    display: grid;
+    line-height: 1.4
+}
+
+.chat-header strong {
+    font-size: 0.875rem
+}
+
+.chat-header small {
+    font-size: 0.875rem;
+    color: #999
+}
+
+.read-only {
+    margin-left: auto;
+    font-size: 0.875rem;
+    color: #9b9d98;
+    letter-spacing: .7px
+}
+
+.coach-welcome {
+    text-align: center;
+    max-width: 370px;
+    margin: 38px auto
+}
+
+.coach-welcome>span {
+    height: 38px;
+    width: 38px;
+    border-radius: 13px;
+    background: var(--accent-soft);
+    display: grid;
+    place-items: center;
+    color: #747be2;
+    margin: auto
+}
+
+.coach-welcome h3 {
+    font: 650 15px Manrope;
+    margin: 13px 0 6px
+}
+
+.coach-welcome p {
+    font-size: 0.875rem;
+    color: #999;
+    max-width: 320px;
+    margin: 0 auto 16px
+}
+
+.suggestion-chips {
+    display: flex;
+    justify-content: center;
+    gap: 8px
+}
+
+.suggestion-chips button {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 20px;
+    padding: 7px 10px;
+    color: #7f827c;
+    font-size: 0.875rem
+}
+
+@media(max-width:560px) {
+    .chat-panel {
+            min-height: 420px
+        }
+}
+
+.chat-panel {
+    min-height: 505px
+}
+
+.chat-panel ::deep .flowmate-radzen-chat {
+    flex: 1;
+    min-height: 405px;
+    display: flex
+}
+
+.chat-panel ::deep .flowmate-radzen-chat.rz-chat {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    background: transparent
+}
+
+.chat-panel ::deep .flowmate-radzen-chat .rz-chat-header {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--line)
+}
+
+.chat-panel ::deep .flowmate-radzen-chat .rz-chat-header-clear {
+    color: var(--muted)
+}
+
+.chat-panel ::deep .flowmate-radzen-chat .rz-chat-textarea {
+    background: var(--surface-soft);
+    color: var(--text);
+    border-color: var(--line)
+}
+
+.chat-panel ::deep .flowmate-radzen-chat .rz-chat-textarea::placeholder {
+    color: var(--muted);
+    opacity: 1
+}
+
+.chat-panel ::deep .flowmate-radzen-chat .rz-chat-message-content {
+    font-size: 0.9375rem;
+    line-height: 1.6
+}
+
+.chat-panel ::deep .flowmate-radzen-chat .rz-chat-input {
+    font-size: 0.9375rem
+}
+
+.coach-note {
+    border-top: 1px solid var(--line);
+    padding: 9px 15px;
+    color: #aaa;
+    font-size: 0.875rem
+}
+

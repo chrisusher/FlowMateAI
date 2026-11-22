@@ -1,0 +1,20 @@
+.coach-layout {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 15px;
+    min-height: 505px
+}
+
+@media(max-width:780px) {
+    .coach-layout {
+            grid-template-columns: 170px minmax(0, 1fr)
+        }
+}
+
+@media(max-width:560px) {
+    .coach-layout {
+            grid-template-columns: 1fr;
+            min-height: 0
+        }
+}
+

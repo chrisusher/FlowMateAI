@@ -88,6 +88,7 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     [TestCase("/", "Make today count.", "Today")]
     [TestCase("/today", "Make today count.", "Today")]
     [TestCase("/projects", "Projects", "Projects")]
+    [TestCase("/projects/project-one", "Personal", "Projects")]
     [TestCase("/tasks", "All tasks", "Tasks")]
     [TestCase("/reports", "Focus reports", "Reports")]
     [TestCase("/coach", "Focus coach", "Focus coach")]
@@ -166,9 +167,10 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task WorkspaceLayoutShowsSuccessfulCloudSaveFeedback()
+    public async Task WorkspaceLayoutHidesSavedNoticeButShowsSyncFailures()
     {
         await SignInAsync();
+        var failSave = false;
         Api.Respond = async (request, _) =>
         {
             if (request.RequestUri!.AbsolutePath == "/api/v1/billing/prices")
@@ -189,6 +191,11 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
 
             if (request.Method == HttpMethod.Put)
             {
+                if (failSave)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                }
+
                 var saved = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
 
                 return new HttpResponseMessage(HttpStatusCode.OK)
@@ -204,9 +211,17 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
         };
 
         var cut = Render<WorkspaceLayout>(p => p.Add(c => c.Body, (RenderFragment)(b => b.AddContent(0, "Workspace content"))));
-        cut.WaitForState(() => cut.Markup.Contains("Workspace saved."));
+        cut.WaitForState(() => cut.Markup.Contains("Workspace content") && Store.SyncState == WorkspaceSyncState.Saved);
+        Assert.That(cut.FindAll(".workspace-sync-notice"), Is.Empty);
 
-        Assert.That(Content(cut.Find(".workspace-sync-notice")), Does.Contain("Workspace saved."));
+        failSave = true;
+        await cut.InvokeAsync(Store.SaveAsync);
+        cut.WaitForState(() => cut.FindAll(".workspace-sync-notice").Count == 1);
+        Assert.That(Content(cut.Find(".workspace-sync-notice")), Does.Contain("could not be saved"));
+
+        failSave = false;
+        await cut.InvokeAsync(Store.RetrySaveAsync);
+        cut.WaitForState(() => Store.SyncState == WorkspaceSyncState.Saved && cut.FindAll(".workspace-sync-notice").Count == 0);
     }
 
     [Test]
