@@ -98,7 +98,9 @@
     width: 100%;
     border: 0;
     border-radius: 0;
-    background: transparent
+    background: transparent;
+    --rz-chat-message-user-background-color: var(--accent-soft);
+    --rz-chat-message-user-color: var(--text)
 }
 
 .chat-panel ::deep .flowmate-radzen-chat .rz-chat-header {
@@ -125,6 +127,11 @@
 .chat-panel ::deep .flowmate-radzen-chat .rz-chat-message-content {
     font-size: 0.9375rem;
     line-height: 1.6
+}
+
+.chat-panel ::deep .flowmate-radzen-chat .rz-chat-message-user .rz-chat-message-text {
+    --rz-text-body1-color: var(--text);
+    --rz-text-body2-color: var(--text)
 }
 
 .chat-panel ::deep .flowmate-radzen-chat .rz-chat-input {
