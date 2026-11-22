@@ -10,11 +10,26 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
     private WorkspaceStore Store => store;
 
     public TaskRecord Draft { get; private set; } = new();
-    public bool Editing { get; private set; }
-    public bool DialogOpen { get; private set; }
-    public string? ValidationMessage { get; private set; }
-    public string? ActionMessage { get; private set; }
-    public string? RemoveTaskId { get; private set; }
+    public bool Editing
+    {
+        get; private set;
+    }
+    public bool DialogOpen
+    {
+        get; private set;
+    }
+    public string? ValidationMessage
+    {
+        get; private set;
+    }
+    public string? ActionMessage
+    {
+        get; private set;
+    }
+    public string? RemoveTaskId
+    {
+        get; private set;
+    }
 
     public async Task ToggleComplete(TaskRecord task)
     {
@@ -90,6 +105,27 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
         NotifyChanged();
 
         return Task.CompletedTask;
+    }
+
+    public void AddTaskForProject(string projectId)
+    {
+        if (Store.Project(projectId) is not { IsArchived: false })
+        {
+            ActionMessage = "Choose an active project for this task.";
+            NotifyChanged();
+
+            return;
+        }
+
+        ValidationMessage = null;
+        ActionMessage = null;
+        Draft = new()
+        {
+            ProjectId = projectId
+        };
+        Editing = false;
+        DialogOpen = true;
+        NotifyChanged();
     }
 
     public void OpenTaskEditor(TaskRecord task)

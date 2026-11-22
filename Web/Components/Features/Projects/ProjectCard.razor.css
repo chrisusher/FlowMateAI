@@ -1,5 +1,36 @@
 .project-card {
-    padding: 18px
+    padding: 18px;
+    position: relative
+}
+
+.project-card-link::after {
+    content: "";
+    position: absolute;
+    inset: 0
+}
+
+.project-card-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px
+}
+
+.project-menu, .project-add-task {
+    position: relative;
+    z-index: 1
+}
+
+.project-add-task {
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600
+}
+
+.project-add-task:hover {
+    border-color: var(--accent)
 }
 
 .project-card-head {

@@ -1,0 +1,37 @@
+@page "/projects/{ProjectId}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@layout WorkspaceLayout
+@inherits WorkspaceComponentBase
+@inject WorkspaceTaskManager Tasks
+
+@if (Store.Project(ProjectId) is { } project)
+{
+    <PageTitle>@project.Name &#8212; FlowMate</PageTitle>
+    <div class="page-heading">
+        <div>
+            <a class="project-back" href="projects">&#8592; All projects</a>
+            <h1>@project.Name</h1>
+            <p class="subheading">@(project.IsArchived ? "This project is archived. Restore it to add tasks." : "All tasks in this project.")</p>
+        </div>
+        @if (!project.IsArchived)
+        {
+            <button type="button" class="quiet-button" @onclick="() => Tasks.AddTaskForProject(project.Id)">+ New task</button>
+        }
+    </div>
+    <AllTasksCard ProjectId="@project.Id" />
+}
+else
+{
+    <PageTitle>Project not found &#8212; FlowMate</PageTitle>
+    <div class="page-heading">
+        <div>
+            <a class="project-back" href="projects">&#8592; All projects</a>
+            <h1>Project not found</h1>
+            <p class="subheading">This project is no longer available in your workspace.</p>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string ProjectId { get; set; } = "";
+}

@@ -14,6 +14,11 @@ public partial class WorkspaceLayout
         {
             var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/').ToLowerInvariant();
 
+            if (path.StartsWith("projects/", StringComparison.Ordinal))
+            {
+                return "projects";
+            }
+
             return path is "projects" or "tasks" or "reports" or "coach" or "pricing" or "settings" ? path : "today";
         }
     }

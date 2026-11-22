@@ -137,7 +137,11 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Store.Data.Timer.TaskId = PlannedTask.Id;
         Store.Data.Timer.ProjectId = Project.Id;
         Store.Data.Timer.Phase = TimerPhase.Focus;
-        Store.Data.Projects.Add(new() { Id = "project-two", Name = "Client work" });
+        Store.Data.Projects.Add(new()
+        {
+            Id = "project-two",
+            Name = "Client work"
+        });
         var editor = Render<TaskEditorDialog>();
 
         Tasks.OpenTaskEditor(PlannedTask);
@@ -229,6 +233,67 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         var cut = Render<ProjectCard>(p => p.Add(c => c.Project, new ProjectRecord { Name = "Empty" }));
         Assert.That(Content(cut.Find(".project-progress small")), Is.EqualTo("0/0"));
         Assert.That(cut.Find(".project-progress i").GetAttribute("style"), Does.Contain("0%"));
+    }
+
+    [Test]
+    public void ProjectCardCreatesATaskForTheSelectedProject()
+    {
+        var other = new ProjectRecord
+        {
+            Id = "project-two",
+            Name = "Client work"
+        };
+        Store.Data.Projects.Add(other);
+        var card = Render<ProjectCard>(p => p.Add(c => c.Project, other));
+        var editor = Render<TaskEditorDialog>();
+
+        Assert.That(card.Find(".project-card-link").GetAttribute("href"), Is.EqualTo("projects/project-two"));
+        card.Find(".project-add-task").Click();
+        editor.WaitForElement("[role=dialog]");
+        Assert.That(Tasks.Draft.ProjectId, Is.EqualTo(other.Id));
+        editor.Find("input.field-input").Change("Client task");
+        editor.Find("form").Submit();
+
+        Assert.That(Store.Data.Tasks.Single(task => task.Title == "Client task").ProjectId, Is.EqualTo(other.Id));
+    }
+
+    [Test]
+    public void ProjectDetailShowsOnlyItsTasksAndAllowsAddingAnother()
+    {
+        var other = new ProjectRecord
+        {
+            Id = "project-two",
+            Name = "Client work"
+        };
+        Store.Data.Projects.Add(other);
+        Store.Data.Tasks.Add(new()
+        {
+            ProjectId = other.Id,
+            Title = "Client task",
+            IsComplete = true
+        });
+
+        var cut = Render<ProjectDetailPage>(p => p.Add(c => c.ProjectId, other.Id));
+
+        Assert.That(Content(cut.Find("h1")), Is.EqualTo("Client work"));
+        Assert.That(cut.FindAll(".task-title").Select(Content), Is.EqualTo(new[] { "Client task" }));
+        Assert.That(cut.FindAll(".filter-chip"), Has.Exactly(1).Items);
+        cut.Find(".page-heading button").Click();
+        Assert.That(Tasks.Draft.ProjectId, Is.EqualTo(other.Id));
+        Assert.That(Tasks.DialogOpen, Is.True);
+    }
+
+    [Test]
+    public void ProjectDetailHandlesMissingAndArchivedProjects()
+    {
+        var missing = Render<ProjectDetailPage>(p => p.Add(c => c.ProjectId, "missing"));
+        Assert.That(Content(missing.Find("h1")), Is.EqualTo("Project not found"));
+
+        Project.IsArchived = true;
+        var archived = Render<ProjectDetailPage>(p => p.Add(c => c.ProjectId, Project.Id));
+        Assert.That(archived.FindAll(".page-heading button"), Is.Empty);
+        Assert.That(archived.FindAll(".task-title"), Has.Exactly(2).Items);
+        Assert.That(Content(archived.Find(".subheading")), Does.Contain("archived"));
     }
 
     [Test]

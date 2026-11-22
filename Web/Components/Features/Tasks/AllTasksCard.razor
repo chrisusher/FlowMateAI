@@ -10,24 +10,29 @@
     <div class="task-filters">
         <button class="filter-chip active">
             All
-            <span>@Store.Data.Tasks.Count</span>
+            <span>@VisibleTasks.Count()</span>
         </button>
+        @if (ProjectId is null)
+        {
         <button class="filter-chip" @onclick="Tasks.ToggleAllPlan">
             Today
             <span>@Stats.PlannedTasks.Count()</span>
         </button>
+        }
         <span class="filter-spacer"></span>
         <span class="filter-caption">Sorted by priority</span>
     </div>
-    @if (Store.Data.Tasks.Count == 0)
+    @if (!VisibleTasks.Any())
     {
-        <p class="empty-state">No tasks yet. Add a task to plan your next step.</p>
+        <p class="empty-state">@(ProjectId is null ? "No tasks yet. Add a task to plan your next step." : "No tasks in this project yet.")</p>
     }
-    @foreach (var task in Store.Data.Tasks.OrderBy(t => t.IsComplete).ThenByDescending(t => t.Priority))
+    @foreach (var task in VisibleTasks.OrderBy(t => t.IsComplete).ThenByDescending(t => t.Priority))
     {
         <div class="task-row @(task.IsComplete ? "completed" : "")">
             <button class="check-circle @(task.IsComplete ? "checked" : "")" @onclick="() => Tasks.ToggleComplete(task)">@(task.IsComplete ? "\u2713" : "")</button>
             <button class="task-title" @onclick="() => Tasks.SelectTask(task)">@task.Title</button>
+            @if (ProjectId is null)
+            {
             <span class="task-project">
                 <i class="project-color" style="background:@(Store.Project(task.ProjectId)?.Color ?? "#aaa")"></i>
                 @(Store.Project(task.ProjectId)?.Name ?? "Project unavailable")
@@ -36,6 +41,7 @@
                     <span class="archived-task-label">Archived</span>
                 }
             </span>
+            }
             <span class="priority priority-@task.Priority.ToString().ToLowerInvariant()">@task.Priority</span>
             <button class="plan-toggle @(task.PlannedToday ? "planned" : "")" @onclick="() => Tasks.TogglePlan(task)">@(task.PlannedToday ? "Planned today" : "+ Plan today")</button>
             <button type="button" class="task-edit" aria-label="Edit or move @task.Title" title="Edit or move task" @onclick="() => Tasks.OpenTaskEditor(task)">&#9998;</button>

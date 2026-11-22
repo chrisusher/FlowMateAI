@@ -88,6 +88,7 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     [TestCase("/", "Make today count.", "Today")]
     [TestCase("/today", "Make today count.", "Today")]
     [TestCase("/projects", "Projects", "Projects")]
+    [TestCase("/projects/project-one", "Personal", "Projects")]
     [TestCase("/tasks", "All tasks", "Tasks")]
     [TestCase("/reports", "Focus reports", "Reports")]
     [TestCase("/coach", "Focus coach", "Focus coach")]
