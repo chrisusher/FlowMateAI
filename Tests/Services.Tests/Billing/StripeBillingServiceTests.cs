@@ -596,6 +596,43 @@ public sealed class StripeBillingServiceTests
         Assert.That(_repository!.Entitlement.PromptCount, Is.Zero);
     }
 
+    [Test]
+    public async Task CoachUsesReasoningModelCompatibleCompletionParameters()
+    {
+        var handler = new CoachHandler();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Foundry:Endpoint"] = "https://foundry.example.test",
+            ["Foundry:Deployment"] = "coach",
+            ["Foundry:ApiKey"] = "placeholder"
+        }).Build();
+        var coach = new FoundryFocusCoachService(configuration, new TestHttpClientFactory(handler), new StubWorkspaceService(), CreateService(new StripeHandler(), _repository!));
+
+        var answer = await coach.AskAsync("user", "Help me choose a task.", []);
+
+        using var request = System.Text.Json.JsonDocument.Parse(handler.RequestBody!);
+        Assert.That(request.RootElement.GetProperty("max_completion_tokens").GetInt32(), Is.EqualTo(500));
+        Assert.That(request.RootElement.GetProperty("reasoning_effort").GetString(), Is.EqualTo("none"));
+        Assert.That(request.RootElement.TryGetProperty("max_tokens", out _), Is.False);
+        Assert.That(request.RootElement.TryGetProperty("temperature", out _), Is.False);
+        Assert.That(answer.Text, Is.EqualTo("Choose one task."));
+    }
+
+    private sealed class CoachHandler : HttpMessageHandler
+    {
+        public string? RequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Choose one task.\"}}]}")
+            };
+        }
+    }
+
     private static StripeBillingService CreateService(StripeHandler handler, IBillingRepository repository, IAccountDeletionMarkerRepository? markers = null)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

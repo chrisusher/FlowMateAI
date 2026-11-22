@@ -102,8 +102,8 @@ public sealed class FoundryFocusCoachService(
 
             var completionRequest = new
             {
-                temperature = 0.35,
-                max_tokens = 500,
+                reasoning_effort = "none",
+                max_completion_tokens = 500,
                 messages
             };
             request.Content = new StringContent(JsonSerializer.Serialize(completionRequest), Encoding.UTF8, "application/json");
