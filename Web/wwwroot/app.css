@@ -2457,6 +2457,27 @@ a {
     background: transparent
 }
 
+.flowmate-radzen-chat .rz-chat-header {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--line)
+}
+
+.flowmate-radzen-chat .rz-chat-header-clear {
+    color: var(--muted)
+}
+
+.flowmate-radzen-chat .rz-chat-textarea {
+    background: var(--surface-soft);
+    color: var(--text);
+    border-color: var(--line)
+}
+
+.flowmate-radzen-chat .rz-chat-textarea::placeholder {
+    color: var(--muted);
+    opacity: 1
+}
+
 .flowmate-radzen-chat .rz-chat-message-content {
     font-size: 0.9375rem;
     line-height: 1.6
