@@ -23,9 +23,18 @@ public sealed class McpUsageRepository(DatabaseContext database) : IMcpUsageRepo
 
     public async Task<bool> TrySaveAsync(McpUsageDocument document, string? expectedRevision, CancellationToken cancellationToken = default)
     {
-        var entry = database.Entry(document);
         document.ETag = expectedRevision;
-        entry.State = expectedRevision is null ? EntityState.Added : EntityState.Modified;
+        // Attach the whole graph: Cosmos serialises the owned admissions through tracked entries.
+        var entry = expectedRevision is null ? database.McpUsage.Add(document) : database.McpUsage.Update(document);
+
+        if (expectedRevision is not null)
+        {
+            // The detached records have no EF shadow keys; assign new keys for this replacement.
+            foreach (var admission in document.ApiAdmissions)
+            {
+                database.Entry(admission).State = EntityState.Added;
+            }
+        }
         entry.Property(x => x.ETag).OriginalValue = expectedRevision;
         entry.Property(x => x.ETag).IsModified = false;
 
@@ -58,6 +67,10 @@ public sealed class McpUsageRepository(DatabaseContext database) : IMcpUsageRepo
         finally
         {
             // Failed inserts and stale updates must not remain pending on the next attempt.
+            foreach (var admission in document.ApiAdmissions.ToArray())
+            {
+                database.Entry(admission).State = EntityState.Detached;
+            }
             entry.State = EntityState.Detached;
         }
     }

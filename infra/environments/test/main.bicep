@@ -9,8 +9,10 @@ param location string = resourceGroup().location
 @description('A region supported by Azure Static Web Apps.')
 param staticWebAppLocation string = 'westeurope'
 
-@description('Existing Cosmos account endpoint. No Cosmos resources are created.')
+@description('Existing Cosmos DB for NoSQL account endpoint.')
 param cosmosEndpoint string
+@description('Resource group containing the existing Cosmos account.')
+param cosmosResourceGroup string = 'Shared-Resources'
 param cosmosDatabaseName string = 'flowmate-Test'
 param auth0Authority string
 param auth0Audience string
@@ -20,6 +22,16 @@ param foundryDeployment string = 'coach'
 var suffix = uniqueString(resourceGroup().id)
 var baseName = '${prefix}-${suffix}'
 var vaultName = '${prefix}${take(suffix, 10)}kv'
+var cosmosAccountName = split(replace(replace(cosmosEndpoint, 'https://', ''), 'http://', ''), '.')[0]
+
+module cosmosDatabase '../../modules/cosmosDatabase.bicep' = {
+  name: 'cosmos-database'
+  scope: resourceGroup(cosmosResourceGroup)
+  params: {
+    accountName: cosmosAccountName
+    databaseName: cosmosDatabaseName
+  }
+}
 
 module storage '../../modules/storage.bicep' = {
   name: 'storage'
