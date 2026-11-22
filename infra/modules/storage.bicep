@@ -4,9 +4,15 @@ param location string
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: name
   location: location
-  sku: { name: 'Standard_LRS' }
+  sku: {
+    name: 'Standard_LRS'
+  }
   kind: 'StorageV2'
-  properties: { supportsHttpsTrafficOnly: true, minimumTlsVersion: 'TLS1_2', allowBlobPublicAccess: false }
+  properties: {
+    supportsHttpsTrafficOnly: true
+    minimumTlsVersion: 'TLS1_2'
+    allowBlobPublicAccess: false
+  }
 }
 
 resource blobs 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
@@ -18,7 +24,9 @@ resource deployments 'Microsoft.Storage/storageAccounts/blobServices/containers@
   for app in ['api', 'mcp']: {
     parent: blobs
     name: 'deployments-${app}'
-    properties: { publicAccess: 'None' }
+    properties: {
+      publicAccess: 'None'
+    }
   }
 ]
 

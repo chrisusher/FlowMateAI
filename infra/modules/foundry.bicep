@@ -13,15 +13,29 @@ resource account 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   name: name
   location: location
   kind: 'OpenAI'
-  sku: { name: 'S0' }
-  properties: { customSubDomainName: name, publicNetworkAccess: 'Enabled' }
+  sku: {
+    name: 'S0'
+  }
+  properties: {
+    customSubDomainName: name
+    publicNetworkAccess: 'Enabled'
+  }
 }
 
 resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: account
   name: deploymentName
-  sku: { name: 'GlobalStandard', capacity: capacity }
-  properties: { model: { format: 'OpenAI', name: modelName, version: modelVersion } }
+  sku: {
+    name: 'GlobalStandard'
+    capacity: capacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: modelName
+      version: modelVersion
+    }
+  }
 }
 
 output endpoint string = account.properties.endpoint

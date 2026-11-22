@@ -6,7 +6,10 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   location: location
   properties: {
     tenantId: tenant().tenantId
-    sku: { family: 'A', name: 'standard' }
+    sku: {
+      family: 'A'
+      name: 'standard'
+    }
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
