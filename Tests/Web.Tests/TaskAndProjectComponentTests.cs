@@ -24,8 +24,6 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(Navigation.Uri, Does.EndWith("/"));
     }
 
-    [TestCase(TimerPhase.Focus)]
-    [TestCase(TimerPhase.Paused)]
     [TestCase(TimerPhase.ShortBreak)]
     [TestCase(TimerPhase.LongBreak)]
     public async Task ExistingTimerCannotBeReassignedByTaskActions(TimerPhase phase)
@@ -42,6 +40,50 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         await Tasks.SelectTask(otherTask);
         Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(PlannedTask.Id));
         Assert.That(Store.Data.Timer.Phase, Is.EqualTo(phase));
+    }
+
+    [TestCase(TimerPhase.Focus)]
+    [TestCase(TimerPhase.Paused)]
+    public async Task StartingAnotherTaskPreservesRemainingTimeAndRecordsPreviousWork(TimerPhase phase)
+    {
+        var timer = Store.Data.Timer;
+        var now = Store.UtcNow;
+        timer.Phase = phase;
+        timer.TaskId = PlannedTask.Id;
+        timer.ProjectId = Project.Id;
+        timer.DurationSeconds = 1500;
+        timer.RemainingSeconds = 900;
+        timer.FocusSessionId = "first-session";
+        timer.CompletedIntervals.Add(new() { StartedAt = now.AddMinutes(-12), EndedAt = now.AddMinutes(-10) });
+        timer.StartedAt = phase == TimerPhase.Focus ? now.AddMinutes(-8) : null;
+        timer.EndsAt = phase == TimerPhase.Focus ? now.AddMinutes(15) : null;
+        var deadline = timer.EndsAt;
+        var otherTask = Store.Data.Tasks[1];
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.Find($"button[aria-label='Start focus on {otherTask.Title}']").HasAttribute("disabled"), Is.False);
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.True);
+        Assert.That(timer.Phase, Is.EqualTo(TimerPhase.Focus));
+        Assert.That(timer.TaskId, Is.EqualTo(otherTask.Id));
+        Assert.That(timer.EndsAt, phase == TimerPhase.Focus ? Is.EqualTo(deadline) : Is.InRange(now.AddSeconds(900), Store.UtcNow.AddSeconds(900)));
+        Assert.That(timer.CompletedIntervals, Is.Empty);
+        Assert.That(Store.Data.Sessions.Single().TaskId, Is.EqualTo(PlannedTask.Id));
+        Assert.That(Store.Data.Sessions.Single().FocusMinutes, Is.EqualTo(phase == TimerPhase.Focus ? 10 : 2));
+        Assert.That(timer.FocusSessionId, Is.Not.EqualTo("first-session"));
+    }
+
+    [Test]
+    public async Task AnotherClientCannotSwitchAnActiveTimer()
+    {
+        Store.Data.Timer.Phase = TimerPhase.Focus;
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.OwnerClientId = "another-client";
+        var otherTask = Store.Data.Tasks[1];
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.Find($"button[aria-label='Start focus on {otherTask.Title}']").HasAttribute("disabled"), Is.True);
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.False);
+        Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(PlannedTask.Id));
     }
 
     [Test]
