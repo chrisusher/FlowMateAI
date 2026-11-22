@@ -2,6 +2,62 @@ a.assistant-link span.assistant-compact {
     display: none;
 }
 
+.profile-area {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    border-top: 1px solid var(--line);
+    padding-top: 15px;
+}
+
+.profile-area .profile-link {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    padding: 0 3px;
+}
+
+.profile-menu-toggle {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 6px;
+}
+
+.profile-menu {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    min-width: 160px;
+    padding: 5px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    box-shadow: 0 8px 24px #0003;
+    z-index: 10;
+}
+
+.profile-menu a, .profile-menu button {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.profile-menu a:hover, .profile-menu button:hover,
+.profile-menu a:focus-visible, .profile-menu button:focus-visible {
+    background: var(--line);
+}
+
 @media (max-width: 560px) {
     a.assistant-link span.assistant-full {
         display: none;
