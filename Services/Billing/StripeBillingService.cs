@@ -44,12 +44,11 @@ public sealed class StripeBillingService(
     {
         var prices = new List<BillingPrice>();
 
-        foreach (var (id, configuredInterval) in new[]
+        foreach (var configuredCurrency in Enum.GetValues<OfferCurrency>())
+        foreach (var configuredInterval in Enum.GetValues<BillingInterval>())
         {
-            (configuration["Stripe:MonthlyPriceId"], BillingInterval.Monthly),
-            (configuration["Stripe:AnnualPriceId"], BillingInterval.Annual)
-        })
-        {
+            var id = GetPriceId(configuredCurrency, configuredInterval == BillingInterval.Annual);
+
             if (string.IsNullOrWhiteSpace(id))
             {
                 continue;
@@ -71,7 +70,8 @@ public sealed class StripeBillingService(
                 ? intervalCount.GetInt32()
                 : 1;
 
-            if (!MatchesConfiguredInterval(configuredInterval, actualInterval, actualIntervalCount))
+            if (!string.Equals(currency, configuredCurrency.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                !MatchesConfiguredInterval(configuredInterval, actualInterval, actualIntervalCount))
             {
                 continue;
             }
@@ -88,12 +88,12 @@ public sealed class StripeBillingService(
         return prices;
     }
 
-    public Task<BillingActionResponse> StartTrialAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default) =>
-        CreateCheckoutAsync(userId, email, annual, cancellationToken, trial: true);
+    public Task<BillingActionResponse> StartTrialAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, OfferCurrency currency = OfferCurrency.Gbp) =>
+        CreateCheckoutAsync(userId, email, annual, cancellationToken, trial: true, currency: currency);
 
-    public async Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, bool trial = false)
+    public async Task<BillingActionResponse> CreateCheckoutAsync(string userId, string? email, bool annual, CancellationToken cancellationToken = default, bool trial = false, OfferCurrency currency = OfferCurrency.Gbp)
     {
-        var priceId = configuration[annual ? "Stripe:AnnualPriceId" : "Stripe:MonthlyPriceId"];
+        var priceId = GetPriceId(currency, annual);
         var appBaseUrl = environment.GetWebAppBaseUrl();
 
         if (string.IsNullOrWhiteSpace(priceId) || string.IsNullOrWhiteSpace(appBaseUrl))
@@ -147,7 +147,15 @@ public sealed class StripeBillingService(
                 return Failure(BillingActionCode.TrialUsed, "Your 14-day trial has already been used.");
             }
 
-            var existingCheckout = await GetExistingCheckoutResponseAsync(customer, priceId, trial, cancellationToken);
+            var availablePrices = await GetPricesAsync(cancellationToken);
+            var interval = annual ? "year" : "month";
+
+            if (!availablePrices.Any(price => price.Interval == interval && string.Equals(price.Currency, currency.ToString(), StringComparison.OrdinalIgnoreCase)))
+            {
+                return Failure(BillingActionCode.BillingUnavailable, "The selected price is unavailable.");
+            }
+
+            var existingCheckout = await GetExistingCheckoutResponseAsync(customer, priceId, trial, currency, cancellationToken);
 
             if (existingCheckout is not null)
             {
@@ -168,6 +176,7 @@ public sealed class StripeBillingService(
 
             if (trial)
             {
+                form["payment_method_collection"] = "if_required";
                 form["subscription_data[trial_period_days]"] = "14";
                 form["subscription_data[trial_settings][end_behavior][missing_payment_method]"] = "cancel";
             }
@@ -236,7 +245,7 @@ public sealed class StripeBillingService(
         return (entitledSubscription, trialUsed);
     }
 
-    private async Task<BillingActionResponse?> GetExistingCheckoutResponseAsync(string customerId, string priceId, bool trial, CancellationToken cancellationToken)
+    private async Task<BillingActionResponse?> GetExistingCheckoutResponseAsync(string customerId, string priceId, bool trial, OfferCurrency currency, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(HttpMethod.Get,
             $"checkout/sessions?customer={Uri.EscapeDataString(customerId)}&status=open&limit=100&expand%5B%5D=data.line_items", null, null, cancellationToken);
@@ -278,12 +287,10 @@ public sealed class StripeBillingService(
                 return CheckoutConflict();
             }
 
-            if (trial)
+            if (trial && (!session.TryGetProperty("payment_method_collection", out var collection)
+                || collection.ValueKind != JsonValueKind.String || collection.GetString() != "if_required"))
             {
-                // A trial keeps its original price, even when the pricing toggle changes.
-                existingCheckout = new(true, url.GetString(), null, null);
-
-                continue;
+                return CheckoutConflict();
             }
 
             if (!session.TryGetProperty("line_items", out var lineItems)
@@ -294,15 +301,18 @@ public sealed class StripeBillingService(
                 return CheckoutConflict();
             }
 
+            var acceptedPriceIds = trial
+                ? new[] { GetPriceId(currency, false), GetPriceId(currency, true) }
+                : new[] { priceId };
             var hasRequestedPrice = items.EnumerateArray().Any(item =>
                 item.ValueKind == JsonValueKind.Object
                 && item.TryGetProperty("price", out var price)
                 && (price.ValueKind == JsonValueKind.String
-                    ? string.Equals(price.GetString(), priceId, StringComparison.Ordinal)
+                    ? acceptedPriceIds.Contains(price.GetString(), StringComparer.Ordinal)
                     : price.ValueKind == JsonValueKind.Object
                         && price.TryGetProperty("id", out var id)
                         && id.ValueKind == JsonValueKind.String
-                        && string.Equals(id.GetString(), priceId, StringComparison.Ordinal)));
+                        && acceptedPriceIds.Contains(id.GetString(), StringComparer.Ordinal)));
 
             if (!hasRequestedPrice)
             {
@@ -707,6 +717,15 @@ public sealed class StripeBillingService(
     }
 
     private static bool IsEntitled(string status) => SubscriptionEntitlementExtensions.FromProviderStatus(status) == SubscriptionEntitlement.Entitled;
+
+    private string? GetPriceId(OfferCurrency currency, bool annual)
+    {
+        if (!Enum.IsDefined(currency)) return null;
+        var interval = annual ? "Annual" : "Monthly";
+
+        return configuration[$"Stripe:{currency}:{interval}PriceId"]
+            ?? (currency == OfferCurrency.Gbp ? configuration[$"Stripe:{interval}PriceId"] : null);
+    }
 
     private static bool MatchesConfiguredInterval(BillingInterval configuredInterval, string? actualInterval, int actualIntervalCount) =>
         configuredInterval switch

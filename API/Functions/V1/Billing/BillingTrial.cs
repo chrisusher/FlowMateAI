@@ -3,6 +3,7 @@ using ChrisUsher.Core.Shared;
 using Services.Billing;
 using Services.Users;
 using Services.ApiRequests;
+using Shared.Enums;
 
 namespace API.Functions.V1.Billing;
 
@@ -43,12 +44,13 @@ public sealed class BillingTrial(Auth0TokenValidator tokens, IBillingService bil
             body = null;
         }
 
-        if (body is null)
+        if (body is null || !Enum.TryParse<OfferCurrency>(body.Currency ?? "Gbp", true, out var currency) || !Enum.IsDefined(currency)
+            || !string.Equals(body.Currency ?? "Gbp", currency.ToString(), StringComparison.OrdinalIgnoreCase))
         {
-            return await HttpFunction.ErrorAsync(request, HttpStatusCode.BadRequest, "invalid_request", "Choose monthly or annual billing.", cancellationToken);
+            return await HttpFunction.ErrorAsync(request, HttpStatusCode.BadRequest, "invalid_request", "Choose monthly or annual billing and a supported currency.", cancellationToken);
         }
 
-        var result = await billing.StartTrialAsync(userId, email, body.Annual, cancellationToken);
+        var result = await billing.StartTrialAsync(userId, email, body.Annual, cancellationToken, currency);
         var response = request.CreateResponse(result.Succeeded ? HttpStatusCode.OK : HttpStatusCode.BadRequest);
         await response.WriteAsJsonAsync(result, cancellationToken);
 

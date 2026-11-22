@@ -1,6 +1,6 @@
 # FlowMate MCP server
 
-The read-only MCP server is available to Free and Pro accounts. It exposes Streamable HTTP at:
+The read-only MCP server is available during an active Pro trial or subscription. It exposes Streamable HTTP at:
 
 ```text
 https://<mcp-function-app>/runtime/webhooks/mcp
@@ -34,7 +34,7 @@ For clients using a JSON MCP server configuration:
 }
 ```
 
-In other clients, add a remote Streamable HTTP server with the endpoint above and a custom header named `X-Api-Key`. Free and Pro accounts can both connect. Free accounts share 10 tool calls per rolling minute and 100 calls per UTC day across all keys, tools, and clients. Pro accounts bypass MCP rate limiting.
+In other clients, add a remote Streamable HTTP server with the endpoint above and a custom header named `X-Api-Key`. Free accounts cannot create or use assistant keys. When Pro access ends, existing keys are denied until access is restored; they can still be revoked in Settings. Pro accounts bypass MCP rate limiting.
 
 ## Tools
 
@@ -42,9 +42,9 @@ In other clients, add a remote Streamable HTTP server with the endpoint above an
 - `get_timesheet` accepts `period` (`day`, `week`, `month`), optional `date` (`YYYY-MM-DD`, defaults to today in the workspace time zone), and an optional pagination `cursor`. It returns up to 100 focus entries per call. The daily, project, and overall totals cover the complete accessible period. Pass `nextCursor` to retrieve another page. A workspace change invalidates the cursor; restart without a cursor.
 - `get_project_time` accepts `projectId`, `period`, and optional `date`, and returns total minutes, session count, and daily breakdown.
 
-Dates are assigned by the local start date of each completed focus entry; weeks run Monday through Sunday. Free accounts can access today and the preceding 29 calendar days. Pro history begins one year before today. Responses flag partially available ranges; a fully inaccessible range returns `history_unavailable`. Running timers and breaks are excluded.
+Dates are assigned by the local start date of each completed focus entry; weeks run Monday through Sunday. Pro history begins one year before today. Responses flag partially available ranges; a fully inaccessible range returns `history_unavailable`. Running timers and breaks are excluded.
 
-When Free limits are exhausted, the tool returns `rate_limited` with remaining allowances, reset timestamps, and `retryAfterSeconds`. Wait the indicated time before trying again. Temporary admission failures return `temporarily_unavailable`; retry with backoff.
+When access ends, the tool returns `pro_required`. Temporary dependency failures return `temporarily_unavailable`; retry with backoff.
 
 ## Provisioning and deployment
 

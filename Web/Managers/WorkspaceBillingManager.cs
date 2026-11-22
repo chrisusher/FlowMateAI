@@ -11,6 +11,13 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
     private bool _annual;
     private bool _checkoutInProgress;
     private bool _checkoutPending;
+    private OfferCurrency _currency = OfferCurrency.Gbp;
+
+    public OfferCurrency Currency
+    {
+        get => _currency;
+        set { _currency = value; NotifyChanged(); }
+    }
 
     public bool Annual
     {
@@ -169,7 +176,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
         : $"{prefix} date unavailable. Refresh billing status for the latest details.";
 
     private string TrialStatusDetail() => BillingState?.PeriodEndsAt is { } end
-        ? $"Your trial ends {end.ToLocalTime():d}. Unless you cancel first, the {RenewalChargeLabel} charge follows then."
+        ? $"Your trial ends {end.ToLocalTime():d}. If a payment method is on file, the {RenewalChargeLabel} charge follows unless you cancel. Otherwise you return to Free."
         : "Your trial end date is unavailable. Refresh billing status for the latest details.";
 
     private BillingPrice? FindPrice(BillingInterval interval)
@@ -181,7 +188,8 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
             _ => throw new ArgumentOutOfRangeException(nameof(interval), interval, null)
         };
 
-        return Prices.FirstOrDefault(price => string.Equals(price.Interval, providerInterval, StringComparison.OrdinalIgnoreCase));
+        return Prices.FirstOrDefault(price => string.Equals(price.Interval, providerInterval, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(price.Currency, Currency.ToString(), StringComparison.OrdinalIgnoreCase));
     }
 
     public async Task ShowCheckoutReturn(CheckoutOutcome outcome)
@@ -264,7 +272,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
         try
         {
-            var result = await client.StartTrialAsync(Annual);
+            var result = await client.StartTrialAsync(Annual, Currency);
 
             if (!result.Succeeded)
             {
@@ -317,7 +325,7 @@ public sealed class WorkspaceBillingManager(WorkspaceStore store, BillingClient 
 
         try
         {
-            var result = await client.CheckoutAsync(Annual);
+            var result = await client.CheckoutAsync(Annual, Currency);
 
             if (result.Succeeded && !string.IsNullOrWhiteSpace(result.Url))
             {

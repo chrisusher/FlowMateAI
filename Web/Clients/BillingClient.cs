@@ -25,11 +25,11 @@ public sealed class BillingClient(HttpClient http, Auth0Client auth)
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<BillingSummary>(cancellationToken: cancellationToken) : null;
     }
 
-    public Task<BillingActionResponse> StartTrialAsync(bool annual, CancellationToken cancellationToken = default) =>
-        PostAsync("api/v1/billing/trial", new CheckoutRequest(annual), cancellationToken);
+    public Task<BillingActionResponse> StartTrialAsync(bool annual, OfferCurrency currency, CancellationToken cancellationToken = default) =>
+        PostAsync("api/v1/billing/trial", new CheckoutRequest(annual, currency.ToString()), cancellationToken);
 
-    public Task<BillingActionResponse> CheckoutAsync(bool annual, CancellationToken cancellationToken = default) =>
-        PostAsync("api/v1/billing/checkout", new CheckoutRequest(annual), cancellationToken);
+    public Task<BillingActionResponse> CheckoutAsync(bool annual, OfferCurrency currency, CancellationToken cancellationToken = default) =>
+        PostAsync("api/v1/billing/checkout", new CheckoutRequest(annual, currency.ToString()), cancellationToken);
 
     public Task<BillingActionResponse> PortalAsync(CancellationToken cancellationToken = default) =>
         PostAsync("api/v1/billing/portal", null, cancellationToken);

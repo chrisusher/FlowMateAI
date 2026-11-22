@@ -20,6 +20,11 @@ public sealed class McpKeysClient(HttpClient http, Auth0Client auth)
         request.Content = JsonContent.Create(new McpKeyCreateRequest(name, expiryDays));
         using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
 
+        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            throw new HttpRequestException("Assistant access requires Pro.", null, response.StatusCode);
+        }
+
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<McpKeyCreatedResponse>(cancellationToken: cancellationToken) : null;
     }
 

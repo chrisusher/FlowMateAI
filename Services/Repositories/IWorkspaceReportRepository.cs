@@ -4,7 +4,7 @@ using Shared.Enums;
 namespace Services.Repositories;
 
 public sealed record WorkspaceReportSource(WorkspaceSnapshot Workspace, string Revision);
-public sealed record BillingAccess(BillingPlan Plan, SubscriptionEntitlement Entitlement);
+public sealed record BillingAccess(BillingPlan Plan, SubscriptionEntitlement Entitlement, SubscriptionStatus Status = SubscriptionStatus.None, DateTimeOffset? PeriodEndsAt = null);
 
 public interface IWorkspaceReportRepository
 {

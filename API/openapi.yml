@@ -159,6 +159,12 @@ paths:
       summary: Start a billing trial
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
       responses:
         '200':
           $ref: '#/components/responses/BillingAction'
@@ -359,6 +365,10 @@ components:
       properties:
         annual:
           type: boolean
+        currency:
+          type: string
+          enum: [Gbp, Usd, Eur]
+          default: Gbp
     AccountDeletionRequest:
       type: object
       required: [confirmation, email]

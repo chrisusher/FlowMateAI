@@ -10,6 +10,12 @@
     <div class="eyebrow">SIMPLE, THOUGHTFUL PLANS</div>
     <h1>More space to focus.</h1>
     <p>Start for free. Grow when you're ready.</p>
+    <label for="billing-currency">Currency</label>
+    <select id="billing-currency" @bind="Billing.Currency">
+        <option value="@OfferCurrency.Gbp">GBP</option>
+        <option value="@OfferCurrency.Usd">USD</option>
+        <option value="@OfferCurrency.Eur">EUR</option>
+    </select>
     <div class="billing-toggle">
         <button class="@(Billing.Annual ? "" : "selected")" @onclick="() => Billing.Annual = false">Monthly</button>
         <button class="@(Billing.Annual ? "selected" : "")" @onclick="() => Billing.Annual = true">
