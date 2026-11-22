@@ -125,6 +125,7 @@ jobs:
         with:
           name: functions-mcp
           path: artifacts/mcp
+          include-hidden-files: true
 
   deploy-web:
     needs: build

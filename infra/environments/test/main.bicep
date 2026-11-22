@@ -87,7 +87,7 @@ module mcp '../../modules/functionApp.bicep' = {
 }
 module apiVaultAccess '../../modules/vaultAccess.bicep' = {
   name: 'api-vault-access'
-  params: { vaultName: vaultName, principalId: api.outputs.principalId }
+  params: { vaultName: vaultName, principalId: api.outputs.principalId, accessRole: 'officer' }
 }
 module mcpVaultAccess '../../modules/vaultAccess.bicep' = {
   name: 'mcp-vault-access'
