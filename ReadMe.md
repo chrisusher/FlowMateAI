@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="Web/wwwroot/branding/flowmate-wordmark-dark-900.png">
+  <img alt="FlowMate AI" src="Web/wwwroot/branding/flowmate-wordmark-900.png" width="360">
+</picture>
+
 # FlowMate AI
 
 **Make space for focused work.** FlowMate AI brings tasks, projects, focus sessions and an AI coach together in one workspace, helping you plan your day and understand where your time goes.
