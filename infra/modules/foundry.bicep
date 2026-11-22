@@ -1,9 +1,6 @@
 param name string
 param location string
 
-@description('Azure OpenAI model name available in the chosen region.')
-param modelName string
-param modelVersion string
 param deploymentName string
 
 @minValue(1)
@@ -32,8 +29,8 @@ resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01
   properties: {
     model: {
       format: 'OpenAI'
-      name: modelName
-      version: modelVersion
+      name: 'gpt-6-luna'
+      version: '2026-09-22'
     }
   }
 }

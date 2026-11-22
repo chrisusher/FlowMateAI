@@ -3,7 +3,7 @@ targetScope = 'resourceGroup'
 @description('Short, globally unique lowercase alphanumeric prefix.')
 @minLength(3)
 @maxLength(10)
-param prefix string
+param prefix string = 'flowmate'
 param location string = resourceGroup().location
 
 @description('A region supported by Azure Static Web Apps.')
@@ -15,9 +15,6 @@ param cosmosDatabaseName string = 'flowmate-Test'
 param auth0Authority string
 param auth0Audience string
 
-@description('A model and version available with GlobalStandard quota in the selected region.')
-param foundryModelName string
-param foundryModelVersion string
 param foundryDeployment string = 'coach'
 
 var suffix = uniqueString(resourceGroup().id)
@@ -53,8 +50,6 @@ module foundry '../../modules/foundry.bicep' = {
   params: {
     name: '${baseName}-ai'
     location: location
-    modelName: foundryModelName
-    modelVersion: foundryModelVersion
     deploymentName: foundryDeployment
   }
 }
