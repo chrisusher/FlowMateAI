@@ -1,0 +1,46 @@
+.plan-panel {
+    padding: 18px 20px 12px
+}
+
+.task-list {
+    margin-top: 14px
+}
+
+.task-minutes {
+    color: #a0a39d;
+    font-size: 0.875rem;
+    white-space: nowrap
+}
+
+.task-minutes span {
+    margin-left: 2px
+}
+
+.row-menu {
+    background: none;
+    border: 0;
+    color: #a7aaa4;
+    font-size: 16px;
+    padding: 0 3px
+}
+
+.add-inline {
+    background: none;
+    border: 0;
+    color: #878b84;
+    font-size: 0.875rem;
+    padding: 11px 0 3px
+}
+
+@media(max-width:560px) {
+    .plan-panel {
+            padding: 16px 13px 10px
+        }
+}
+
+@media(max-width:560px) {
+    .task-minutes {
+            font-size: 0.875rem
+        }
+}
+

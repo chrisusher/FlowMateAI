@@ -1,0 +1,23 @@
+.plan-status {
+    font-size: 0.875rem;
+    background: #edf7f0;
+    color: #4b9b73;
+    padding: 5px 8px;
+    border-radius: 12px
+}
+
+.plan-status[data-status="pastdue"],
+.plan-status[data-status="unpaid"],
+.plan-status[data-status="incomplete"],
+.plan-status[data-status="paused"] {
+    background: #fff3e5;
+    color: #9a5a12
+}
+
+.plan-status[data-status="canceled"],
+.plan-status[data-status="incompleteexpired"],
+.plan-status[data-status="unknown"] {
+    background: #f0f0ed;
+    color: #777b74
+}
+

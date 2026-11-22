@@ -1,0 +1,65 @@
+.coach-card {
+    border-radius: 13px;
+    padding: 19px 19px 14px;
+    background: linear-gradient(150deg, #f1f1ff, #faf9ff);
+    border: 1px solid #e9e9fb;
+    position: relative;
+    overflow: hidden
+}
+
+.coach-orb {
+    position: absolute;
+    right: 15px;
+    top: 13px;
+    border-radius: 50%;
+    height: 36px;
+    width: 36px;
+    background: #fff;
+    color: #8588e7;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 3px 10px #7777aa18
+}
+
+.coach-label {
+    color: #777bcd;
+    font-size: 0.875rem
+}
+
+.coach-card h3 {
+    font: 650 14px/1.4 Manrope;
+    max-width: 190px;
+    margin: 10px 0 5px
+}
+
+.coach-card p {
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: #898b96;
+    margin: 0 0 12px;
+    max-width: 225px
+}
+
+.coach-card>button {
+    border: 0;
+    background: #fff;
+    border-radius: 7px;
+    padding: 7px 10px;
+    color: #6268cf;
+    font-size: 0.875rem;
+    font-weight: 600;
+    box-shadow: 0 2px 6px #28285708
+}
+
+.coach-card>button span {
+    margin-left: 15px
+}
+
+.coach-footer {
+    border-top: 1px solid #e8e8f2;
+    margin-top: 15px;
+    padding-top: 10px;
+    color: #9698a1;
+    font-size: 0.875rem
+}
+

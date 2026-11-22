@@ -1,0 +1,50 @@
+.project-today {
+    padding: 17px 18px
+}
+
+.project-today .panel-heading {
+    margin-bottom: 14px
+}
+
+.project-meter-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 11px
+}
+
+.project-meter-name {
+    font-size: 0.875rem;
+    color: #737770;
+    flex: 1
+}
+
+.project-meter-row strong {
+    font: 600 10px Manrope
+}
+
+.project-meter {
+    height: 3px;
+    background: #f0f0ec;
+    border-radius: 4px;
+    margin: 6px 0 1px 15px
+}
+
+.project-meter i {
+    display: block;
+    height: 100%;
+    border-radius: 4px
+}
+
+@media(max-width:780px) {
+    .project-today {
+            grid-column: 1/-1
+        }
+}
+
+@media(max-width:560px) {
+    .project-today {
+            grid-column: auto
+        }
+}
+

@@ -1,0 +1,86 @@
+.stats-panel {
+    padding: 18px 19px 16px
+}
+
+.stat-icon {
+    height: 30px;
+    width: 30px;
+    display: grid;
+    place-items: center;
+    color: #727be9;
+    background: var(--accent-soft);
+    border-radius: 9px
+}
+
+.focus-total {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 22px 0 11px
+}
+
+.focus-total strong {
+    font: 700 33px Manrope;
+    letter-spacing: -1.1px
+}
+
+.focus-total>span {
+    font-size: 0.875rem;
+    color: #969992
+}
+
+.stat-meter {
+    height: 5px;
+    background: #f0f0ec;
+    border-radius: 8px;
+    overflow: hidden
+}
+
+.stat-meter i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #6672e7, #9d9fe8);
+    border-radius: 8px
+}
+
+.stat-foot {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 7px;
+    color: #a0a39d;
+    font-size: 0.875rem
+}
+
+.stat-foot strong {
+    color: #737770;
+    font-size: 0.875rem
+}
+
+.stats-divider {
+    border-top: 1px solid var(--line);
+    margin: 17px 0 13px
+}
+
+.mini-stat-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr)
+}
+
+.mini-stat-row div {
+    display: grid;
+    gap: 4px
+}
+
+.mini-stat-row small {
+    font-size: 0.875rem;
+    color: #9a9d97
+}
+
+.mini-stat-row strong {
+    font: 650 12px Manrope
+}
+
+.mini-stat-row strong span {
+    color: #51ae89
+}
+
