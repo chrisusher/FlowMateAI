@@ -29,7 +29,13 @@ jobs:
           AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
           AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
           AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
+          foreach ($name in @('API_BASE_URL', 'MCP_ENDPOINT', 'APP_URL', 'AUTH0_DOMAIN', 'AUTH0_CLIENT_ID', 'AUTH0_AUDIENCE')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Required Test environment variable $name is missing."
+            }
+          }
           $settings = Get-Content -LiteralPath 'Web/wwwroot/appsettings.example.json' -Raw | ConvertFrom-Json -AsHashtable
           $settings['ApiBaseUrl'] = $env:API_BASE_URL
           $settings['McpEndpoint'] = $env:MCP_ENDPOINT
@@ -38,6 +44,7 @@ jobs:
           $settings['Auth0']['ClientId'] = $env:AUTH0_CLIENT_ID
           $settings['Auth0']['Audience'] = $env:AUTH0_AUDIENCE
           $settings | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath 'Web/wwwroot/appsettings.json' -Encoding utf8NoBOM
+          @{ AppUrl = $env:APP_URL } | ConvertTo-Json | Set-Content -LiteralPath 'Marketing/wwwroot/appsettings.json' -Encoding utf8NoBOM
 
       - name: Publish Blazor WebAssembly
         run: |
@@ -86,6 +93,12 @@ jobs:
           dotnet restore API/API.csproj --configfile NuGet.config
           dotnet publish API/API.csproj -c Release --no-restore -o artifacts/api
 
+      - name: Publish marketing site
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet restore Marketing/Marketing.csproj --configfile NuGet.config
+          dotnet publish Marketing/Marketing.csproj -c Release --no-restore -o artifacts/marketing-publish
+
       - name: Publish Azure Functions MCP server
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -99,6 +112,11 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
+          name: marketing
+          path: artifacts/marketing-publish/wwwroot
+
+      - uses: actions/upload-artifact@v4
+        with:
           name: functions-api
           path: artifacts/api
           include-hidden-files: true
@@ -107,6 +125,7 @@ jobs:
         with:
           name: functions-mcp
           path: artifacts/mcp
+          include-hidden-files: true
 
   deploy-web:
     needs: build
@@ -142,18 +161,34 @@ jobs:
           sku: flexconsumption
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
 
-  # deploy-mcp:
-  #   needs: build
-  #   runs-on: ubuntu-latest
-  #   environment: Test
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         name: functions-mcp
-  #         path: artifacts/mcp
+  deploy-mcp:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: Test
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: functions-mcp
+          path: artifacts/mcp
+      - uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_MCP_FUNCTIONAPP_NAME }}
+          package: artifacts/mcp
+          sku: flexconsumption
+          publish-profile: ${{ secrets.AZURE_MCP_FUNCTIONAPP_PUBLISH_PROFILE }}
 
-  #     - uses: Azure/functions-action@v1
-  #       with:
-  #         app-name: ${{ vars.AZURE_MCP_FUNCTIONAPP_NAME }}
-  #         package: artifacts/mcp
-  #         publish-profile: ${{ secrets.AZURE_MCP_FUNCTIONAPP_PUBLISH_PROFILE }}
+  deploy-marketing:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: Test
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: marketing
+          path: artifacts/marketing
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_MARKETING_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: artifacts/marketing
+          skip_app_build: true
