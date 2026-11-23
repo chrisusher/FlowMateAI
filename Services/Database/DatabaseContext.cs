@@ -6,11 +6,19 @@ public class DatabaseContext : DbContext
 {
     public DbSet<BillingEntitlementDocument> BillingEntitlements => Set<BillingEntitlementDocument>();
 
+    public DbSet<WorkspaceConversationDocument> Conversations => Set<WorkspaceConversationDocument>();
+
     public DbSet<McpKeyDocument> McpKeys => Set<McpKeyDocument>();
 
     public DbSet<McpUsageDocument> McpUsage => Set<McpUsageDocument>();
 
+    public DbSet<WorkspaceProjectDocument> Projects => Set<WorkspaceProjectDocument>();
+
+    public DbSet<WorkspaceSessionDocument> Sessions => Set<WorkspaceSessionDocument>();
+
     public DbSet<StripeEventDocument> StripeEvents => Set<StripeEventDocument>();
+
+    public DbSet<WorkspaceTaskDocument> Tasks => Set<WorkspaceTaskDocument>();
 
     public DbSet<UserDocument> Users => Set<UserDocument>();
 
@@ -28,6 +36,8 @@ public class DatabaseContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+
         modelBuilder.Entity<BillingEntitlementDocument>(entity =>
         {
             entity.ToContainer("BillingEntitlements");
@@ -83,7 +93,6 @@ public class DatabaseContext : DbContext
             entity.Property(x => x.ETag).IsETagConcurrency();
         });
 
-        base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<WorkspaceDocument>(entity =>
         {
             entity.ToContainer("WorkspaceDocuments");
@@ -120,6 +129,26 @@ public class DatabaseContext : DbContext
                 timer.Property(x => x.Phase).HasConversion<string>();
                 timer.OwnsMany(x => x.CompletedIntervals);
             });
+        });
+
+        ConfigureWorkspaceItem<WorkspaceProjectDocument>(modelBuilder, "Projects");
+        ConfigureWorkspaceItem<WorkspaceTaskDocument>(modelBuilder, "Tasks");
+        ConfigureWorkspaceItem<WorkspaceSessionDocument>(modelBuilder, "Sessions");
+        ConfigureWorkspaceItem<WorkspaceConversationDocument>(modelBuilder, "Conversations");
+        modelBuilder.Entity<WorkspaceProjectDocument>().OwnsOne(x => x.Project);
+        modelBuilder.Entity<WorkspaceTaskDocument>().OwnsOne(x => x.Task, task => task.Property(x => x.Priority).HasConversion<string>());
+        modelBuilder.Entity<WorkspaceSessionDocument>().OwnsOne(x => x.Session);
+        modelBuilder.Entity<WorkspaceConversationDocument>().OwnsOne(x => x.Conversation, conversation => conversation.OwnsMany(x => x.Messages, message => message.Property(x => x.Role).HasConversion<string>()));
+    }
+
+    private static void ConfigureWorkspaceItem<T>(ModelBuilder modelBuilder, string container) where T : class, IWorkspaceItemDocument
+    {
+        modelBuilder.Entity<T>(entity =>
+        {
+            entity.ToContainer(container);
+            entity.HasKey(x => x.Id);
+            entity.HasPartitionKey(x => x.UserId);
+            entity.Property(x => x.ETag).IsETagConcurrency();
         });
     }
 }

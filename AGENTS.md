@@ -17,6 +17,11 @@
 - Keep persistence-specific work behind repository or other storage abstractions. `*Service` code may depend on those abstractions, but must not depend on EF contexts or Cosmos SDK clients.
 - When changing persistence behavior, preserve this boundary and add or update the abstraction implementation rather than introducing persistence details into a `*Service` class.
 
+## Cosmos document design
+
+- Store independently changing or growing workspace collections as individual documents in purpose-specific containers, not as arrays in a shared workspace document. Choose and document partition keys for the access patterns and user isolation.
+- Design record-level concurrency, retries, migration and deletion together; moving arrays alone does not remove contention if every change still writes one shared revision document.
+
 ## Internal values and enums
 
 - Represent closed sets of application-internal states, modes, roles, periods, stages, and result codes with enums rather than string properties, parameters, or comparisons against string literals.
