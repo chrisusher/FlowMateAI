@@ -14,7 +14,7 @@ public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorksp
 
     public Task<ProjectRecord?> GetProjectAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        return GetAsync<WorkspaceProjectDocument, ProjectRecord>(database.Projects, userId, id, cancellationToken);
+        return GetAsync<WorkspaceProjectDocument, ProjectRecord>(database.Projects, userId, id, workspace => workspace.Projects, item => item.Id, cancellationToken);
     }
 
 
@@ -26,7 +26,7 @@ public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorksp
 
     public Task<TaskRecord?> GetTaskAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        return GetAsync<WorkspaceTaskDocument, TaskRecord>(database.Tasks, userId, id, cancellationToken);
+        return GetAsync<WorkspaceTaskDocument, TaskRecord>(database.Tasks, userId, id, workspace => workspace.Tasks, item => item.Id, cancellationToken);
     }
 
 
@@ -38,7 +38,7 @@ public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorksp
 
     public Task<FocusSessionRecord?> GetSessionAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        return GetAsync<WorkspaceSessionDocument, FocusSessionRecord>(database.Sessions, userId, id, cancellationToken);
+        return GetAsync<WorkspaceSessionDocument, FocusSessionRecord>(database.Sessions, userId, id, workspace => workspace.Sessions, item => item.Id, cancellationToken);
     }
 
 
@@ -50,7 +50,7 @@ public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorksp
 
     public Task<ConversationRecord?> GetConversationAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        return GetAsync<WorkspaceConversationDocument, ConversationRecord>(database.Conversations, userId, id, cancellationToken);
+        return GetAsync<WorkspaceConversationDocument, ConversationRecord>(database.Conversations, userId, id, workspace => workspace.Conversations, item => item.Id, cancellationToken);
     }
 
 
@@ -74,14 +74,13 @@ public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorksp
         return WorkspaceCollectionManifest.Hash(records) == WorkspaceCollectionManifest.Hash(authoritative) ? records : authoritative;
     }
 
-    private static async Task<TRecord?> GetAsync<TDocument, TRecord>(DbSet<TDocument> set, string userId, string id, CancellationToken cancellationToken)
+    private async Task<TRecord?> GetAsync<TDocument, TRecord>(DbSet<TDocument> set, string userId, string id,
+        Func<WorkspaceSnapshot, List<TRecord>> select, Func<TRecord, string> getId, CancellationToken cancellationToken)
         where TDocument : class, IWorkspaceItemDocument
         where TRecord : class
     {
-        var document = await set
-            .AsNoTracking()
-            .SingleOrDefaultAsync(item => item.UserId == userId && item.Id == id, cancellationToken);
+        var records = await ListAsync<TDocument, TRecord>(set, userId, select, cancellationToken);
 
-        return document is null ? null : document.Value as TRecord ?? throw new InvalidOperationException("A workspace record has no data.");
+        return records.SingleOrDefault(item => getId(item) == id);
     }
 }

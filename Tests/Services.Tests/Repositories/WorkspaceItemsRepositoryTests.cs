@@ -65,6 +65,144 @@ public sealed class WorkspaceItemsRepositoryTests
     }
 
     [Test]
+    public async Task IndividualReadsUseAuthoritativeRecordsForLegacyAndStaleProjections()
+    {
+        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var database = new DatabaseContext(options);
+        database.Workspaces.Add(new WorkspaceDocument
+        {
+            UserId = "user-1",
+            Workspace = new WorkspaceSnapshot
+            {
+                Projects = [new ProjectRecord
+                {
+                    Id = "p",
+                    Name = "Current"
+                }],
+                Tasks = [new TaskRecord
+                {
+                    Id = "t",
+                    Title = "Current"
+                }],
+                Sessions = [new FocusSessionRecord
+                {
+                    Id = "s",
+                    FocusMinutes = 20
+                }],
+                Conversations = [new ConversationRecord
+                {
+                    Id = "c",
+                    Title = "Current"
+                }]
+            }
+        });
+        await database.SaveChangesAsync();
+        var reader = new WorkspaceItemsRepository(database);
+
+        async Task AssertCurrentRecordsAsync()
+        {
+            Assert.That((await reader.GetProjectAsync("user-1", "p"))?.Name, Is.EqualTo("Current"));
+            Assert.That((await reader.GetTaskAsync("user-1", "t"))?.Title, Is.EqualTo("Current"));
+            Assert.That((await reader.GetSessionAsync("user-1", "s"))?.FocusMinutes, Is.EqualTo(20));
+            Assert.That((await reader.GetConversationAsync("user-1", "c"))?.Title, Is.EqualTo("Current"));
+        }
+
+        await AssertCurrentRecordsAsync();
+
+        database.Projects.AddRange(
+            new WorkspaceProjectDocument
+            {
+                UserId = "user-1",
+                Id = "p",
+                Project = new ProjectRecord
+                {
+                    Id = "p",
+                    Name = "Stale"
+                }
+            },
+            new WorkspaceProjectDocument
+            {
+                UserId = "user-1",
+                Id = "deleted",
+                Project = new ProjectRecord
+                {
+                    Id = "deleted"
+                }
+            });
+        database.Tasks.AddRange(
+            new WorkspaceTaskDocument
+            {
+                UserId = "user-1",
+                Id = "t",
+                Task = new TaskRecord
+                {
+                    Id = "t",
+                    Title = "Stale"
+                }
+            },
+            new WorkspaceTaskDocument
+            {
+                UserId = "user-1",
+                Id = "deleted",
+                Task = new TaskRecord
+                {
+                    Id = "deleted"
+                }
+            });
+        database.Sessions.AddRange(
+            new WorkspaceSessionDocument
+            {
+                UserId = "user-1",
+                Id = "s",
+                Session = new FocusSessionRecord
+                {
+                    Id = "s",
+                    FocusMinutes = 10
+                }
+            },
+            new WorkspaceSessionDocument
+            {
+                UserId = "user-1",
+                Id = "deleted",
+                Session = new FocusSessionRecord
+                {
+                    Id = "deleted"
+                }
+            });
+        database.Conversations.AddRange(
+            new WorkspaceConversationDocument
+            {
+                UserId = "user-1",
+                Id = "c",
+                Conversation = new ConversationRecord
+                {
+                    Id = "c",
+                    Title = "Stale"
+                }
+            },
+            new WorkspaceConversationDocument
+            {
+                UserId = "user-1",
+                Id = "deleted",
+                Conversation = new ConversationRecord
+                {
+                    Id = "deleted"
+                }
+            });
+        await database.SaveChangesAsync();
+
+        await AssertCurrentRecordsAsync();
+        Assert.That(await reader.GetProjectAsync("user-1", "deleted"), Is.Null);
+        Assert.That(await reader.GetTaskAsync("user-1", "deleted"), Is.Null);
+        Assert.That(await reader.GetSessionAsync("user-1", "deleted"), Is.Null);
+        Assert.That(await reader.GetConversationAsync("user-1", "deleted"), Is.Null);
+        Assert.That(await reader.GetProjectAsync("other", "p"), Is.Null);
+        Assert.That(await reader.GetTaskAsync("other", "t"), Is.Null);
+        Assert.That(await reader.GetSessionAsync("other", "s"), Is.Null);
+        Assert.That(await reader.GetConversationAsync("other", "c"), Is.Null);
+    }
+
+    [Test]
     public async Task SaveSynchronisesCollectionsAndReadsOnlyTheOwnersRecords()
     {
         var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
