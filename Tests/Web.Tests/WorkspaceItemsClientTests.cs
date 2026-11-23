@@ -45,6 +45,81 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
 
     [TestCase(false)]
     [TestCase(true)]
+    public async Task SlowCollectionReadsDoNotMakeTheServerClockLag(bool retry)
+    {
+        await SignInAsync();
+
+        if (retry)
+        {
+            await Store.InitialiseAsync();
+            Assert.That(Store.RequiresRemoteReload, Is.True);
+        }
+
+        var serverTime = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var snapshot = new WorkspaceSnapshot
+        {
+            FirstRunState = OnboardingState.Dismissed,
+            Timer = new TimerSnapshot
+            {
+                Phase = TimerPhase.Focus,
+                OwnerClientId = "test-device",
+                EndsAt = serverTime.AddMinutes(5)
+            }
+        };
+        var remote = new WorkspaceResponse(snapshot, "revision");
+        var elapsed = new System.Diagnostics.Stopwatch();
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Put)
+            {
+                var saved = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions, cancellationToken);
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(saved!.Workspace, "revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/api/v1/workspace")
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(WorkspaceCollectionManifest.Create(remote), options: SharedCommon.JsonOptions)
+                };
+                response.Headers.Add("X-Workspace-Collections", "separate");
+                response.Headers.Date = serverTime;
+                elapsed.Start();
+
+                return response;
+            }
+
+            if (request.RequestUri.AbsolutePath == "/api/v1/projects")
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(Array.Empty<object>(), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        if (retry)
+        {
+            await Store.RetrySaveAsync();
+        }
+        else
+        {
+            await Store.InitialiseAsync();
+        }
+
+        Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(3)));
+        Assert.That((Store.UtcNow - serverTime - elapsed.Elapsed).Duration(), Is.LessThan(TimeSpan.FromSeconds(1)));
+        Assert.That(Store.Data.Timer.RemainingSeconds, Is.EqualTo(Math.Ceiling(300 - elapsed.Elapsed.TotalSeconds)).Within(2));
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
     public async Task WorkspaceLoadUsesMatchingCollectionsAndFallsBackWhenTheyAreStale(bool stale)
     {
         await SignInAsync();

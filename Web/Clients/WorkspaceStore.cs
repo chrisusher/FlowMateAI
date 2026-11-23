@@ -136,12 +136,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                 using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
+                var receivedAt = DateTimeOffset.UtcNow;
                 response.EnsureSuccessStatusCode();
                 var remote = await ReadWorkspaceAsync(response, auth.Session.AccessToken);
 
                 if (IsLoadableWorkspace(remote))
                 {
-                    CalibrateClock(response);
+                    CalibrateClock(response, receivedAt);
                     Data = remote.Workspace;
                     _revision = remote.Revision;
                     await PersistRevisionAsync();
@@ -429,6 +430,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
+            var receivedAt = DateTimeOffset.UtcNow;
 
             if (response.StatusCode == HttpStatusCode.Unauthorized || auth.IsSessionExpired)
             {
@@ -453,7 +455,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
-            CalibrateClock(response);
+            CalibrateClock(response, receivedAt);
 
             _remoteLoadFailed = false;
 
@@ -1038,11 +1040,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private static bool IsLoadableWorkspace([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] WorkspaceResponse? response) =>
         response?.Workspace is not null && (response.Revision == "" || !string.IsNullOrWhiteSpace(response.Revision));
 
-    private void CalibrateClock(HttpResponseMessage response)
+    private void CalibrateClock(HttpResponseMessage response, DateTimeOffset? receivedAt = null)
     {
         if (response.Headers.Date is { } serverDate)
         {
-            _serverClockOffset = serverDate - DateTimeOffset.UtcNow;
+            _serverClockOffset = serverDate - (receivedAt ?? DateTimeOffset.UtcNow);
         }
     }
 
