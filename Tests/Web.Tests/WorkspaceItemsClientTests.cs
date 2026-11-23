@@ -98,6 +98,82 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task NavigationRefreshUpdatesCoachMessagesForTheNewActiveConversation()
+    {
+        await SignInAsync();
+        var snapshot = new WorkspaceSnapshot
+        {
+            FirstRunState = OnboardingState.Dismissed,
+            Conversations =
+            [
+                new ConversationRecord
+                {
+                    Id = "old",
+                    Messages =
+                    [
+                        new ChatMessageRecord
+                        {
+                            Role = ChatMessageRole.Assistant,
+                            Text = "Old message"
+                        }
+                    ]
+                }
+            ]
+        };
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Put)
+            {
+                var saved = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions, cancellationToken);
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(saved!.Workspace, "revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            object body = request.RequestUri!.AbsolutePath switch
+            {
+                "/api/v1/workspace/metadata" => WorkspaceMetadataResponse.Create(new WorkspaceResponse(snapshot, "revision")),
+                "/api/v1/workspace/timer" => snapshot.Timer,
+                "/api/v1/projects" => snapshot.Projects,
+                "/api/v1/tasks" => snapshot.Tasks,
+                "/api/v1/sessions" => snapshot.Sessions,
+                "/api/v1/conversations" => snapshot.Conversations,
+                _ => throw new InvalidOperationException("Unexpected request")
+            };
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(body, body.GetType(), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.InitialiseAsync();
+        Assert.That(Coach.ChatMessages.Single().Content, Is.EqualTo("Old message"));
+        snapshot.Conversations =
+        [
+            new ConversationRecord
+            {
+                Id = "new",
+                Messages =
+                [
+                    new ChatMessageRecord
+                    {
+                        Role = ChatMessageRole.Assistant,
+                        Text = "New message"
+                    }
+                ]
+            }
+        ];
+
+        await Store.RefreshForNavigationAsync();
+
+        Assert.That(Coach.ActiveConversation.Id, Is.EqualTo("new"));
+        Assert.That(Coach.ChatMessages.Single().Content, Is.EqualTo("New message"));
+    }
+
+    [Test]
     public async Task NavigationRefreshDoesNotOverwriteAnEditMadeWhileReadsAreInFlight()
     {
         await SignInAsync();
