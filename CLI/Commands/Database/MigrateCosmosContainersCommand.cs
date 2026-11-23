@@ -5,16 +5,26 @@ using Services.Repositories;
 
 namespace CLI.Commands.Database;
 
-internal static class MigrateWorkspaceCommand
+internal static class MigrateCosmosContainersCommand
 {
     public static Command Create()
     {
-        var command = new Command("migrate-workspace", "Copy one legacy workspace's collections into their new containers. Stop all workspace writers first.");
-        var userId = new Option<string>("--user-id") { Description = "Exact workspace owner ID.", Required = true };
-        var apply = new Option<bool>("--apply") { Description = "Copy records after preview; stop all workspace writers first." };
+        var command = new Command("migrate-cosmos-containers", "Copy one legacy workspace's collections into their new containers. Stop all workspace writers first.");
+        var userId = new Option<string>("--user-id")
+        {
+            Description = "Exact workspace owner ID.",
+            Required = true
+        };
+        var apply = new Option<bool>("--apply")
+        {
+            Description = "Copy records after preview; stop all workspace writers first."
+        };
         userId.Validators.Add(result =>
         {
-            if (string.IsNullOrWhiteSpace(result.GetValueOrDefault<string>())) result.AddError("--user-id must not be empty.");
+            if (string.IsNullOrWhiteSpace(result.GetValueOrDefault<string>()))
+            {
+                result.AddError("--user-id must not be empty.");
+            }
         });
         command.Options.Add(userId);
         command.Options.Add(apply);
@@ -29,9 +39,12 @@ internal static class MigrateWorkspaceCommand
         {
             using var host = Program.CreateHost();
             await host.StartAsync(cancellationToken);
+
             using var operationCancellation = Program.LinkCancellation(host, cancellationToken);
             await using var scope = host.Services.CreateAsyncScope();
+
             var repository = new WorkspaceMigrationRepository(scope.ServiceProvider.GetRequiredService<DatabaseContext>());
+            
             var result = await repository.MigrateAsync(userId, apply, operationCancellation.Token);
             Console.WriteLine($"{(apply ? "Verified" : "Preview:")} {result.Projects} projects, {result.Tasks} tasks, {result.Sessions} sessions and {result.Conversations} conversations. The source workspace was retained.");
 

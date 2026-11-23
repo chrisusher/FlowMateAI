@@ -16,7 +16,7 @@ public sealed class WorkspaceCollectionResetTests
 
         foreach (var user in new[] { "first", "second" })
         {
-            database.WorkspaceProjects.Add(new WorkspaceProjectDocument
+            database.Projects.Add(new WorkspaceProjectDocument
             {
                 Id = user + "-project",
                 UserId = user,
@@ -25,7 +25,7 @@ public sealed class WorkspaceCollectionResetTests
                     Id = user + "-project"
                 }
             });
-            database.WorkspaceTasks.Add(new WorkspaceTaskDocument
+            database.Tasks.Add(new WorkspaceTaskDocument
             {
                 Id = user + "-task",
                 UserId = user,
@@ -34,7 +34,7 @@ public sealed class WorkspaceCollectionResetTests
                     Id = user + "-task"
                 }
             });
-            database.WorkspaceSessions.Add(new WorkspaceSessionDocument
+            database.Sessions.Add(new WorkspaceSessionDocument
             {
                 Id = user + "-session",
                 UserId = user,
@@ -43,7 +43,7 @@ public sealed class WorkspaceCollectionResetTests
                     Id = user + "-session"
                 }
             });
-            database.WorkspaceConversations.Add(new WorkspaceConversationDocument
+            database.Conversations.Add(new WorkspaceConversationDocument
             {
                 Id = user + "-conversation",
                 UserId = user,
@@ -72,10 +72,10 @@ public sealed class WorkspaceCollectionResetTests
         Assert.That(await repository.DeleteWorkspaceSessionsAsync("first"), Is.Zero);
         Assert.That(await repository.DeleteWorkspaceConversationsAsync("first"), Is.Zero);
 
-        Assert.That((await database.WorkspaceProjects.SingleAsync()).UserId, Is.EqualTo("second"));
-        Assert.That((await database.WorkspaceTasks.SingleAsync()).UserId, Is.EqualTo("second"));
-        Assert.That((await database.WorkspaceSessions.SingleAsync()).UserId, Is.EqualTo("second"));
-        var conversation = await database.WorkspaceConversations.SingleAsync();
+        Assert.That((await database.Projects.SingleAsync()).UserId, Is.EqualTo("second"));
+        Assert.That((await database.Tasks.SingleAsync()).UserId, Is.EqualTo("second"));
+        Assert.That((await database.Sessions.SingleAsync()).UserId, Is.EqualTo("second"));
+        var conversation = await database.Conversations.SingleAsync();
         Assert.That(conversation.UserId, Is.EqualTo("second"));
         Assert.That(conversation.Conversation!.Messages.Single().Text, Is.EqualTo("Private message"));
     }

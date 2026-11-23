@@ -8,10 +8,10 @@ namespace Services.Tests.Repositories;
 [TestFixture]
 public sealed class WorkspaceContainerMappingTests
 {
-    [TestCase(typeof(WorkspaceProjectDocument), "WorkspaceProjects")]
-    [TestCase(typeof(WorkspaceTaskDocument), "WorkspaceTasks")]
-    [TestCase(typeof(WorkspaceSessionDocument), "WorkspaceSessions")]
-    [TestCase(typeof(WorkspaceConversationDocument), "WorkspaceConversations")]
+    [TestCase(typeof(WorkspaceProjectDocument), "Projects")]
+    [TestCase(typeof(WorkspaceTaskDocument), "Tasks")]
+    [TestCase(typeof(WorkspaceSessionDocument), "Sessions")]
+    [TestCase(typeof(WorkspaceConversationDocument), "Conversations")]
     public void WorkspaceItemsUseSeparateUserPartitionedContainers(Type documentType, string container)
     {
         using var database = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()

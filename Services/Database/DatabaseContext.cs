@@ -6,22 +6,25 @@ public class DatabaseContext : DbContext
 {
     public DbSet<BillingEntitlementDocument> BillingEntitlements => Set<BillingEntitlementDocument>();
 
+    public DbSet<WorkspaceConversationDocument> Conversations => Set<WorkspaceConversationDocument>();
+
     public DbSet<McpKeyDocument> McpKeys => Set<McpKeyDocument>();
 
     public DbSet<McpUsageDocument> McpUsage => Set<McpUsageDocument>();
 
+    public DbSet<WorkspaceProjectDocument> Projects => Set<WorkspaceProjectDocument>();
+
+    public DbSet<WorkspaceSessionDocument> Sessions => Set<WorkspaceSessionDocument>();
+
     public DbSet<StripeEventDocument> StripeEvents => Set<StripeEventDocument>();
+
+    public DbSet<WorkspaceTaskDocument> Tasks => Set<WorkspaceTaskDocument>();
 
     public DbSet<UserDocument> Users => Set<UserDocument>();
 
     public DbSet<WorkspaceDocument> Workspaces => Set<WorkspaceDocument>();
 
     public DbSet<WorkspaceRecordDocument> WorkspaceRecords => Set<WorkspaceRecordDocument>();
-
-    public DbSet<WorkspaceProjectDocument> WorkspaceProjects => Set<WorkspaceProjectDocument>();
-    public DbSet<WorkspaceTaskDocument> WorkspaceTasks => Set<WorkspaceTaskDocument>();
-    public DbSet<WorkspaceSessionDocument> WorkspaceSessions => Set<WorkspaceSessionDocument>();
-    public DbSet<WorkspaceConversationDocument> WorkspaceConversations => Set<WorkspaceConversationDocument>();
 
     public DatabaseContext()
     {
@@ -33,6 +36,8 @@ public class DatabaseContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+
         modelBuilder.Entity<BillingEntitlementDocument>(entity =>
         {
             entity.ToContainer("BillingEntitlements");
@@ -88,7 +93,6 @@ public class DatabaseContext : DbContext
             entity.Property(x => x.ETag).IsETagConcurrency();
         });
 
-        base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<WorkspaceDocument>(entity =>
         {
             entity.ToContainer("WorkspaceDocuments");
@@ -127,10 +131,10 @@ public class DatabaseContext : DbContext
             });
         });
 
-        ConfigureWorkspaceItem<WorkspaceProjectDocument>(modelBuilder, "WorkspaceProjects");
-        ConfigureWorkspaceItem<WorkspaceTaskDocument>(modelBuilder, "WorkspaceTasks");
-        ConfigureWorkspaceItem<WorkspaceSessionDocument>(modelBuilder, "WorkspaceSessions");
-        ConfigureWorkspaceItem<WorkspaceConversationDocument>(modelBuilder, "WorkspaceConversations");
+        ConfigureWorkspaceItem<WorkspaceProjectDocument>(modelBuilder, "Projects");
+        ConfigureWorkspaceItem<WorkspaceTaskDocument>(modelBuilder, "Tasks");
+        ConfigureWorkspaceItem<WorkspaceSessionDocument>(modelBuilder, "Sessions");
+        ConfigureWorkspaceItem<WorkspaceConversationDocument>(modelBuilder, "Conversations");
         modelBuilder.Entity<WorkspaceProjectDocument>().OwnsOne(x => x.Project);
         modelBuilder.Entity<WorkspaceTaskDocument>().OwnsOne(x => x.Task, task => task.Property(x => x.Priority).HasConversion<string>());
         modelBuilder.Entity<WorkspaceSessionDocument>().OwnsOne(x => x.Session);

@@ -29,16 +29,16 @@ public sealed class UserDataResetRepository(DatabaseContext database, IConfigura
     }
 
     public Task<int> DeleteWorkspaceProjectsAsync(string userId, CancellationToken cancellationToken = default) =>
-        DeleteWorkspaceItemsAsync(database.WorkspaceProjects, userId, cancellationToken);
+        DeleteWorkspaceItemsAsync(database.Projects, userId, cancellationToken);
 
     public Task<int> DeleteWorkspaceTasksAsync(string userId, CancellationToken cancellationToken = default) =>
-        DeleteWorkspaceItemsAsync(database.WorkspaceTasks, userId, cancellationToken);
+        DeleteWorkspaceItemsAsync(database.Tasks, userId, cancellationToken);
 
     public Task<int> DeleteWorkspaceSessionsAsync(string userId, CancellationToken cancellationToken = default) =>
-        DeleteWorkspaceItemsAsync(database.WorkspaceSessions, userId, cancellationToken);
+        DeleteWorkspaceItemsAsync(database.Sessions, userId, cancellationToken);
 
     public Task<int> DeleteWorkspaceConversationsAsync(string userId, CancellationToken cancellationToken = default) =>
-        DeleteWorkspaceItemsAsync(database.WorkspaceConversations, userId, cancellationToken);
+        DeleteWorkspaceItemsAsync(database.Conversations, userId, cancellationToken);
 
     private async Task<int> DeleteWorkspaceItemsAsync<T>(DbSet<T> items, string userId, CancellationToken cancellationToken)
         where T : class, IWorkspaceItemDocument

@@ -18,16 +18,16 @@ resource database 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15
 // Partition paths are case-sensitive and follow the Cosmos JSON property names.
 var containers = [
   { name: 'BillingEntitlements', partitionKey: '/UserId' }
+  { name: 'Conversations', partitionKey: '/UserId' }
   { name: 'McpKeys', partitionKey: '/UserId' }
   { name: 'McpUsage', partitionKey: '/userId', defaultTtl: 172800 }
+  { name: 'Projects', partitionKey: '/UserId' }
+  { name: 'Sessions', partitionKey: '/UserId' }
   { name: 'StripeEvents', partitionKey: '/PartitionId' }
+  { name: 'Tasks', partitionKey: '/UserId' }
   { name: 'Users', partitionKey: '/UserId' }
   { name: 'WorkspaceDocuments', partitionKey: '/UserId' }
   { name: 'WorkspaceRecords', partitionKey: '/UserId' }
-  { name: 'WorkspaceProjects', partitionKey: '/UserId' }
-  { name: 'WorkspaceTasks', partitionKey: '/UserId' }
-  { name: 'WorkspaceSessions', partitionKey: '/UserId' }
-  { name: 'WorkspaceConversations', partitionKey: '/UserId' }
 ]
 
 resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = [
