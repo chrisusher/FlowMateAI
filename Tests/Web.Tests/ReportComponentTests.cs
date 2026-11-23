@@ -23,8 +23,20 @@ public sealed class ReportComponentTests : WorkspaceComponentTest
         AddSession(25);
         AddSession(15);
         var cut = Render<SessionCountCard>();
-        Assert.That(Content(cut.Find("strong")), Is.EqualTo("2"));
+        Assert.That(Content(cut.Find("strong")), Is.EqualTo("2.0"));
         Assert.That(cut.Find("p").TextContent, Does.Contain("Pomodoros completed"));
+    }
+
+    [Test]
+    public void SessionCountCardDisplaysFractionsAfterSummingSegments()
+    {
+        var start = DateTimeOffset.UtcNow.AddMinutes(-10);
+        Store.RecordFocus(start, start.AddMinutes(5), PlannedTask.Id, Project.Id, 1500);
+        Store.RecordFocus(start.AddMinutes(5), start.AddMinutes(10), Store.Data.Tasks[1].Id, Project.Id, 1500);
+
+        var cut = Render<SessionCountCard>();
+
+        Assert.That(Content(cut.Find("strong")), Is.EqualTo("0.4"));
     }
 
     [Test]

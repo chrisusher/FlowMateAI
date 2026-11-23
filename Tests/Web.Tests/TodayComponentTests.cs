@@ -116,7 +116,7 @@ public sealed class TodayComponentTests : WorkspaceComponentTest
         await cut.InvokeAsync(Store.SaveAsync);
         cut.WaitForState(() => cut.FindAll(".focus-total strong").Any(element => Content(element).Contains("30m")));
         Assert.That(Content(cut.Find(".focus-total strong")), Does.Contain("30m"));
-        Assert.That(cut.FindAll(".mini-stat-row strong").Select(Content), Is.EqualTo(new[] { "1", "1", "1 days 🔥" }));
+        Assert.That(cut.FindAll(".mini-stat-row strong").Select(Content), Is.EqualTo(new[] { "1.0", "1", "1 days 🔥" }));
     }
 
     [Test]

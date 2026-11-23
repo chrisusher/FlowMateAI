@@ -69,6 +69,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(timer.CompletedIntervals, Is.Empty);
         Assert.That(Store.Data.Sessions.Single().TaskId, Is.EqualTo(PlannedTask.Id));
         Assert.That(Store.Data.Sessions.Single().FocusMinutes, Is.EqualTo(phase == TimerPhase.Focus ? 10 : 2));
+        Assert.That(FocusSessionRecord.TotalSessions(Store.Data.Sessions), Is.EqualTo(phase == TimerPhase.Focus ? 0.4 : 0.08).Within(0.001));
         Assert.That(timer.FocusSessionId, Is.Not.EqualTo("first-session"));
     }
 
@@ -103,6 +104,8 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(Store.Data.Sessions.Select(s => s.TaskId), Is.EquivalentTo(new[] { PlannedTask.Id, otherTask.Id }));
         Assert.That(Stats.TodayMinutes, Is.EqualTo(25));
         Assert.That(Stats.PeriodMinutes, Is.EqualTo(25));
+        Assert.That(Stats.TodaySessions, Is.EqualTo(1).Within(0.001));
+        Assert.That(Stats.PeriodSessions, Is.EqualTo(1).Within(0.001));
     }
 
     [Test]

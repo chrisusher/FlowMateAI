@@ -929,6 +929,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                         StartedAt = cursor,
                         EndedAt = segmentEnd,
                         FocusSeconds = seconds,
+                        PlannedSeconds = plannedSeconds,
                         FocusMinutes = (int)(seconds / 60),
                         TaskId = taskId,
                         ProjectId = projectId

@@ -140,6 +140,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         Assert.That(restored.Sessions, Has.Count.EqualTo(2));
         Assert.That(restored.Sessions.Select(session => session.ElapsedSeconds), Is.EqualTo(new[] { 30d, 30d }));
+        Assert.That(FocusSessionRecord.TotalSessions(restored.Sessions), Is.EqualTo(1d));
         Assert.That(FocusSessionRecord.TotalMinutes(restored.Sessions), Is.EqualTo(1));
         Assert.That(Stats.TodayMinutes, Is.EqualTo(1));
         Assert.That(Stats.ProjectTodayMinutes(Project.Id), Is.EqualTo(1));
@@ -181,6 +182,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         Assert.That(FocusSessionRecord.TotalMinutes(Store.Data.Sessions), Is.EqualTo(1));
         Assert.That(Store.Data.Sessions.Select(session => session.ElapsedSeconds), Is.EqualTo(new[] { 30d, 30d }));
+        Assert.That(FocusSessionRecord.TotalSessions(Store.Data.Sessions), Is.EqualTo(1d));
         Assert.That(Store.Data.Sessions.Last().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(midnight, zone), TimeSpan.Zero)));
     }
 
@@ -213,6 +215,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Idle));
         Assert.That(Store.Data.Timer.CompletedPomodoros, Is.EqualTo(4));
         Assert.That(Store.Data.Sessions.Sum(session => session.FocusMinutes), Is.EqualTo(25));
+        Assert.That(FocusSessionRecord.TotalSessions(Store.Data.Sessions), Is.EqualTo(1d));
         Assert.That(Store.Data.Timer.FocusSessionId, Is.Null);
     }
 
@@ -820,7 +823,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         await Coach.SendMessage(new() { Content = "Can you review my week?", UserId = "user" });
 
         var reply = Store.Data.Conversations[0].Messages.Last().Text;
-        Assert.That(reply, Does.Contain("17 focused minutes this week across 1 sessions"));
+        Assert.That(reply, Does.Contain("17 focused minutes this week across 1.0 sessions"));
         Assert.That(reply, Does.Not.Contain("29 focused minutes"));
     }
 
