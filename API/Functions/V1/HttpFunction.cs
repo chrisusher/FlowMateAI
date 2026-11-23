@@ -106,4 +106,42 @@ internal static class HttpFunction
 
         return response;
     }
+
+    internal static async Task<HttpResponseData> ListAsync<T>(HttpRequestData request, Auth0TokenValidator tokens, IUserService users, Func<string, CancellationToken, Task<IReadOnlyList<T>>> list, CancellationToken cancellationToken)
+    {
+        var (userId, _) = await UserAsync(request, tokens, users, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid FlowMate access token is required.", cancellationToken);
+        }
+
+        var records = await list(userId, cancellationToken);
+        var response = request.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(records, cancellationToken);
+
+        return response;
+    }
+
+    internal static async Task<HttpResponseData> GetAsync<T>(HttpRequestData request, Auth0TokenValidator tokens, IUserService users, string id, Func<string, string, CancellationToken, Task<T?>> get, CancellationToken cancellationToken) where T : class
+    {
+        var (userId, _) = await UserAsync(request, tokens, users, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return await ErrorAsync(request, HttpStatusCode.Unauthorized, "unauthorized", "A valid FlowMate access token is required.", cancellationToken);
+        }
+
+        var record = await get(userId, id, cancellationToken);
+
+        if (record is null)
+        {
+            return await ErrorAsync(request, HttpStatusCode.NotFound, "not_found", "The record was not found.", cancellationToken);
+        }
+
+        var response = request.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(record, cancellationToken);
+
+        return response;
+    }
 }

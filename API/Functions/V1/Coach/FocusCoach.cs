@@ -6,7 +6,6 @@ using Services.Workspaces;
 using Services.Users;
 using Shared.Models.Coach;
 using Services.ApiRequests;
-using Shared.Enums;
 
 namespace API.Functions.V1.Coach;
 

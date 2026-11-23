@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Services.Repositories;
 
-public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRepository
+public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceCollectionSynchronizer synchronizer) : IWorkspaceRepository
 {
     public async Task<WorkspaceDocument?> GetAsync(string ownerId, CancellationToken cancellationToken = default)
     {
@@ -50,6 +50,8 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
         {
             throw new WorkspaceSaveConflictException(exception);
         }
+
+        await synchronizer.SynchroniseAsync(ownerId, cancellationToken);
 
         return document;
     }

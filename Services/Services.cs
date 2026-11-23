@@ -124,7 +124,9 @@ public static class Services
         services.AddScoped<IAccountDeletionMarkerRepository, AccountDeletionMarkerRepository>();
         services.
         AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
+        services.AddScoped<WorkspaceCollectionSynchronizer>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+        services.AddScoped<IWorkspaceItemsRepository, WorkspaceItemsRepository>();
         #endregion
 
         #region Services

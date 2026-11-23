@@ -1,10 +1,8 @@
 using API.Security;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
 using Services.Users;
 
-namespace API.Functions.V1.Billing;
+namespace API.Functions.V1.Billing.Prices;
 
 public sealed class BillingPrices(Auth0TokenValidator tokens, IBillingService billing, IUserService users)
 {

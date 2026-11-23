@@ -1,8 +1,6 @@
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Services.Billing;
 
-namespace API.Functions.V1.Webhooks;
+namespace API.Functions.V1.Webhooks.Stripe;
 
 public sealed class StripeWebhook(IBillingService billing)
 {

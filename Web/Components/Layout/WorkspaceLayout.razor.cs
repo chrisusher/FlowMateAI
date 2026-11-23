@@ -83,11 +83,16 @@ public partial class WorkspaceLayout
     {
         if (!_disposed)
         {
-            _ = InvokeAsync(() =>
+            _ = InvokeAsync(async () =>
             {
                 if (!_disposed)
                 {
                     StateHasChanged();
+
+                    if (_ready && CurrentView is "projects" or "tasks")
+                    {
+                        await Store.RefreshForNavigationAsync();
+                    }
                 }
             });
         }

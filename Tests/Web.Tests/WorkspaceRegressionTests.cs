@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Json;
 using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Microsoft.JSInterop;
@@ -16,6 +15,25 @@ namespace Web.Tests;
 
 public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 {
+    private static HttpResponseMessage WorkspaceRead(HttpRequestMessage request, WorkspaceResponse remote)
+    {
+        object body = request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/workspace/metadata" => WorkspaceMetadataResponse.Create(remote),
+            "/api/v1/workspace/timer" => remote.Workspace.Timer,
+            "/api/v1/projects" => remote.Workspace.Projects,
+            "/api/v1/tasks" => remote.Workspace.Tasks,
+            "/api/v1/sessions" => remote.Workspace.Sessions,
+            "/api/v1/conversations" => remote.Workspace.Conversations,
+            _ => throw new InvalidOperationException("Unexpected workspace read")
+        };
+
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(body, body.GetType(), options: SharedCommon.JsonOptions)
+        };
+    }
+
     [Test]
     public async Task NewAccountLoadsAnUnversionedWorkspaceAndSavesItsFirstRevision()
     {
@@ -25,10 +43,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         {
             if (request.Method == HttpMethod.Get)
             {
-                return new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = JsonContent.Create(new WorkspaceResponse(new(), ""), options: SharedCommon.JsonOptions)
-                };
+                return WorkspaceRead(request, new WorkspaceResponse(new(), ""));
             }
 
             firstSave = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
@@ -55,16 +70,13 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         await Store.InitialiseAsync();
         Assert.That(Store.RequiresRemoteReload, Is.True);
 
-        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = JsonContent.Create(new WorkspaceResponse(new(), ""), options: SharedCommon.JsonOptions)
-        });
+        Api.Respond = (request, _) => Task.FromResult(WorkspaceRead(request, new WorkspaceResponse(new(), "")));
 
         await Store.RetrySaveAsync();
 
         Assert.That(Store.RequiresRemoteReload, Is.False);
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
-        Assert.That(Api.Paths.Count, Is.EqualTo(2));
+        Assert.That(Api.Paths.Count, Is.EqualTo(7));
     }
 
     [TestCase("{}")]
@@ -232,10 +244,12 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 workspace = (await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions))!.Workspace;
             }
 
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = JsonContent.Create(new WorkspaceResponse(workspace, "server-revision"), options: SharedCommon.JsonOptions)
-            };
+            var response = request.Method == HttpMethod.Get
+                ? WorkspaceRead(request, new WorkspaceResponse(workspace, "server-revision"))
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(workspace, "server-revision"), options: SharedCommon.JsonOptions)
+                };
             response.Headers.Date = serverNow;
 
             return response;
@@ -266,20 +280,19 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 DurationSeconds = 1200
             }
         };
-        Api.Respond = (request, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = JsonContent.Create(new WorkspaceResponse(idleWorkspace, "revision-1"), options: SharedCommon.JsonOptions)
-        });
+        Api.Respond = (request, _) => Task.FromResult(request.Method == HttpMethod.Get
+            ? WorkspaceRead(request, new WorkspaceResponse(idleWorkspace, "revision-1"))
+            : new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(idleWorkspace, "revision-1"), options: SharedCommon.JsonOptions)
+            });
         await Store.InitialiseAsync();
         Api.Respond = (request, _) => Task.FromResult(request.Method == HttpMethod.Put
             ? new HttpResponseMessage(HttpStatusCode.Conflict)
             {
                 Content = JsonContent.Create(new ApiError("timer_conflict", "A timer is active on another device."), options: SharedCommon.JsonOptions)
             }
-            : new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = JsonContent.Create(new WorkspaceResponse(remoteTimer, "revision-2"), options: SharedCommon.JsonOptions)
-            });
+            : WorkspaceRead(request, new WorkspaceResponse(remoteTimer, "revision-2")));
 
         await Timer.StartFocus();
 
@@ -376,10 +389,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
             {
                 Content = JsonContent.Create(new ApiError("revision_conflict", "The workspace changed."), options: SharedCommon.JsonOptions)
             }
-            : new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = JsonContent.Create(new WorkspaceResponse(latest, "latest-revision"), options: SharedCommon.JsonOptions)
-            });
+            : WorkspaceRead(request, new WorkspaceResponse(latest, "latest-revision")));
         await cut.InvokeAsync(Store.SaveAsync);
         cut.WaitForState(() => Store.HasConflict);
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Alex Morgan"));
@@ -420,10 +430,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 };
             }
 
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = JsonContent.Create(new WorkspaceResponse(remote, "latest-revision"), options: SharedCommon.JsonOptions)
-            };
+            return WorkspaceRead(request, new WorkspaceResponse(remote, "latest-revision"));
         };
 
         await Store.SaveAsync();
@@ -545,7 +552,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         await Store.InitialiseAsync();
 
-        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace/metadata" }));
         Assert.That(Store.Data.DisplayName, Is.EqualTo("Cached workspace"));
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Failed));
         Assert.That(Store.RequiresRemoteReload, Is.True);
@@ -553,7 +560,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         Store.Data.DisplayName = "Local edit after read failure";
         await Store.SaveAsync();
 
-        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace" }));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/workspace/metadata" }));
         Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Failed));
 
         var latest = new WorkspaceSnapshot
@@ -566,10 +573,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         {
             if (request.Method == HttpMethod.Get)
             {
-                return new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = JsonContent.Create(new WorkspaceResponse(latest, "latest-revision"), options: SharedCommon.JsonOptions)
-                };
+                return WorkspaceRead(request, new WorkspaceResponse(latest, "latest-revision"));
             }
 
             localRetry = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
@@ -701,10 +705,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
         {
             if (request.Method == HttpMethod.Get)
             {
-                return new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = JsonContent.Create(new WorkspaceResponse(otherWorkspace, "account-two-revision"), options: SharedCommon.JsonOptions)
-                };
+                return WorkspaceRead(request, new WorkspaceResponse(otherWorkspace, "account-two-revision"));
             }
 
             sent = await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions);
@@ -714,7 +715,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 Content = JsonContent.Create(new WorkspaceResponse(sent!.Workspace, "account-two-saved-revision"), options: SharedCommon.JsonOptions)
             };
         };
-        var accountTwoStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth);
+        var accountTwoStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth, Services.GetRequiredService<WorkspaceItemsClient>());
 
         await accountTwoStore.InitialiseAsync();
 
@@ -781,7 +782,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 Content = JsonContent.Create(new WorkspaceResponse(restored!.Workspace, "reconnected-revision"), options: SharedCommon.JsonOptions)
             };
         };
-        var reloadedStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth);
+        var reloadedStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth, Services.GetRequiredService<WorkspaceItemsClient>());
 
         await reloadedStore.InitialiseAsync();
 

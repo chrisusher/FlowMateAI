@@ -1,10 +1,6 @@
 using API.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Services;
@@ -35,6 +31,7 @@ var host = new HostBuilder()
                 }
 
                 httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, If-Match";
+                httpContext.Response.Headers["Access-Control-Expose-Headers"] = "X-Workspace-Collections";
                 httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
                 httpContext.Response.Headers["Vary"] = "Origin";
 
