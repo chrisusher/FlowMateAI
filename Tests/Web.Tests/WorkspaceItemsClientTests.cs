@@ -43,6 +43,119 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
         _ = Assert.ThrowsAsync<HttpRequestException>(async () => await client.GetTaskAsync("missing"));
     }
 
+    [Test]
+    public async Task WorkspaceCollectionRequestsCanRunConcurrently()
+    {
+        await SignInAsync();
+        var remote = new WorkspaceResponse(new WorkspaceSnapshot
+        {
+            FirstRunState = OnboardingState.Dismissed
+        }, "revision");
+
+        var allStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Put)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(remote, options: SharedCommon.JsonOptions)
+                };
+            }
+
+            if (request.RequestUri!.AbsolutePath == "/api/v1/workspace/metadata")
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(WorkspaceMetadataResponse.Create(remote), options: SharedCommon.JsonOptions)
+                };
+                response.Headers.Add("X-Workspace-Collections", "separate");
+
+                return response;
+            }
+
+            if (Interlocked.Increment(ref started) == 5)
+            {
+                allStarted.TrySetResult();
+            }
+
+            await allStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = request.RequestUri.AbsolutePath.EndsWith("/timer", StringComparison.Ordinal)
+                    ? JsonContent.Create(remote.Workspace.Timer, options: SharedCommon.JsonOptions)
+                    : JsonContent.Create(Array.Empty<object>(), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.InitialiseAsync();
+
+        Assert.That(started, Is.EqualTo(5));
+        Assert.That(Store.RequiresRemoteReload, Is.False);
+    }
+
+    [Test]
+    public async Task NavigationRefreshDoesNotOverwriteAnEditMadeWhileReadsAreInFlight()
+    {
+        await SignInAsync();
+        var snapshot = new WorkspaceSnapshot
+        {
+            DisplayName = "Server",
+            FirstRunState = OnboardingState.Dismissed
+        };
+        var remote = new WorkspaceResponse(snapshot, "revision");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var delay = false;
+        
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Put)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(remote, options: SharedCommon.JsonOptions)
+                };
+            }
+
+            var path = request.RequestUri!.AbsolutePath;
+
+            if (delay && path == "/api/v1/projects")
+            {
+                entered.TrySetResult();
+                await release.Task.WaitAsync(cancellationToken);
+            }
+
+            object body = path switch
+            {
+                "/api/v1/workspace/metadata" => WorkspaceMetadataResponse.Create(remote),
+                "/api/v1/workspace/timer" => snapshot.Timer,
+                "/api/v1/projects" => snapshot.Projects,
+                "/api/v1/tasks" => snapshot.Tasks,
+                "/api/v1/sessions" => snapshot.Sessions,
+                "/api/v1/conversations" => snapshot.Conversations,
+                _ => throw new InvalidOperationException("Unexpected request")
+            };
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(body, body.GetType(), options: SharedCommon.JsonOptions)
+            };
+        };
+        await Store.InitialiseAsync();
+        delay = true;
+        var refresh = Store.RefreshForNavigationAsync();
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Store.Data.DisplayName = "Local edit";
+        release.TrySetResult();
+        await refresh;
+
+        Assert.That(Store.Data.DisplayName, Is.EqualTo("Local edit"));
+    }
+
     [TestCase(false)]
     [TestCase(true)]
     public async Task SlowCollectionReadsDoNotMakeTheServerClockLag(bool retry)
@@ -80,11 +193,11 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
                 };
             }
 
-            if (request.RequestUri!.AbsolutePath == "/api/v1/workspace")
+            if (request.RequestUri!.AbsolutePath == "/api/v1/workspace/metadata")
             {
                 var response = new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = JsonContent.Create(WorkspaceCollectionManifest.Create(remote), options: SharedCommon.JsonOptions)
+                    Content = JsonContent.Create(WorkspaceMetadataResponse.Create(remote), options: SharedCommon.JsonOptions)
                 };
                 response.Headers.Add("X-Workspace-Collections", "separate");
                 response.Headers.Date = serverTime;
@@ -100,7 +213,9 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
 
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = JsonContent.Create(Array.Empty<object>(), options: SharedCommon.JsonOptions)
+                Content = request.RequestUri.AbsolutePath.EndsWith("/timer", StringComparison.Ordinal)
+                    ? JsonContent.Create(snapshot.Timer, options: SharedCommon.JsonOptions)
+                    : JsonContent.Create(Array.Empty<object>(), options: SharedCommon.JsonOptions)
             };
         };
 
@@ -120,7 +235,7 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
 
     [TestCase(false)]
     [TestCase(true)]
-    public async Task WorkspaceLoadUsesMatchingCollectionsAndFallsBackWhenTheyAreStale(bool stale)
+    public async Task WorkspaceLoadPreservesLocalDataWhenACollectionDoesNotMatch(bool stale)
     {
         await SignInAsync();
         var snapshot = new WorkspaceSnapshot
@@ -144,7 +259,6 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
             ]
         };
         var remote = new WorkspaceResponse(snapshot, "revision");
-        var fallbackRequested = false;
         Api.Respond = (request, _) =>
         {
             if (request.Method == HttpMethod.Put)
@@ -157,8 +271,8 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
 
             object body = request.RequestUri!.AbsolutePath switch
             {
-                "/api/v1/workspace" when request.RequestUri.Query.Length != 0 => WorkspaceCollectionManifest.Create(remote),
-                "/api/v1/workspace" => Fallback(),
+                "/api/v1/workspace/metadata" => WorkspaceMetadataResponse.Create(remote),
+                "/api/v1/workspace/timer" => snapshot.Timer,
                 "/api/v1/projects" => stale ? Array.Empty<ProjectRecord>() : snapshot.Projects,
                 "/api/v1/tasks" => snapshot.Tasks,
                 "/api/v1/sessions" => snapshot.Sessions,
@@ -166,96 +280,17 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
                 _ => throw new InvalidOperationException("Unexpected request")
             };
 
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = JsonContent.Create(body, body.GetType(), options: SharedCommon.JsonOptions)
-            };
-
-            if (request.RequestUri.AbsolutePath == "/api/v1/workspace" && request.RequestUri.Query.Length != 0)
-            {
-                response.Headers.Add("X-Workspace-Collections", "separate");
-            }
-
-            return Task.FromResult(response);
+            });
         };
-
-        WorkspaceResponse Fallback()
-        {
-            fallbackRequested = true;
-
-            return remote;
-        }
 
         await Store.InitialiseAsync();
 
-        Assert.That(Store.Data.Projects.Single().Name, Is.EqualTo("Current"));
-        Assert.That(Store.Data.Tasks.Single().Title, Is.EqualTo("Current"));
-        Assert.That(fallbackRequested, Is.EqualTo(stale));
+        Assert.That(Store.RequiresRemoteReload, Is.EqualTo(stale));
+        Assert.That(Store.Data.Projects.Single().Name, Is.EqualTo(stale ? "Personal" : "Current"));
         Assert.That(Api.Paths, Does.Contain("/api/v1/conversations"));
-    }
-
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task IncompleteManifestOrUnavailableCollectionFallsBackToTheFullWorkspace(bool incompleteManifest)
-    {
-        await SignInAsync();
-        var snapshot = new WorkspaceSnapshot
-        {
-            FirstRunState = OnboardingState.Dismissed,
-            Projects =
-            [
-                new ProjectRecord
-                {
-                    Id = "project",
-                    Name = "Preserved"
-                }
-            ]
-        };
-        var remote = new WorkspaceResponse(snapshot, "revision");
-        var fallbackRequested = false;
-        Api.Respond = (request, _) =>
-        {
-            if (request.Method == HttpMethod.Put)
-            {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = JsonContent.Create(remote, options: SharedCommon.JsonOptions)
-                });
-            }
-
-            if (request.RequestUri!.AbsolutePath != "/api/v1/workspace")
-            {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-            }
-
-            var isManifest = request.RequestUri.Query.Length != 0;
-
-            object body = isManifest
-                ? incompleteManifest ? new
-                {
-                    workspace = new WorkspaceSnapshot(),
-                    revision = "revision"
-                } : WorkspaceCollectionManifest.Create(remote)
-                : remote;
-
-            fallbackRequested |= !isManifest;
-
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = JsonContent.Create(body, body.GetType(), options: SharedCommon.JsonOptions)
-            };
-
-            if (isManifest)
-            {
-                response.Headers.Add("X-Workspace-Collections", "separate");
-            }
-
-            return Task.FromResult(response);
-        };
-
-        await Store.InitialiseAsync();
-
-        Assert.That(fallbackRequested, Is.True);
-        Assert.That(Store.Data.Projects.Single().Name, Is.EqualTo("Preserved"));
+        Assert.That(Api.Paths.Count(path => path == "/api/v1/workspace"), Is.EqualTo(stale ? 0 : 1)); // PUT only
     }
 }

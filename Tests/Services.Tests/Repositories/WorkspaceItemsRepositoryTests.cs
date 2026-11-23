@@ -23,6 +23,48 @@ public sealed class WorkspaceItemsRepositoryTests
         set.AsNoTracking().Where(item => item.UserId == "user-1").OrderBy(item => item.Position).ToQueryString();
 
     [Test]
+    public async Task ListReadsLegacyAndStaleCollectionsFromTheAuthoritativeWorkspace()
+    {
+        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var database = new DatabaseContext(options);
+
+        database.Workspaces.Add(new WorkspaceDocument
+        {
+            UserId = "user-1",
+            Workspace = new WorkspaceSnapshot
+            {
+                Projects =
+                [
+                    new ProjectRecord
+                    {
+                        Id = "project",
+                        Name = "Current"
+                    }
+                ]
+            }
+        });
+        await database.SaveChangesAsync();
+        var reader = new WorkspaceItemsRepository(database);
+
+        Assert.That((await reader.ListProjectsAsync("user-1")).Single().Name, Is.EqualTo("Current"));
+        
+        database.Projects.Add(new WorkspaceProjectDocument
+        {
+            UserId = "user-1",
+            Id = "project",
+            Project = new ProjectRecord
+            {
+                Id = "project",
+                Name = "Stale"
+            }
+        });
+        await database.SaveChangesAsync();
+
+        Assert.That((await reader.ListProjectsAsync("user-1")).Single().Name, Is.EqualTo("Current"));
+        Assert.That(await reader.ListProjectsAsync("other"), Is.Empty);
+    }
+
+    [Test]
     public async Task SaveSynchronisesCollectionsAndReadsOnlyTheOwnersRecords()
     {
         var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;

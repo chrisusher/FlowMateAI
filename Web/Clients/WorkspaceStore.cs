@@ -133,7 +133,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
+                using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                 using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
                 var receivedAt = DateTimeOffset.UtcNow;
@@ -158,12 +158,12 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     SetSyncState(WorkspaceSyncState.Failed, "The server returned an incomplete workspace. Your local copy is safe; retry loading the server workspace.");
                 }
             }
-            catch (HttpRequestException)
+            catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
             {
                 _remoteLoadFailed = true;
                 SetSyncState(WorkspaceSyncState.Offline, "The latest workspace could not be loaded. Your local copy is safe; reconnect and retry.");
             }
-            catch (JsonException)
+            catch (Exception exception) when (exception is JsonException or InvalidDataException)
             {
                 _remoteLoadFailed = true;
                 SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable workspace. Your local draft is still available; retry loading the server workspace.");
@@ -361,7 +361,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             SetSyncState(WorkspaceSyncState.Offline, "The save was interrupted. Your local draft is safe; reconnect and retry.");
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidDataException)
         {
             SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable save response. Your local draft is safe; retry the save.");
         }
@@ -375,6 +375,60 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         }
 
         Changed?.Invoke();
+    }
+
+    public async Task RefreshForNavigationAsync()
+    {
+        if (_clearedForDeletion || _invalidPendingDraft ||
+            !auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken) ||
+            !string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
+            var before = JsonSerializer.Serialize(Data, SharedCommon.JsonOptions);
+            var accessToken = auth.Session.AccessToken;
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
+
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
+            
+            var receivedAt = DateTimeOffset.UtcNow;
+            response.EnsureSuccessStatusCode();
+            var remote = await ReadWorkspaceAsync(response, accessToken);
+
+            if (!IsLoadableWorkspace(remote) || _clearedForDeletion || _pendingSync || _remoteConflict is not null || _remoteLoadFailed ||
+                !string.Equals(before, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            CalibrateClock(response, receivedAt);
+            Data = remote.Workspace;
+            Data.ClientId = ClientId;
+            _revision = remote.Revision;
+            await PersistRevisionAsync();
+            Changed?.Invoke();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidDataException or OperationCanceledException or JSException)
+        {
+            // Keep the last complete local snapshot when a background refresh fails.
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     public async Task RetrySaveAsync()
@@ -427,7 +481,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
             var receivedAt = DateTimeOffset.UtcNow;
@@ -482,7 +536,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             SetSyncState(WorkspaceSyncState.Offline, "Loading the latest workspace was interrupted. Your local copy is safe; reconnect and retry.");
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidDataException)
         {
             SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable workspace. Your local draft is still available; retry loading.");
         }
@@ -609,7 +663,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             return;
         }
 
-        using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
+        using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
         refresh.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var latest = await auth.SendAsync(http, refresh, requiresAuthentication: true);
 
@@ -975,64 +1029,60 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             return null;
         }
 
-        var json = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(json);
+        var manifest = await response.Content.ReadFromJsonAsync<WorkspaceMetadataResponse>(SharedCommon.JsonOptions);
 
-        var hasManifestFields = document.RootElement.ValueKind == JsonValueKind.Object &&
-            document.RootElement.EnumerateObject().Any(property =>
-                string.Equals(property.Name, "projectsHash", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(property.Name, "tasksHash", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(property.Name, "sessionsHash", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(property.Name, "conversationsHash", StringComparison.OrdinalIgnoreCase));
-
-        if (!hasManifestFields && (!response.Headers.TryGetValues("X-Workspace-Collections", out var modes) || !modes.Contains("separate", StringComparer.Ordinal)))
-        {
-            return JsonSerializer.Deserialize<WorkspaceResponse>(json, SharedCommon.JsonOptions);
-        }
-
-        try
-        {
-            var manifest = JsonSerializer.Deserialize<WorkspaceCollectionManifest>(json, SharedCommon.JsonOptions);
-            var projects = await items.ListProjectsAsync();
-            var tasks = await items.ListTasksAsync();
-            var sessions = await items.ListSessionsAsync();
-            var conversations = await items.ListConversationsAsync();
-
-            if (!string.Equals(accountId, auth.Session.Sub, StringComparison.Ordinal))
-            {
-                return null;
-            }
-
-            if (manifest?.Workspace is not null &&
-                WorkspaceCollectionManifest.Hash(projects) == manifest.ProjectsHash &&
-                WorkspaceCollectionManifest.Hash(tasks) == manifest.TasksHash &&
-                WorkspaceCollectionManifest.Hash(sessions) == manifest.SessionsHash &&
-                WorkspaceCollectionManifest.Hash(conversations) == manifest.ConversationsHash)
-            {
-                manifest.Workspace.Projects = projects;
-                manifest.Workspace.Tasks = tasks;
-                manifest.Workspace.Sessions = sessions;
-                manifest.Workspace.Conversations = conversations;
-
-                return new WorkspaceResponse(manifest.Workspace, manifest.Revision);
-            }
-        }
-        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidDataException or OperationCanceledException)
-        {
-            // Projections may be unavailable or not yet migrated. Use the authoritative snapshot.
-        }
-
-        using var fallback = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
-        fallback.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var latest = await auth.SendAsync(http, fallback, requiresAuthentication: true);
-        latest.EnsureSuccessStatusCode();
-
-        if (!string.Equals(accountId, auth.Session.Sub, StringComparison.Ordinal))
+        if (manifest is null || manifest.Revision is null ||
+            (manifest.Revision.Length != 0 && string.IsNullOrWhiteSpace(manifest.Revision)) ||
+            string.IsNullOrWhiteSpace(manifest.ProjectsHash) || string.IsNullOrWhiteSpace(manifest.TasksHash) ||
+            string.IsNullOrWhiteSpace(manifest.SessionsHash) || string.IsNullOrWhiteSpace(manifest.ConversationsHash) ||
+            string.IsNullOrWhiteSpace(manifest.TimerHash))
         {
             return null;
         }
 
-        return await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+        var projectsRequest = items.ListProjectsAsync();
+        var tasksRequest = items.ListTasksAsync();
+        var sessionsRequest = items.ListSessionsAsync();
+        var conversationsRequest = items.ListConversationsAsync();
+        var timerRequest = items.GetTimerAsync();
+        await System.Threading.Tasks.Task.WhenAll(projectsRequest, tasksRequest, sessionsRequest, conversationsRequest, timerRequest);
+        var projects = await projectsRequest;
+        var tasks = await tasksRequest;
+        var sessions = await sessionsRequest;
+        var conversations = await conversationsRequest;
+        var timer = await timerRequest;
+
+        if (!string.Equals(accountId, auth.Session.Sub, StringComparison.Ordinal) ||
+            !string.Equals(accessToken, auth.Session.AccessToken, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (WorkspaceCollectionManifest.Hash(projects) != manifest.ProjectsHash ||
+            WorkspaceCollectionManifest.Hash(tasks) != manifest.TasksHash ||
+            WorkspaceCollectionManifest.Hash(sessions) != manifest.SessionsHash ||
+            WorkspaceCollectionManifest.Hash(conversations) != manifest.ConversationsHash ||
+            timer is null || WorkspaceCollectionManifest.Hash(new[] { timer }) != manifest.TimerHash)
+        {
+            return null;
+        }
+
+        var workspace = new WorkspaceSnapshot
+        {
+            DisplayName = manifest.DisplayName,
+            TimeZone = manifest.TimeZone,
+            Plan = manifest.Plan,
+            ClientId = manifest.ClientId,
+            Muted = manifest.Muted,
+            FirstRunState = manifest.FirstRunState,
+            Projects = projects,
+            Tasks = tasks,
+            Sessions = sessions,
+            Conversations = conversations,
+            Timer = timer
+        };
+
+        return new WorkspaceResponse(workspace, manifest.Revision);
     }
 
     // GET returns an empty revision when this account has not saved a workspace yet.

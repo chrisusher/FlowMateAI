@@ -15,6 +15,8 @@ public sealed class WorkspaceItemRoutesTests
     [TestCase("GetSession", "v1/sessions/{id}")]
     [TestCase("ListConversations", "v1/conversations")]
     [TestCase("GetConversation", "v1/conversations/{id}")]
+    [TestCase("GetWorkspaceMetadata", "v1/workspace/metadata")]
+    [TestCase("GetWorkspaceTimer", "v1/workspace/timer")]
     public void RoutesExposeGetFunctions(string functionName, string route)
     {
         var method = typeof(ListProjects).Assembly.GetTypes().Single(type => type.Name == functionName).GetMethod("Run")!;

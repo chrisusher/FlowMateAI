@@ -9,6 +9,7 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
     public Task<List<TaskRecord>> ListTasksAsync(CancellationToken cancellationToken = default) => ListAsync<TaskRecord>("tasks", cancellationToken);
     public Task<List<FocusSessionRecord>> ListSessionsAsync(CancellationToken cancellationToken = default) => ListAsync<FocusSessionRecord>("sessions", cancellationToken);
     public Task<List<ConversationRecord>> ListConversationsAsync(CancellationToken cancellationToken = default) => ListAsync<ConversationRecord>("conversations", cancellationToken);
+    public Task<TimerSnapshot?> GetTimerAsync(CancellationToken cancellationToken = default) => GetAsync<TimerSnapshot>("workspace", "timer", cancellationToken);
     public Task<ProjectRecord?> GetProjectAsync(string id, CancellationToken cancellationToken = default) => GetAsync<ProjectRecord>("projects", id, cancellationToken);
     public Task<TaskRecord?> GetTaskAsync(string id, CancellationToken cancellationToken = default) => GetAsync<TaskRecord>("tasks", id, cancellationToken);
     public Task<FocusSessionRecord?> GetSessionAsync(string id, CancellationToken cancellationToken = default) => GetAsync<FocusSessionRecord>("sessions", id, cancellationToken);
