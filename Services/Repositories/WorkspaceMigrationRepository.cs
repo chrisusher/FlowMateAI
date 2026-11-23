@@ -9,24 +9,29 @@ namespace Services.Repositories;
 /// <summary>Copies a legacy workspace into its collection containers without deleting its source.</summary>
 public sealed class WorkspaceMigrationRepository(DatabaseContext database)
 {
-    public async Task<WorkspaceMigrationResult> MigrateAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<WorkspaceMigrationResult> MigrateAsync(string userId, bool apply = false, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         var source = await database.Workspaces.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId && x.Id == "workspace", cancellationToken)
             ?? throw new InvalidOperationException("The workspace was not found.");
-        var snapshot = JsonSerializer.Deserialize<WorkspaceSnapshot>(source.Payload, SharedCommon.JsonOptions)
-            ?? throw new InvalidOperationException("The workspace payload is invalid.");
+        var snapshot = WorkspaceStorageFormat.Read(source);
+        var sourceSnapshot = JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions);
 
-        var projects = Build<WorkspaceProjectDocument, ProjectRecord>(userId, snapshot.Projects, item => item.Id);
-        var tasks = Build<WorkspaceTaskDocument, TaskRecord>(userId, snapshot.Tasks, item => item.Id);
-        var sessions = Build<WorkspaceSessionDocument, FocusSessionRecord>(userId, snapshot.Sessions, item => item.Id);
-        var conversations = Build<WorkspaceConversationDocument, ConversationRecord>(userId, snapshot.Conversations, item => item.Id);
+        var projects = Build(userId, snapshot.Projects, item => item.Id, item => new WorkspaceProjectDocument { Project = item });
+        var tasks = Build(userId, snapshot.Tasks, item => item.Id, item => new WorkspaceTaskDocument { Task = item });
+        var sessions = Build(userId, snapshot.Sessions, item => item.Id, item => new WorkspaceSessionDocument { Session = item });
+        var conversations = Build(userId, snapshot.Conversations, item => item.Id, item => new WorkspaceConversationDocument { Conversation = item });
 
         // Check every destination before writing anything. Existing identical records are safe to resume.
         await CheckAsync(database.WorkspaceProjects, userId, projects, cancellationToken);
         await CheckAsync(database.WorkspaceTasks, userId, tasks, cancellationToken);
         await CheckAsync(database.WorkspaceSessions, userId, sessions, cancellationToken);
         await CheckAsync(database.WorkspaceConversations, userId, conversations, cancellationToken);
+
+        if (!apply)
+        {
+            return new(projects.Count, tasks.Count, sessions.Count, conversations.Count);
+        }
 
         await CopyAsync(database.WorkspaceProjects, userId, projects, cancellationToken);
         await CopyAsync(database.WorkspaceTasks, userId, tasks, cancellationToken);
@@ -39,7 +44,7 @@ public sealed class WorkspaceMigrationRepository(DatabaseContext database)
         await VerifyAsync(database.WorkspaceConversations, userId, conversations, cancellationToken);
         var current = await database.Workspaces.AsNoTracking().SingleAsync(x => x.UserId == userId && x.Id == "workspace", cancellationToken);
 
-        if (current.Payload != source.Payload || current.ETag != source.ETag)
+        if (JsonSerializer.Serialize(WorkspaceStorageFormat.Read(current), SharedCommon.JsonOptions) != sourceSnapshot || current.ETag != source.ETag)
         {
             throw new InvalidOperationException("The source workspace changed during migration. Stop all writers before retrying.");
         }
@@ -47,8 +52,8 @@ public sealed class WorkspaceMigrationRepository(DatabaseContext database)
         return new(projects.Count, tasks.Count, sessions.Count, conversations.Count);
     }
 
-    private static List<TDocument> Build<TDocument, TRecord>(string userId, List<TRecord> records, Func<TRecord, string> id)
-        where TDocument : class, IWorkspaceItemDocument, new()
+    private static List<TDocument> Build<TDocument, TRecord>(string userId, List<TRecord> records, Func<TRecord, string> id, Func<TRecord, TDocument> create)
+        where TDocument : class, IWorkspaceItemDocument
     {
         if (records is null)
         {
@@ -69,7 +74,12 @@ public sealed class WorkspaceMigrationRepository(DatabaseContext database)
                 throw new InvalidOperationException("Workspace record IDs must be present and unique within each collection.");
             }
 
-            return new TDocument { Id = recordId, UserId = userId, Position = position, Payload = JsonSerializer.Serialize(item, SharedCommon.JsonOptions) };
+            var document = create(item);
+            document.Id = recordId;
+            document.UserId = userId;
+            document.Position = position;
+
+            return document;
         }).ToList();
     }
 
@@ -108,7 +118,8 @@ public sealed class WorkspaceMigrationRepository(DatabaseContext database)
     }
 
     private static bool Equivalent(IWorkspaceItemDocument left, IWorkspaceItemDocument right) =>
-        left.Position == right.Position && JsonElement.DeepEquals(JsonSerializer.Deserialize<JsonElement>(left.Payload), JsonSerializer.Deserialize<JsonElement>(right.Payload));
+        left.Position == right.Position && left.Value is not null && right.Value is not null &&
+        JsonElement.DeepEquals(JsonSerializer.SerializeToElement(left.Value, left.Value.GetType(), SharedCommon.JsonOptions), JsonSerializer.SerializeToElement(right.Value, right.Value.GetType(), SharedCommon.JsonOptions));
 }
 
 /// <summary>Number of records verified in each migrated collection.</summary>

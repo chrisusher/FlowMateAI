@@ -18,9 +18,10 @@ To prepare one existing workspace for the future cutover, first provision the fo
 
 ```sh
 dotnet run --project CLI -- database migrate-workspace --user-id '<workspace-owner-id>'
+dotnet run --project CLI -- database migrate-workspace --user-id '<workspace-owner-id>' --apply
 ```
 
-The command copies and verifies the four collections, preserves their order and nested data, and leaves the source workspace untouched. It can resume after interruption when existing destination records match; it refuses to overwrite differing or unexpected destination records. A successful run does not switch the application to the new containers. Do not resume old writers between migration and the eventual cutover, or the copy will become stale. Back up the source and verify the cutover implementation before retiring it.
+The first command previews the migration; the second copies and verifies the four collections, preserves their order and nested data, and leaves the source workspace untouched as a recoverable copy. It can resume after interruption when existing destination records match; it refuses to overwrite differing or unexpected destination records. A successful run does not switch the application to the new containers. Do not resume old writers between migration and the eventual cutover, or the copy will become stale. Back up the source independently and verify the cutover implementation before retiring it.
 
 Populate the new vault with `cosmos-key`, `auth0-management-client-id`, `auth0-management-client-secret`, `stripe-secret-key`, `stripe-webhook-secret`, `stripe-monthly-price-id`, `stripe-annual-price-id`, and `foundry-api-key`. The last is a key from the newly created Azure OpenAI account. Use Test credentials and the existing Cosmos account key. A principal with Key Vault Secrets Officer access can set these using `az keyvault secret set`; do not put values in source control or command history. The API identity receives Key Vault Secrets Officer access to create and delete MCP credentials; the MCP identity receives Key Vault Secrets User access. Key Vault reference resolution can take time after secrets or role assignments change; restart the apps or refresh references when provisioning is complete.
 

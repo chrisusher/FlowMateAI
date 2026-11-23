@@ -131,6 +131,10 @@ public class DatabaseContext : DbContext
         ConfigureWorkspaceItem<WorkspaceTaskDocument>(modelBuilder, "WorkspaceTasks");
         ConfigureWorkspaceItem<WorkspaceSessionDocument>(modelBuilder, "WorkspaceSessions");
         ConfigureWorkspaceItem<WorkspaceConversationDocument>(modelBuilder, "WorkspaceConversations");
+        modelBuilder.Entity<WorkspaceProjectDocument>().OwnsOne(x => x.Project);
+        modelBuilder.Entity<WorkspaceTaskDocument>().OwnsOne(x => x.Task, task => task.Property(x => x.Priority).HasConversion<string>());
+        modelBuilder.Entity<WorkspaceSessionDocument>().OwnsOne(x => x.Session);
+        modelBuilder.Entity<WorkspaceConversationDocument>().OwnsOne(x => x.Conversation, conversation => conversation.OwnsMany(x => x.Messages, message => message.Property(x => x.Role).HasConversion<string>()));
     }
 
     private static void ConfigureWorkspaceItem<T>(ModelBuilder modelBuilder, string container) where T : class, IWorkspaceItemDocument
