@@ -9,6 +9,7 @@ internal static class UserCommand
         var command = new Command("user", "User administration");
         command.Subcommands.Add(GrantProCommand.Create());
         command.Subcommands.Add(ResetCommand.Create());
+        command.Subcommands.Add(RepairWorkspaceCommand.Create());
 
         return command;
     }
