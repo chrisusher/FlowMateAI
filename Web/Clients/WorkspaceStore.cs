@@ -866,8 +866,6 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public void RecordFocusIntervals(IReadOnlyCollection<FocusIntervalRecord> intervals, string? taskId, string projectId, int plannedSeconds, string? focusSessionId = null)
     {
         var remainingSeconds = (double)Math.Max(0, plannedSeconds);
-        var elapsed = 0d;
-        var assignedMinutes = 0;
         var sessionRecords = new Dictionary<string, FocusSessionRecord>(StringComparer.Ordinal);
         TimeZoneInfo zone;
 
@@ -913,34 +911,29 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 {
                     segmentEnd = finish;
                 }
-                elapsed += (segmentEnd - cursor).TotalSeconds;
-                var cumulativeMinutes = (int)Math.Floor(elapsed / 60d);
-                var segmentMinutes = cumulativeMinutes - assignedMinutes;
+                var seconds = (segmentEnd - cursor).TotalSeconds;
+                var sessionDay = TimeZoneInfo.ConvertTime(cursor, zone).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+                var sessionId = focusSessionId is null ? Guid.NewGuid().ToString("N") : $"{focusSessionId}-{sessionDay}";
 
-                if (segmentMinutes > 0)
+                if (sessionRecords.TryGetValue(sessionId, out var session))
                 {
-                    var sessionDay = TimeZoneInfo.ConvertTime(cursor, zone).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
-                    var sessionId = focusSessionId is null ? Guid.NewGuid().ToString("N") : $"{focusSessionId}-{sessionDay}";
-
-                    if (sessionRecords.TryGetValue(sessionId, out var session))
-                    {
-                        session.EndedAt = segmentEnd;
-                        session.FocusMinutes += segmentMinutes;
-                    }
-                    else
-                    {
-                        sessionRecords.Add(sessionId, new()
-                        {
-                            Id = sessionId,
-                            StartedAt = cursor,
-                            EndedAt = segmentEnd,
-                            FocusMinutes = segmentMinutes,
-                            TaskId = taskId,
-                            ProjectId = projectId
-                        });
-                    }
+                    session.EndedAt = segmentEnd;
+                    session.FocusSeconds = session.ElapsedSeconds + seconds;
+                    session.FocusMinutes = (int)(session.ElapsedSeconds / 60);
                 }
-                assignedMinutes = cumulativeMinutes;
+                else
+                {
+                    sessionRecords.Add(sessionId, new()
+                    {
+                        Id = sessionId,
+                        StartedAt = cursor,
+                        EndedAt = segmentEnd,
+                        FocusSeconds = seconds,
+                        FocusMinutes = (int)(seconds / 60),
+                        TaskId = taskId,
+                        ProjectId = projectId
+                    });
+                }
                 cursor = segmentEnd;
             }
 

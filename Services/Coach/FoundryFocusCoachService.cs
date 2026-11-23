@@ -3,6 +3,7 @@ using Services.Billing;
 using Services.Workspaces;
 using Shared.Data;
 using Shared.Exceptions;
+using Shared.Models;
 using Shared.Models.Coach;
 
 namespace Services.Coach;
@@ -65,11 +66,10 @@ public sealed class FoundryFocusCoachService(
                 }),
                 focusMinutesToday = DateData.MinutesForLocalDay(recent, now, workspace.TimeZone),
 
-                focusMinutesLast7Days = recent
-                    .Where(s => s.EndedAt >= now.AddDays(-7))
-                    .Sum(s => s.FocusMinutes),
+                focusMinutesLast7Days = FocusSessionRecord.TotalMinutes(recent
+                    .Where(s => s.EndedAt >= now.AddDays(-7))),
 
-                focusMinutesLast30Days = recent.Sum(s => s.FocusMinutes)
+                focusMinutesLast30Days = FocusSessionRecord.TotalMinutes(recent)
             };
 
             var url = $"{endpoint}/openai/deployments/{Uri.EscapeDataString(deployment)}/chat/completions?api-version={Uri.EscapeDataString(apiVersion)}";

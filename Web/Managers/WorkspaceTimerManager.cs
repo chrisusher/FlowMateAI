@@ -344,15 +344,49 @@ public sealed class WorkspaceTimerManager(WorkspaceStore store, WorkspaceStatist
         {
             var task = Store.Task(taskId);
 
-            if (Store.Data.Timer.Phase != TimerPhase.Idle || task is null || task.IsComplete ||
+            var timer = Store.Data.Timer;
+
+            if (task is null || task.IsComplete ||
                 Store.Project(task.ProjectId) is not { IsArchived: false })
             {
                 return false;
             }
 
-            Store.Data.Timer.TaskId = task.Id;
-            Store.Data.Timer.ProjectId = task.ProjectId;
-            StartFocusInternal();
+            if (timer.Phase == TimerPhase.Idle)
+            {
+                timer.TaskId = task.Id;
+                timer.ProjectId = task.ProjectId;
+                StartFocusInternal();
+            }
+            else if (timer.Phase is TimerPhase.Focus or TimerPhase.Paused && CanControlTimer && timer.TaskId != task.Id)
+            {
+                if (timer.Phase == TimerPhase.Focus && SecondsLeft <= 0)
+                {
+                    await TimerElapsed();
+
+                    return false;
+                }
+
+                var now = Store.UtcNow;
+                RecordTimerIntervals(now);
+                timer.CompletedIntervals.Clear();
+                timer.FocusSessionId = Guid.NewGuid().ToString("N");
+                timer.TaskId = task.Id;
+                timer.ProjectId = task.ProjectId;
+
+                if (timer.Phase == TimerPhase.Paused)
+                {
+                    timer.EndsAt = now.AddSeconds(timer.RemainingSeconds);
+                    timer.PausedAt = null;
+                    timer.Phase = TimerPhase.Focus;
+                }
+
+                timer.StartedAt = now;
+            }
+            else
+            {
+                return false;
+            }
             await Store.SaveAsync();
 
             return Store.Data.Timer.Phase == TimerPhase.Focus && Store.Data.Timer.TaskId == taskId;

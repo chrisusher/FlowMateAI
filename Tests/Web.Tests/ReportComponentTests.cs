@@ -199,9 +199,10 @@ public sealed class ReportComponentTests : WorkspaceComponentTest
         Store.RecordFocusIntervals([new() { StartedAt = start, EndedAt = afterMidnight }], PlannedTask.Id, Project.Id, 60, "midnight-report");
         Stats.SelectedDate = DateOnly.FromDateTime(localMidnight);
 
-        Assert.That(Stats.PeriodMinutes, Is.EqualTo(1));
-        Assert.That(Stats.ChartDays.Single().Minutes, Is.EqualTo(1));
-        Assert.That(Store.Data.Sessions.Single().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localMidnight, zone), TimeSpan.Zero)));
+        Assert.That(Stats.PeriodMinutes, Is.Zero);
+        Assert.That(Stats.ChartDays.Single().Minutes, Is.Zero);
+        Assert.That(Store.Data.Sessions.Select(session => session.ElapsedSeconds), Is.EqualTo(new[] { 30d, 30d }));
+        Assert.That(Store.Data.Sessions.Last().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localMidnight, zone), TimeSpan.Zero)));
     }
 
     [Test]

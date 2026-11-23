@@ -104,6 +104,27 @@ public sealed class WorkspaceRequestValidatorTests
         Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.Not.Null);
     }
 
+    [TestCase(-1d)]
+    [TestCase(86401d)]
+    [TestCase(double.NaN)]
+    [TestCase(double.PositiveInfinity)]
+    public void InvalidFocusSecondsAreRejected(double seconds)
+    {
+        var workspace = CreateWorkspace();
+        workspace.Sessions[0].FocusSeconds = seconds;
+
+        Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.Not.Null);
+    }
+
+    [Test]
+    public void FractionalFocusSecondsAreAccepted()
+    {
+        var workspace = CreateWorkspace();
+        workspace.Sessions[0].FocusSeconds = 30.5;
+
+        Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.Null);
+    }
+
     [Test]
     public void UnsafeProjectColorIsRejected()
     {

@@ -8,7 +8,8 @@
     {
         <p class="task-action-message" role="status">@Tasks.ActionMessage</p>
     }
-    @if (Store.Data.Timer.Phase != TimerPhase.Idle)
+    @if (Store.Data.Timer.Phase is TimerPhase.ShortBreak or TimerPhase.LongBreak ||
+         (Store.Data.Timer.Phase != TimerPhase.Idle && !Timer.CanControlTimer))
     {
         <p class="task-focus-notice">A focus session or break is already in progress. <a href="">Manage it on Today</a>.</p>
     }
@@ -56,7 +57,8 @@
             <button type="button" class="task-start-focus" aria-label="Start focus on @task.Title" disabled="@(task.IsComplete || Store.Project(task.ProjectId) is not
                     {
                         IsArchived: false
-                    } || Store.Data.Timer.Phase != TimerPhase.Idle || _startingFocus)"
+                    } || (Store.Data.Timer.Phase != TimerPhase.Idle &&
+                          (Store.Data.Timer.Phase is not (TimerPhase.Focus or TimerPhase.Paused) || !Timer.CanControlTimer || Store.Data.Timer.TaskId == task.Id)) || _startingFocus)"
                     @onclick="() => StartFocusAsync(task)">▶ Start focus</button>
             <button class="plan-toggle @(task.PlannedToday ? "planned" : "")"
                     @onclick="() => Tasks.TogglePlan(task)">@(task.PlannedToday ? "Planned today" : "+ Plan today")</button>

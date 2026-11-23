@@ -5,7 +5,13 @@ using Shared.Models;
 
 namespace Services.Reporting;
 
-public sealed record ReportEntry(string SessionId, string? ProjectId, string ProjectName, string? TaskId, string TaskName, DateTimeOffset StartedAt, DateTimeOffset EndedAt, int FocusMinutes, DateOnly LocalDate);
+public sealed record ReportEntry(string SessionId, string? ProjectId, string ProjectName, string? TaskId, string TaskName, DateTimeOffset StartedAt, DateTimeOffset EndedAt, int FocusMinutes, DateOnly LocalDate)
+{
+    public double? FocusSeconds { get; init; }
+
+    public static int TotalMinutes(IEnumerable<ReportEntry> entries) =>
+        (int)Math.Floor(entries.Sum(entry => entry.FocusSeconds ?? entry.FocusMinutes * 60d) / 60d);
+}
 public sealed record ReportDay(DateOnly Date, int TotalMinutes);
 public sealed record ReportProject(string ProjectId, string Name, int TotalMinutes, int SessionCount);
 public sealed record WorkspaceReport(string TimeZone, string Revision, bool HistoryTruncated, DateOnly EffectiveStart, DateOnly EffectiveEnd, DateOnly AvailableHistoryStart, DateOnly AvailableHistoryEnd, DateOnly QueryDate, DateOnly PeriodStart, DateOnly PeriodEnd, int TotalMinutes, IReadOnlyList<ReportDay> DailyTotals, IReadOnlyList<ReportProject> ProjectTotals, IReadOnlyList<ReportEntry> Entries);
@@ -46,22 +52,22 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
         var projects = workspace.Projects.ToDictionary(x => x.Id, x => x.Name, StringComparer.Ordinal);
         var tasks = workspace.Tasks.ToDictionary(x => x.Id, x => x.Title, StringComparer.Ordinal);
         
-        var entries = workspace.Sessions.Where(s => s.FocusMinutes > 0 && s.EndedAt > s.StartedAt)
+        var entries = workspace.Sessions.Where(s => s.ElapsedSeconds > 0 && s.EndedAt > s.StartedAt)
             .Select(s => (Session: s, Day: DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(s.StartedAt, zone).DateTime)))
             .Where(x => x.Day >= effectiveStart && x.Day <= effectiveEnd)
             .OrderBy(x => x.Session.StartedAt)
             .Select(x => new ReportEntry(x.Session.Id, x.Session.ProjectId, projects.GetValueOrDefault(x.Session.ProjectId, "Deleted project"), x.Session.TaskId,
-                x.Session.TaskId is { } taskId ? tasks.GetValueOrDefault(taskId, "Deleted task") : "", x.Session.StartedAt, x.Session.EndedAt, x.Session.FocusMinutes, x.Day)).ToArray();
+                x.Session.TaskId is { } taskId ? tasks.GetValueOrDefault(taskId, "Deleted task") : "", x.Session.StartedAt, x.Session.EndedAt, x.Session.FocusMinutes, x.Day) { FocusSeconds = x.Session.FocusSeconds }).ToArray();
         var days = Enumerable.Range(0, effectiveEnd.DayNumber - effectiveStart.DayNumber + 1)
             .Select(i => new DateOnly(effectiveStart.Year, effectiveStart.Month, effectiveStart.Day).AddDays(i))
-            .Select(day => new ReportDay(day, entries.Where(e => e.LocalDate == day).Sum(e => e.FocusMinutes))).ToArray();
-        var totalsByProject = entries.GroupBy(e => e.ProjectId ?? "").ToDictionary(g => g.Key, g => (Minutes: g.Sum(e => e.FocusMinutes), Count: g.Count()), StringComparer.Ordinal);
+            .Select(day => new ReportDay(day, ReportEntry.TotalMinutes(entries.Where(e => e.LocalDate == day)))).ToArray();
+        var totalsByProject = entries.GroupBy(e => e.ProjectId ?? "").ToDictionary(g => g.Key, g => (Minutes: ReportEntry.TotalMinutes(g), Count: g.Count()), StringComparer.Ordinal);
         var projectTotals = workspace.Projects.Select(p => new ReportProject(p.Id, p.Name, totalsByProject.GetValueOrDefault(p.Id).Minutes, totalsByProject.GetValueOrDefault(p.Id).Count))
-            .Concat(entries.Where(e => e.ProjectId is not null && !projects.ContainsKey(e.ProjectId)).GroupBy(e => e.ProjectId!).Select(g => new ReportProject(g.Key, "Deleted project", g.Sum(e => e.FocusMinutes), g.Count())))
+            .Concat(entries.Where(e => e.ProjectId is not null && !projects.ContainsKey(e.ProjectId)).GroupBy(e => e.ProjectId!).Select(g => new ReportProject(g.Key, "Deleted project", ReportEntry.TotalMinutes(g), g.Count())))
             .ToArray();
 
         return new(workspace.TimeZone, source.Revision, truncated, effectiveStart, effectiveEnd, historyStart, today, selected, start, end,
-            entries.Sum(e => e.FocusMinutes), days, projectTotals, entries);
+            ReportEntry.TotalMinutes(entries), days, projectTotals, entries);
     }
 
     public async Task<ReportPage> GetPageAsync(string userId, ReportPeriod period, DateOnly? date, string? cursor, CancellationToken cancellationToken = default)

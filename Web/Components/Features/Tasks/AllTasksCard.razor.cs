@@ -38,7 +38,7 @@ public partial class AllTasksCard
             }
             else
             {
-                _focusMessage = "Could not start focus. Check that the task is active and no other session is in progress.";
+                _focusMessage = "Could not start focus. Check that the task is active and that you can control the timer.";
             }
         }
         finally
