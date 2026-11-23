@@ -74,6 +74,192 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /v1/projects:
+    get:
+      operationId: listProjects
+      summary: List the signed-in user's projects
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/projects/{id}:
+    get:
+      operationId: getProject
+      summary: Get one of the signed-in user's projects
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List the signed-in user's tasks
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/tasks/{id}:
+    get:
+      operationId: getTask
+      summary: Get one of the signed-in user's tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/sessions:
+    get:
+      operationId: listSessions
+      summary: List the signed-in user's sessions
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Get one of the signed-in user's sessions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/conversations:
+    get:
+      operationId: listConversations
+      summary: List the signed-in user's conversations
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/conversations/{id}:
+    get:
+      operationId: getConversation
+      summary: Get one of the signed-in user's conversations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /v1/coach:
     post:
       operationId: askCoach

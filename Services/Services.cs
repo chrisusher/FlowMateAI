@@ -125,6 +125,7 @@ public static class Services
         services.
         AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+        services.AddScoped<IWorkspaceItemsRepository, WorkspaceItemsRepository>();
         #endregion
 
         #region Services

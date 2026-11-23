@@ -51,6 +51,8 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
             throw new WorkspaceSaveConflictException(exception);
         }
 
+        await new WorkspaceCollectionSynchronizer(database).SynchronizeAsync(ownerId, cancellationToken);
+
         return document;
     }
 
