@@ -213,16 +213,19 @@ public sealed class WorkspaceServiceTests
             get; private set;
         }
 
+        private static WorkspaceSnapshot Clone(WorkspaceSnapshot snapshot) =>
+            JsonSerializer.Deserialize<WorkspaceSnapshot>(JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions), SharedCommon.JsonOptions)!;
+
         public void Seed(string ownerId, WorkspaceSnapshot snapshot, string revision) =>
             _documents[ownerId] = new WorkspaceDocument
             {
                 UserId = ownerId,
-                Payload = JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions),
+                Workspace = Clone(snapshot),
                 ETag = revision
             };
 
         public WorkspaceSnapshot Read(string ownerId) =>
-            JsonSerializer.Deserialize<WorkspaceSnapshot>(_documents[ownerId].Payload, SharedCommon.JsonOptions)!;
+            Clone(_documents[ownerId].Workspace!);
 
         public Task<WorkspaceDocument?> GetAsync(string ownerId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_documents.TryGetValue(ownerId, out var document) ? document : null);
@@ -238,7 +241,7 @@ public sealed class WorkspaceServiceTests
             var saved = new WorkspaceDocument
             {
                 UserId = ownerId,
-                Payload = JsonSerializer.Serialize(workspace, SharedCommon.JsonOptions),
+                Workspace = Clone(workspace),
                 ETag = $"revision-{SaveCount + 1}"
             };
             _documents[ownerId] = saved;

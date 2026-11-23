@@ -49,7 +49,7 @@ public class DatabaseContext : DbContext
             entity.HasPartitionKey(x => x.UserId);
             entity.Property(x => x.ETag).IsETagConcurrency();
         });
-        
+
         modelBuilder.Entity<McpUsageDocument>(entity =>
         {
             entity.ToContainer("McpUsage");
@@ -95,6 +95,20 @@ public class DatabaseContext : DbContext
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.UserId);
             entity.Property(x => x.ETag).IsETagConcurrency();
+            entity.OwnsOne(x => x.Workspace, workspace =>
+            {
+                workspace.Property(x => x.Plan).HasConversion<string>();
+                workspace.Property(x => x.FirstRunState).HasConversion<string>();
+                workspace.OwnsMany(x => x.Projects);
+                workspace.OwnsMany(x => x.Tasks, task => task.Property(x => x.Priority).HasConversion<string>());
+                workspace.OwnsMany(x => x.Sessions);
+                workspace.OwnsMany(x => x.Conversations, conversation => conversation.OwnsMany(x => x.Messages, message => message.Property(x => x.Role).HasConversion<string>()));
+                workspace.OwnsOne(x => x.Timer, timer =>
+                {
+                    timer.Property(x => x.Phase).HasConversion<string>();
+                    timer.OwnsMany(x => x.CompletedIntervals);
+                });
+            });
         });
 
         modelBuilder.Entity<WorkspaceRecordDocument>(entity =>
@@ -102,6 +116,15 @@ public class DatabaseContext : DbContext
             entity.ToContainer("WorkspaceRecords");
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.UserId);
+            entity.OwnsOne(x => x.Project);
+            entity.OwnsOne(x => x.Task, task => task.Property(x => x.Priority).HasConversion<string>());
+            entity.OwnsOne(x => x.Focus);
+            entity.OwnsOne(x => x.Conversation, conversation => conversation.OwnsMany(x => x.Messages, message => message.Property(x => x.Role).HasConversion<string>()));
+            entity.OwnsOne(x => x.Timer, timer =>
+            {
+                timer.Property(x => x.Phase).HasConversion<string>();
+                timer.OwnsMany(x => x.CompletedIntervals);
+            });
         });
 
         ConfigureWorkspaceItem<WorkspaceProjectDocument>(modelBuilder, "WorkspaceProjects");
