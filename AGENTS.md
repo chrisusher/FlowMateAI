@@ -10,6 +10,12 @@
 - Put each property in an object initialiser on its own line, including nested initialisers.
 - Follow `.editorconfig`; check object initialisers manually when the formatter leaves them on one line.
 
+## Azure Functions
+
+- Define each HTTP-triggered function in its own `.cs` file when creating Azure Functions.
+- Place HTTP function files in folders matching their route segments, including route parameters.
+- Move duplicated function logic into shared base classes or other shared abstractions.
+
 ## Service classes and persistence
 
 - Code whose class or file name ends in `Service` must never reference an Entity Framework context or be coupled to `CosmosClient`.
