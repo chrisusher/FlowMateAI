@@ -87,7 +87,7 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
     public int TodayMinutes => FocusSessionRecord.TotalMinutes(Store.Data.Sessions
         .Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate));
 
-    public int TodaySessions => Store.Data.Sessions.Count(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate);
+    public double TodaySessions => FocusSessionRecord.TotalSessions(Store.Data.Sessions.Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate));
 
     public int FocusStreak
     {
@@ -164,7 +164,7 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
     public int CurrentWeekMinutes => FocusSessionRecord.TotalMinutes(CurrentWeekRecords);
 
-    public int CurrentWeekSessions => CurrentWeekRecords.Count();
+    public double CurrentWeekSessions => FocusSessionRecord.TotalSessions(CurrentWeekRecords);
 
     private IEnumerable<FocusSessionRecord> CurrentWeekRecords => Store.Data.Sessions.Where(session =>
     {
@@ -177,7 +177,7 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
     public int PeriodMinutes => FocusSessionRecord.TotalMinutes(PeriodRecords);
 
-    public int PeriodSessions => PeriodRecords.Count();
+    public double PeriodSessions => FocusSessionRecord.TotalSessions(PeriodRecords);
 
     public string PeriodLabel => Period switch
     {

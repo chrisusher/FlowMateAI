@@ -64,6 +64,9 @@ public sealed class FoundryFocusCoachService(
                         dueDate = t.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                     })
                 }),
+                focusSessionsToday = Math.Round(FocusSessionRecord.TotalSessions(recent.Where(s => DateData.LocalDate(s.StartedAt, workspace.TimeZone) == DateData.LocalDate(now, workspace.TimeZone))), 1, MidpointRounding.AwayFromZero),
+                focusSessionsLast7Days = Math.Round(FocusSessionRecord.TotalSessions(recent.Where(s => s.EndedAt >= now.AddDays(-7))), 1, MidpointRounding.AwayFromZero),
+                focusSessionsLast30Days = Math.Round(FocusSessionRecord.TotalSessions(recent), 1, MidpointRounding.AwayFromZero),
                 focusMinutesToday = DateData.MinutesForLocalDay(recent, now, workspace.TimeZone),
 
                 focusMinutesLast7Days = FocusSessionRecord.TotalMinutes(recent
