@@ -1,66 +1,29 @@
-using System.Net;
-using System.Text.Json;
-using ChrisUsher.Core.Shared;
-using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.Configuration;
-using Shared.Models;
+using Microsoft.EntityFrameworkCore;
+using Services.Database;
 using Shared.Enums;
 
 namespace Services.Repositories;
 
-public sealed class WorkspaceReportRepository(CosmosClient cosmos, IConfiguration configuration) : IWorkspaceReportRepository
+public sealed class WorkspaceReportRepository(DatabaseContext database) : IWorkspaceReportRepository
 {
-    private Container WorkspaceContainer => cosmos.GetContainer(DatabaseName, "WorkspaceDocuments");
-    private Container BillingContainer => cosmos.GetContainer(DatabaseName, "BillingEntitlements");
-    private string DatabaseName => configuration["Database:DatabaseName"] ?? configuration["Database__DatabaseName"] ?? "flowmate-Development";
-
     public async Task<string> GetRevisionAsync(string userId, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var response = await WorkspaceContainer.ReadItemAsync<WorkspaceEnvelope>("workspace", new PartitionKey(userId), cancellationToken: cancellationToken);
+        var document = await database.Workspaces.AsNoTracking().FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == userId, cancellationToken);
 
-            return response.ETag ?? response.Resource.UpdatedAt.UtcTicks.ToString();
-        }
-        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
-        {
-            return "missing";
-        }
+        return document is null ? "missing" : document.ETag ?? document.UpdatedAt.UtcTicks.ToString();
     }
 
     public async Task<WorkspaceReportSource> GetWorkspaceAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var response = await WorkspaceContainer.ReadItemAsync<WorkspaceEnvelope>("workspace", new PartitionKey(userId), cancellationToken: cancellationToken);
-        var workspace = JsonSerializer.Deserialize<WorkspaceSnapshot>(response.Resource.Payload, SharedCommon.JsonOptions) ?? new();
+        var document = await database.Workspaces.AsNoTracking().FirstAsync(x => x.Id == "workspace" && x.UserId == userId, cancellationToken);
 
-        return new(workspace, response.ETag ?? response.Resource.UpdatedAt.UtcTicks.ToString());
+        return new(WorkspaceStorageFormat.Read(document), document.ETag ?? document.UpdatedAt.UtcTicks.ToString());
     }
 
     public async Task<BillingAccess?> GetBillingAccessAsync(string userId, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var response = await BillingContainer.ReadItemAsync<BillingEnvelope>("billing", new PartitionKey(userId), cancellationToken: cancellationToken);
-            
-            return new(
-                BillingPlanExtensions.ParseOrFree(response.Resource.Plan),
-                SubscriptionEntitlementExtensions.FromProviderStatus(response.Resource.SubscriptionStatus));
-        }
-        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
-        }
-    }
+        var document = await database.BillingEntitlements.AsNoTracking().FirstOrDefaultAsync(x => x.Id == "billing" && x.UserId == userId, cancellationToken);
 
-    private sealed class WorkspaceEnvelope
-    {
-        public string Payload { get; set; } = "{}";
-        public DateTimeOffset UpdatedAt { get; set; }
-    }
-
-    private sealed class BillingEnvelope
-    {
-        public string Plan { get; set; } = BillingPlan.Free.ToString();
-        public string SubscriptionStatus { get; set; } = "none";
+        return document is null ? null : new(BillingPlanExtensions.ParseOrFree(document.Plan), SubscriptionEntitlementExtensions.FromProviderStatus(document.SubscriptionStatus));
     }
 }

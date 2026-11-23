@@ -12,7 +12,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
     {
         var document = await repository.GetAsync(ownerId, cancellationToken);
 
-        var snapshot = document is null ? new WorkspaceSnapshot() : Deserialize(document.Payload);
+        var snapshot = document is null ? new WorkspaceSnapshot() : document.Workspace!;
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
         snapshot.Plan = BillingPlanExtensions.ParseOrFree(entitlement.Plan);
 
@@ -28,7 +28,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
             return new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.");
         }
 
-        var current = existing is null ? new WorkspaceSnapshot() : Deserialize(existing.Payload);
+        var current = existing is null ? new WorkspaceSnapshot() : existing.Workspace!;
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
         var plan = BillingPlanExtensions.ParseOrFree(entitlement.Plan);
         var projectLimit = plan == BillingPlan.Pro ? 25 : 3;
@@ -80,9 +80,6 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
             return new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.");
         }
     }
-
-    private static WorkspaceSnapshot Deserialize(string payload) =>
-        JsonSerializer.Deserialize<WorkspaceSnapshot>(payload, SharedCommon.JsonOptions) ?? new();
 
     private static bool SameTimer(TimerSnapshot left, TimerSnapshot right) =>
         left.Phase == right.Phase && left.EndsAt == right.EndsAt && left.StartedAt == right.StartedAt && left.FocusSessionId == right.FocusSessionId &&
