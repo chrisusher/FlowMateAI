@@ -17,8 +17,8 @@ The partition key is `/UserId` for `BillingEntitlements`, `McpKeys`, `Users`, `W
 To prepare one existing workspace for the future cutover, first provision the four collection containers and stop all workspace writers for that user throughout migration and verification. Configure the CLI for the target Cosmos database, then run:
 
 ```sh
-dotnet run --project CLI -- database migrate-workspace --user-id '<workspace-owner-id>'
-dotnet run --project CLI -- database migrate-workspace --user-id '<workspace-owner-id>' --apply
+dotnet run --project CLI -- database migrate-cosmos-containers --user-id '<workspace-owner-id>'
+dotnet run --project CLI -- database migrate-cosmos-containers --user-id '<workspace-owner-id>' --apply
 ```
 
 The first command previews the migration; the second copies and verifies the four collections, preserves their order and nested data, and leaves the source workspace untouched as a recoverable copy. It can resume after interruption when existing destination records match; it refuses to overwrite differing or unexpected destination records. A successful run does not switch the application to the new containers. Do not resume old writers between migration and the eventual cutover, or the copy will become stale. Back up the source independently and verify the cutover implementation before retiring it.
