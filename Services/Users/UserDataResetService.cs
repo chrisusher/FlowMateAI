@@ -61,6 +61,10 @@ public sealed class UserDataResetService(IUserDataResetRepository repository, Bl
         await RunStageAsync(UserDataResetStage.WorkspaceRecord, async () =>
         {
             workspaceRecords = await repository.DeleteWorkspaceRecordsAsync(userId, cancellationToken);
+            workspaceRecords += await repository.DeleteWorkspaceProjectsAsync(userId, cancellationToken);
+            workspaceRecords += await repository.DeleteWorkspaceTasksAsync(userId, cancellationToken);
+            workspaceRecords += await repository.DeleteWorkspaceSessionsAsync(userId, cancellationToken);
+            workspaceRecords += await repository.DeleteWorkspaceConversationsAsync(userId, cancellationToken);
         });
 
         await RunStageAsync(UserDataResetStage.BillingEntitlement, async () =>

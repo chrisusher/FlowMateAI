@@ -28,6 +28,28 @@ public sealed class UserDataResetRepository(DatabaseContext database, IConfigura
         return matches.Count;
     }
 
+    public Task<int> DeleteWorkspaceProjectsAsync(string userId, CancellationToken cancellationToken = default) =>
+        DeleteWorkspaceItemsAsync(database.WorkspaceProjects, userId, cancellationToken);
+
+    public Task<int> DeleteWorkspaceTasksAsync(string userId, CancellationToken cancellationToken = default) =>
+        DeleteWorkspaceItemsAsync(database.WorkspaceTasks, userId, cancellationToken);
+
+    public Task<int> DeleteWorkspaceSessionsAsync(string userId, CancellationToken cancellationToken = default) =>
+        DeleteWorkspaceItemsAsync(database.WorkspaceSessions, userId, cancellationToken);
+
+    public Task<int> DeleteWorkspaceConversationsAsync(string userId, CancellationToken cancellationToken = default) =>
+        DeleteWorkspaceItemsAsync(database.WorkspaceConversations, userId, cancellationToken);
+
+    private async Task<int> DeleteWorkspaceItemsAsync<T>(DbSet<T> items, string userId, CancellationToken cancellationToken)
+        where T : class, IWorkspaceItemDocument
+    {
+        var matches = await ReadOrEmptyAsync(() => items.Where(item => item.UserId == userId).ToListAsync(cancellationToken));
+        items.RemoveRange(matches);
+        await database.SaveChangesAsync(cancellationToken);
+
+        return matches.Count;
+    }
+
     public async Task<int> DeleteBillingEntitlementsAsync(string userId, CancellationToken cancellationToken = default)
     {
         var matches = await ReadOrEmptyAsync(() => database.BillingEntitlements.Where(item => item.UserId == userId).ToListAsync(cancellationToken));
