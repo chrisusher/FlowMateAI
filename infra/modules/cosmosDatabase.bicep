@@ -24,6 +24,10 @@ var containers = [
   { name: 'Users', partitionKey: '/UserId' }
   { name: 'WorkspaceDocuments', partitionKey: '/UserId' }
   { name: 'WorkspaceRecords', partitionKey: '/UserId' }
+  { name: 'WorkspaceProjects', partitionKey: '/UserId' }
+  { name: 'WorkspaceTasks', partitionKey: '/UserId' }
+  { name: 'WorkspaceSessions', partitionKey: '/UserId' }
+  { name: 'WorkspaceConversations', partitionKey: '/UserId' }
 ]
 
 resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = [

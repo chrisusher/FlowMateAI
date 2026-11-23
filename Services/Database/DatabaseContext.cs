@@ -18,6 +18,11 @@ public class DatabaseContext : DbContext
 
     public DbSet<WorkspaceRecordDocument> WorkspaceRecords => Set<WorkspaceRecordDocument>();
 
+    public DbSet<WorkspaceProjectDocument> WorkspaceProjects => Set<WorkspaceProjectDocument>();
+    public DbSet<WorkspaceTaskDocument> WorkspaceTasks => Set<WorkspaceTaskDocument>();
+    public DbSet<WorkspaceSessionDocument> WorkspaceSessions => Set<WorkspaceSessionDocument>();
+    public DbSet<WorkspaceConversationDocument> WorkspaceConversations => Set<WorkspaceConversationDocument>();
+
     public DatabaseContext()
     {
     }
@@ -97,6 +102,22 @@ public class DatabaseContext : DbContext
             entity.ToContainer("WorkspaceRecords");
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.UserId);
+        });
+
+        ConfigureWorkspaceItem<WorkspaceProjectDocument>(modelBuilder, "WorkspaceProjects");
+        ConfigureWorkspaceItem<WorkspaceTaskDocument>(modelBuilder, "WorkspaceTasks");
+        ConfigureWorkspaceItem<WorkspaceSessionDocument>(modelBuilder, "WorkspaceSessions");
+        ConfigureWorkspaceItem<WorkspaceConversationDocument>(modelBuilder, "WorkspaceConversations");
+    }
+
+    private static void ConfigureWorkspaceItem<T>(ModelBuilder modelBuilder, string container) where T : class, IWorkspaceItemDocument
+    {
+        modelBuilder.Entity<T>(entity =>
+        {
+            entity.ToContainer(container);
+            entity.HasKey(x => x.Id);
+            entity.HasPartitionKey(x => x.UserId);
+            entity.Property(x => x.ETag).IsETagConcurrency();
         });
     }
 }
