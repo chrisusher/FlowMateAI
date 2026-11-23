@@ -4,9 +4,9 @@ using Services.Users;
 
 namespace API.Functions.V1.WorkspaceItems;
 
-public sealed class GetSession(Auth0TokenValidator tokens, IUserService users, IWorkspaceItemsRepository items) : WorkspaceItemFunction(tokens, users)
+public sealed class GetSession(Auth0TokenValidator tokens, IUserService users, IWorkspaceItemsRepository items)
 {
         [Function("GetSession")]
     public Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/sessions/{id}")] HttpRequestData request, string id, CancellationToken cancellationToken) =>
-        GetAsync(request, id, items.GetSessionAsync, cancellationToken);
+        HttpFunction.GetAsync(request, tokens, users, id, items.GetSessionAsync, cancellationToken);
 }

@@ -4,9 +4,9 @@ using Services.Users;
 
 namespace API.Functions.V1.WorkspaceItems;
 
-public sealed class ListTasks(Auth0TokenValidator tokens, IUserService users, IWorkspaceItemsRepository items) : WorkspaceItemFunction(tokens, users)
+public sealed class ListTasks(Auth0TokenValidator tokens, IUserService users, IWorkspaceItemsRepository items)
 {
         [Function("ListTasks")]
     public Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/tasks")] HttpRequestData request, CancellationToken cancellationToken) =>
-        ListAsync(request, items.ListTasksAsync, cancellationToken);
+        HttpFunction.ListAsync(request, tokens, users, items.ListTasksAsync, cancellationToken);
 }
