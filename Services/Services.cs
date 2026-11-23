@@ -92,7 +92,7 @@ public static class Services
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(sp =>
         {
-            var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+            var settings = ResolveDatabaseSettings(configuration);
 
             return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
         });
@@ -156,7 +156,7 @@ public static class Services
     {
         var global = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
 
-        var settings = ResolveDatabaseSettings(configuration, global.Environment);
+        var settings = ResolveDatabaseSettings(configuration);
 
         services.AddDatabase(configuration);
         services.TryAddSingleton(TimeProvider.System);
@@ -197,7 +197,7 @@ public static class Services
 
         var globalConfig = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
 
-        var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+        var settings = ResolveDatabaseSettings(configuration);
 
         services.AddDbContext<DatabaseContext>(options =>
         {

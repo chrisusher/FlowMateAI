@@ -18,3 +18,11 @@
 - Convert to and from strings only at explicit boundaries such as HTTP/MCP payloads, JSON and database schemas, browser interop, configuration, and third-party APIs. Keep the existing external spelling and casing stable when making these conversions.
 - User-facing text, arbitrary user data, identifiers, URLs, configuration keys, protocol field names, and values owned by external systems are not internal enum candidates.
 - In JavaScript, where the language has no native enums, represent closed internal sets with a frozen named constant object rather than repeating string literals.
+
+## Cosmos DB storage
+
+- All Cosmos DB reads and writes must go through Entity Framework Core repositories. Do not use the Cosmos SDK directly for application or administrative operations.
+
+- Store application data as typed, queryable Cosmos properties and native objects or arrays. Do not serialise application objects into JSON string properties.
+- Exceptions require a documented technical necessity; retain backwards-compatible reads and provide a reviewed migration or repair path for existing documents when changing storage format.
+- Administrative data repairs must provide a preview, explicit write opt-in, account scope, concurrency protection and a recoverable backup.
