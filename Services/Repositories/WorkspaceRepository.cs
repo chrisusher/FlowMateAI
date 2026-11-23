@@ -28,7 +28,11 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
             return null;
         }
 
-        var document = existing ?? new WorkspaceDocument { UserId = ownerId };
+        var document = existing ?? new WorkspaceDocument
+        {
+            UserId = ownerId
+        };
+
         if (existing is null)
         {
             database.Workspaces.Add(document);

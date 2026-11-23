@@ -15,17 +15,39 @@ public sealed class WorkspaceStorageFormatTests
             DisplayName = "Test user",
             Sessions =
             [
-                new() { Id = "one", FocusSeconds = 600, ProjectId = "project", TaskId = "task" },
-                new() { Id = "two", FocusMinutes = 15, ProjectId = "project", PlannedSeconds = 1800 }
+                new()
+                {
+                    Id = "one",
+                    FocusSeconds = 600,
+                    ProjectId = "project",
+                    TaskId = "task"
+                },
+                new()
+                {
+                    Id = "two",
+                    FocusMinutes = 15,
+                    ProjectId = "project",
+                    PlannedSeconds = 1800
+                }
             ]
         };
-        var legacy = new WorkspaceDocument { Payload = JsonSerializer.Serialize(original, SharedCommon.JsonOptions) };
+        var legacy = new WorkspaceDocument
+        {
+            Payload = JsonSerializer.Serialize(original, SharedCommon.JsonOptions)
+        };
         var workspace = WorkspaceStorageFormat.Read(legacy);
 
         Assert.That(WorkspaceStorageFormat.BackfillPlannedSeconds(workspace, 1500), Is.EqualTo(1));
-        Assert.That(workspace.Sessions.Select(s => s.PlannedSeconds), Is.EqualTo(new int?[] { 1500, 1800 }));
+        Assert.That(workspace.Sessions.Select(s => s.PlannedSeconds), Is.EqualTo(new int?[]
+        {
+            1500,
+            1800
+        }));
         Assert.That(FocusSessionRecord.TotalSessions(workspace.Sessions), Is.EqualTo(0.9).Within(0.00001));
-        var document = new WorkspaceDocument { Workspace = workspace };
+        var document = new WorkspaceDocument
+        {
+            Workspace = workspace
+        };
         Assert.That(document.Payload, Is.Null);
         var restored = WorkspaceStorageFormat.Read(document);
         Assert.That(restored.DisplayName, Is.EqualTo("Test user"));
@@ -37,7 +59,18 @@ public sealed class WorkspaceStorageFormatTests
     [Test]
     public void DerivedRecordsContainQueryableObjectsInsteadOfJsonStrings()
     {
-        var workspace = new WorkspaceSnapshot { Sessions = [new() { Id = "session", FocusSeconds = 600, PlannedSeconds = 1500 }] };
+        var workspace = new WorkspaceSnapshot
+        {
+            Sessions =
+            [
+                new()
+                {
+                    Id = "session",
+                    FocusSeconds = 600,
+                    PlannedSeconds = 1500
+                }
+            ]
+        };
         var record = WorkspaceRecordDocument.FromSnapshot("user", workspace).Single(x => x.Id == "focus:session");
         Assert.That(record.Payload, Is.Null);
         Assert.That(record.Focus, Is.Not.Null);
@@ -48,6 +81,9 @@ public sealed class WorkspaceStorageFormatTests
     public void MissingOrMalformedWorkspaceIsNeverSilentlyReplacedWithAnEmptyOne()
     {
         Assert.That(() => WorkspaceStorageFormat.Read(new WorkspaceDocument()), Throws.TypeOf<InvalidDataException>());
-        Assert.That(() => WorkspaceStorageFormat.Read(new WorkspaceDocument { Payload = "not json" }), Throws.TypeOf<JsonException>());
+        Assert.That(() => WorkspaceStorageFormat.Read(new WorkspaceDocument
+        {
+            Payload = "not json"
+        }), Throws.TypeOf<JsonException>());
     }
 }

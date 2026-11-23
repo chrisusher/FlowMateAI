@@ -12,10 +12,23 @@ internal static class RepairWorkspaceCommand
     public static Command Create()
     {
         var command = new Command("repair-workspace", "Preview or repair one account's workspace and historical focus durations.");
-        var user = new Option<string>("--user-id") { Required = true, Description = "Exact account user ID / Cosmos partition key." };
-        var minutes = new Option<int?>("--planned-minutes") { Description = "Assumed duration for records with no planned duration. Omit to migrate storage only." };
-        var apply = new Option<bool>("--apply") { Description = "Apply the changes; without this option the command previews only." };
-        var backup = new Option<string?>("--backup") { Description = "New local backup file, required with --apply." };
+        var user = new Option<string>("--user-id")
+        {
+            Required = true,
+            Description = "Exact account user ID / Cosmos partition key."
+        };
+        var minutes = new Option<int?>("--planned-minutes")
+        {
+            Description = "Assumed duration for records with no planned duration. Omit to migrate storage only."
+        };
+        var apply = new Option<bool>("--apply")
+        {
+            Description = "Apply the changes; without this option the command previews only."
+        };
+        var backup = new Option<string?>("--backup")
+        {
+            Description = "New local backup file, required with --apply."
+        };
         command.Options.Add(user);
         command.Options.Add(minutes);
         command.Options.Add(apply);

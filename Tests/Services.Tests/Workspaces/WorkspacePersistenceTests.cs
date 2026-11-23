@@ -25,10 +25,28 @@ public sealed class WorkspacePersistenceTests
     public async Task LegacyWorkspaceCanBeReadAndSavedWithNativeData()
     {
         var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-        var snapshot = new WorkspaceSnapshot { DisplayName = "Test", TimeZone = "UTC", Sessions = [new() { Id = "one", FocusMinutes = 10, PlannedSeconds = 1500 }] };
+        var snapshot = new WorkspaceSnapshot
+        {
+            DisplayName = "Test",
+            TimeZone = "UTC",
+            Sessions =
+            [
+                new()
+                {
+                    Id = "one",
+                    FocusMinutes = 10,
+                    PlannedSeconds = 1500
+                }
+            ]
+        };
         await using (var setup = new DatabaseContext(options))
         {
-            setup.Workspaces.Add(new WorkspaceDocument { UserId = "user", ETag = "rev", Payload = JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions) });
+            setup.Workspaces.Add(new WorkspaceDocument
+            {
+                UserId = "user",
+                ETag = "rev",
+                Payload = JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions)
+            });
             await setup.SaveChangesAsync();
         }
 

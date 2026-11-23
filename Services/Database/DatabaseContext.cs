@@ -44,7 +44,7 @@ public class DatabaseContext : DbContext
             entity.HasPartitionKey(x => x.UserId);
             entity.Property(x => x.ETag).IsETagConcurrency();
         });
-        
+
         modelBuilder.Entity<McpUsageDocument>(entity =>
         {
             entity.ToContainer("McpUsage");
