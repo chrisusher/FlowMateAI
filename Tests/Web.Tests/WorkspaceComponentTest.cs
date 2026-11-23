@@ -52,6 +52,7 @@ public abstract class WorkspaceComponentTest : BunitContext
         Services.AddScoped<BillingClient>();
         Services.AddScoped<AccountClient>();
         Services.AddScoped<McpKeysClient>();
+        Services.AddScoped<WorkspaceItemsClient>();
         Services.AddScoped<WorkspaceStore>();
         Services.AddScoped<WorkspaceStatistics>();
         Services.AddScoped<WorkspaceTaskManager>();

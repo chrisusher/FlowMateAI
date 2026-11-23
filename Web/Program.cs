@@ -50,6 +50,7 @@ public class Program
         builder.Services.AddScoped<BillingClient>();
         builder.Services.AddScoped<AccountClient>();
         builder.Services.AddScoped<McpKeysClient>();
+        builder.Services.AddScoped<WorkspaceItemsClient>();
         builder.Services.AddScoped<WorkspaceStore>();
 
         builder.Services.AddScoped<WorkspaceStatistics>();

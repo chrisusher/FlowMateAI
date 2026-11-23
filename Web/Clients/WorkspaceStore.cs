@@ -4,7 +4,7 @@ using Microsoft.JSInterop;
 
 namespace Web.Clients;
 
-public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client auth)
+public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client auth, WorkspaceItemsClient items)
 {
     private const string STORAGE_PREFIX = "flowmate.workspace.v1.";
     private IJSObjectReference? _module;
@@ -133,11 +133,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+                using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                 using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
                 response.EnsureSuccessStatusCode();
-                var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+                var remote = await ReadWorkspaceAsync(response, auth.Session.AccessToken);
 
                 if (IsLoadableWorkspace(remote))
                 {
@@ -426,7 +426,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
 
@@ -444,7 +444,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
-            var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+            var remote = await ReadWorkspaceAsync(response, accessToken);
 
             if (!IsLoadableWorkspace(remote))
             {
@@ -607,7 +607,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             return;
         }
 
-        using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+        using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace?collections=separate");
         refresh.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var latest = await auth.SendAsync(http, refresh, requiresAuthentication: true);
 
@@ -621,7 +621,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         if (latest.IsSuccessStatusCode)
         {
             CalibrateClock(latest);
-            _remoteConflict = await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+            _remoteConflict = await ReadWorkspaceAsync(latest, accessToken);
 
             if (string.Equals(errorCode, "timer_conflict", StringComparison.Ordinal) && _remoteConflict?.Workspace is { } remoteWorkspace)
             {
@@ -961,6 +961,76 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         }
 
         return intervals;
+    }
+
+    private async Task<WorkspaceResponse?> ReadWorkspaceAsync(HttpResponseMessage response, string? accessToken)
+    {
+        var accountId = auth.Session.Sub;
+
+        if (!string.Equals(accountId ?? "local", _storageAccountId, StringComparison.Ordinal) ||
+            !string.Equals(accessToken, auth.Session.AccessToken, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
+
+        var hasManifestFields = document.RootElement.ValueKind == JsonValueKind.Object &&
+            document.RootElement.EnumerateObject().Any(property =>
+                string.Equals(property.Name, "projectsHash", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "tasksHash", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "sessionsHash", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(property.Name, "conversationsHash", StringComparison.OrdinalIgnoreCase));
+
+        if (!hasManifestFields && (!response.Headers.TryGetValues("X-Workspace-Collections", out var modes) || !modes.Contains("separate", StringComparer.Ordinal)))
+        {
+            return JsonSerializer.Deserialize<WorkspaceResponse>(json, SharedCommon.JsonOptions);
+        }
+
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<WorkspaceCollectionManifest>(json, SharedCommon.JsonOptions);
+            var projects = await items.ListProjectsAsync();
+            var tasks = await items.ListTasksAsync();
+            var sessions = await items.ListSessionsAsync();
+            var conversations = await items.ListConversationsAsync();
+
+            if (!string.Equals(accountId, auth.Session.Sub, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            if (manifest?.Workspace is not null &&
+                WorkspaceCollectionManifest.Hash(projects) == manifest.ProjectsHash &&
+                WorkspaceCollectionManifest.Hash(tasks) == manifest.TasksHash &&
+                WorkspaceCollectionManifest.Hash(sessions) == manifest.SessionsHash &&
+                WorkspaceCollectionManifest.Hash(conversations) == manifest.ConversationsHash)
+            {
+                manifest.Workspace.Projects = projects;
+                manifest.Workspace.Tasks = tasks;
+                manifest.Workspace.Sessions = sessions;
+                manifest.Workspace.Conversations = conversations;
+
+                return new WorkspaceResponse(manifest.Workspace, manifest.Revision);
+            }
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidDataException or OperationCanceledException)
+        {
+            // Projections may be unavailable or not yet migrated. Use the authoritative snapshot.
+        }
+
+        using var fallback = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+        fallback.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var latest = await auth.SendAsync(http, fallback, requiresAuthentication: true);
+        latest.EnsureSuccessStatusCode();
+
+        if (!string.Equals(accountId, auth.Session.Sub, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
     }
 
     // GET returns an empty revision when this account has not saved a workspace yet.

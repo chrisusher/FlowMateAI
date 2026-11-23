@@ -3,6 +3,7 @@ using ChrisUsher.Core.Shared;
 using Services.Workspaces;
 using Services.Users;
 using Services.ApiRequests;
+using System.Web;
 
 namespace API.Functions.V1.Workspace;
 
@@ -29,7 +30,15 @@ public sealed class Workspace(Auth0TokenValidator tokens, IWorkspaceService work
                 response.Headers.Add("ETag", workspace.Revision);
             }
 
-            await response.WriteAsJsonAsync(workspace, cancellationToken);
+            if (HttpUtility.ParseQueryString(request.Url.Query)["collections"] == "separate")
+            {
+                response.Headers.Add("X-Workspace-Collections", "separate");
+                await response.WriteAsJsonAsync(WorkspaceCollectionManifest.Create(workspace), cancellationToken);
+            }
+            else
+            {
+                await response.WriteAsJsonAsync(workspace, cancellationToken);
+            }
 
             return response;
         }

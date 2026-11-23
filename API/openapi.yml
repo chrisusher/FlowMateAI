@@ -25,16 +25,31 @@ paths:
       summary: Get the signed-in user's workspace
       security:
         - bearerAuth: []
+      parameters:
+        - name: collections
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [separate]
+          description: Return workspace metadata and collection hashes for validating separate collection reads. Omit to return the complete snapshot.
       responses:
         '200':
           description: Workspace and current revision.
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+            X-Workspace-Collections:
+              description: Set to separate when the response is a collection manifest.
+              schema:
+                type: string
+                enum: [separate]
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceResponse'
+                anyOf:
+                  - $ref: '#/components/schemas/WorkspaceResponse'
+                  - $ref: '#/components/schemas/WorkspaceCollectionManifest'
         '401':
           $ref: '#/components/responses/Unauthorized'
     put:
@@ -617,6 +632,23 @@ components:
         workspace:
           $ref: '#/components/schemas/WorkspaceSnapshot'
         revision:
+          type: string
+    WorkspaceCollectionManifest:
+      description: SHA-256 hashes of the ordered collections serialised with the shared JSON options; a mismatch requires a fresh complete workspace read.
+      type: object
+      required: [workspace, revision, projectsHash, tasksHash, sessionsHash, conversationsHash]
+      properties:
+        workspace:
+          $ref: '#/components/schemas/WorkspaceSnapshot'
+        revision:
+          type: string
+        projectsHash:
+          type: string
+        tasksHash:
+          type: string
+        sessionsHash:
+          type: string
+        conversationsHash:
           type: string
     WorkspaceSnapshot:
       type: object

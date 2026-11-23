@@ -714,7 +714,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 Content = JsonContent.Create(new WorkspaceResponse(sent!.Workspace, "account-two-saved-revision"), options: SharedCommon.JsonOptions)
             };
         };
-        var accountTwoStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth);
+        var accountTwoStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth, Services.GetRequiredService<WorkspaceItemsClient>());
 
         await accountTwoStore.InitialiseAsync();
 
@@ -781,7 +781,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
                 Content = JsonContent.Create(new WorkspaceResponse(restored!.Workspace, "reconnected-revision"), options: SharedCommon.JsonOptions)
             };
         };
-        var reloadedStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth);
+        var reloadedStore = new WorkspaceStore(Services.GetRequiredService<IJSRuntime>(), Services.GetRequiredService<HttpClient>(), Auth, Services.GetRequiredService<WorkspaceItemsClient>());
 
         await reloadedStore.InitialiseAsync();
 
