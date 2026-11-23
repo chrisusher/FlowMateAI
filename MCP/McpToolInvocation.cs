@@ -161,7 +161,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
                     chosen.SessionCount,
                     report.DailyTotals.Select(day => new McpDailyTotal(
                         day.Date,
-                        report.Entries.Where(entry => entry.ProjectId == projectId && entry.LocalDate == day.Date).Sum(entry => entry.FocusMinutes))).ToArray());
+                        ReportEntry.TotalMinutes(report.Entries.Where(entry => entry.ProjectId == projectId && entry.LocalDate == day.Date)))).ToArray());
             }
 
             if (cursor is not null)
@@ -227,7 +227,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         report.TotalMinutes,
         report.DailyTotals.Select(day => new McpDailyTotal(day.Date, day.TotalMinutes)).ToArray(),
         report.ProjectTotals.Select(project => new McpProjectTotal(project.ProjectId, project.Name, project.TotalMinutes, project.SessionCount)).ToArray(),
-        entries.Select(entry => new McpTimesheetEntry(entry.SessionId, entry.ProjectId, entry.ProjectName, entry.TaskId, entry.TaskName, entry.StartedAt, entry.EndedAt, entry.FocusMinutes, entry.LocalDate)).ToArray(),
+        entries.Select(entry => new McpTimesheetEntry(entry.SessionId, entry.ProjectId, entry.ProjectName, entry.TaskId, entry.TaskName, entry.StartedAt, entry.EndedAt, entry.FocusMinutes, entry.LocalDate) { FocusSeconds = entry.FocusSeconds }).ToArray(),
         nextCursor);
 
     private static string CreateFirstCursor(string userId, ReportPeriod period, WorkspaceReport report) =>

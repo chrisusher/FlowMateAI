@@ -42,7 +42,10 @@ public sealed record McpTimesheetEntry(
     DateTimeOffset StartedAt,
     DateTimeOffset EndedAt,
     int FocusMinutes,
-    DateOnly LocalDate);
+    DateOnly LocalDate)
+{
+    public double? FocusSeconds { get; init; }
+}
 
 public sealed record McpTimesheetResponse(
     string TimeZone,

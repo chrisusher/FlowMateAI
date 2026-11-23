@@ -87,7 +87,7 @@
         !task.IsComplete &&
         Store.Project(task.ProjectId) is { IsArchived: false });
 
-    private bool HasFocusSession => Store.Data.Sessions.Any(session => session.FocusMinutes > 0);
+    private bool HasFocusSession => Store.Data.Sessions.Any(session => session.ElapsedSeconds > 0);
 
     private bool IsTimerActive => Store.Data.Timer.Phase is
         TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused;

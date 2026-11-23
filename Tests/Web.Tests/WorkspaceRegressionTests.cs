@@ -127,6 +127,26 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
+    public void ShortTaskIntervalsSurviveSerialisationAndCombineInTotals()
+    {
+        Store.Data.TimeZone = "UTC";
+        var start = new DateTimeOffset(Stats.TodayDate.ToDateTime(new TimeOnly(10, 0)), TimeSpan.Zero);
+        Store.RecordFocusIntervals([new() { StartedAt = start, EndedAt = start.AddSeconds(30) }], PlannedTask.Id, Project.Id, 60, "first");
+        Store.RecordFocusIntervals([new() { StartedAt = start.AddSeconds(30), EndedAt = start.AddSeconds(60) }], Store.Data.Tasks[1].Id, Project.Id, 60, "second");
+        Store.RecordFocusIntervals([new() { StartedAt = start, EndedAt = start.AddSeconds(30) }], PlannedTask.Id, Project.Id, 60, "first");
+
+        var json = JsonSerializer.Serialize(Store.Data, SharedCommon.JsonOptions);
+        var restored = JsonSerializer.Deserialize<WorkspaceSnapshot>(json, SharedCommon.JsonOptions)!;
+
+        Assert.That(restored.Sessions, Has.Count.EqualTo(2));
+        Assert.That(restored.Sessions.Select(session => session.ElapsedSeconds), Is.EqualTo(new[] { 30d, 30d }));
+        Assert.That(FocusSessionRecord.TotalMinutes(restored.Sessions), Is.EqualTo(1));
+        Assert.That(Stats.TodayMinutes, Is.EqualTo(1));
+        Assert.That(Stats.ProjectTodayMinutes(Project.Id), Is.EqualTo(1));
+        Assert.That(Stats.TaskTodayMinutes(PlannedTask.Id), Is.Zero);
+    }
+
+    [Test]
     public void LegacyTimerRecoveryIdentityIsStableAcrossTabs()
     {
         var timer = new TimerSnapshot
@@ -159,8 +179,9 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         Store.RecordFocusIntervals(intervals, PlannedTask.Id, Project.Id, 60, "midnight-focus");
 
-        Assert.That(Store.Data.Sessions.Sum(session => session.FocusMinutes), Is.EqualTo(1));
-        Assert.That(Store.Data.Sessions.Single().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(midnight, zone), TimeSpan.Zero)));
+        Assert.That(FocusSessionRecord.TotalMinutes(Store.Data.Sessions), Is.EqualTo(1));
+        Assert.That(Store.Data.Sessions.Select(session => session.ElapsedSeconds), Is.EqualTo(new[] { 30d, 30d }));
+        Assert.That(Store.Data.Sessions.Last().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(midnight, zone), TimeSpan.Zero)));
     }
 
     [Test]

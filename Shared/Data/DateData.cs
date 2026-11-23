@@ -34,7 +34,7 @@ public class DateData
     {
         var day = LocalDate(now, timeZone);
 
-        return sessions.Where(s => LocalDate(s.StartedAt, timeZone) == day).Sum(s => s.FocusMinutes);
+        return Shared.Models.FocusSessionRecord.TotalMinutes(sessions.Where(s => LocalDate(s.StartedAt, timeZone) == day));
     }
 
     public static DateTime GetUserNow(string timeZone)

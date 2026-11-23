@@ -87,6 +87,25 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task SwitchingTasksPreservesFractionalMinutesInFocusTotals()
+    {
+        Store.Data.TimeZone = Store.UtcNow.TimeOfDay < TimeSpan.FromMinutes(15) ? "Pacific/Honolulu" : "UTC";
+        await Timer.StartFocusForTaskAsync(PlannedTask.Id);
+        var timer = Store.Data.Timer;
+        timer.StartedAt = Store.UtcNow.AddSeconds(-750);
+        timer.EndsAt = Store.UtcNow.AddSeconds(750);
+        var otherTask = Store.Data.Tasks[1];
+
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.True);
+        timer.StartedAt = Store.UtcNow.AddSeconds(-750);
+        await Timer.EndFocus();
+
+        Assert.That(Store.Data.Sessions.Select(s => s.TaskId), Is.EquivalentTo(new[] { PlannedTask.Id, otherTask.Id }));
+        Assert.That(Stats.TodayMinutes, Is.EqualTo(25));
+        Assert.That(Stats.PeriodMinutes, Is.EqualTo(25));
+    }
+
+    [Test]
     public async Task FocusCannotStartForCompletedOrArchivedTasks()
     {
         PlannedTask.IsComplete = true;
