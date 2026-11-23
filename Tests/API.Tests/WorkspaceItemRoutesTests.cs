@@ -1,7 +1,6 @@
 using System.Reflection;
 using API.Functions.V1.WorkspaceItems;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 
 namespace API.Tests;
 
@@ -18,7 +17,7 @@ public sealed class WorkspaceItemRoutesTests
     [TestCase("GetConversation", "v1/conversations/{id}")]
     public void RoutesExposeGetFunctions(string functionName, string route)
     {
-        var method = typeof(WorkspaceItems).GetMethod(functionName)!;
+        var method = typeof(WorkspaceItemFunction).Assembly.GetTypes().Single(type => type.Name == functionName).GetMethod("Run")!;
         var function = method.GetCustomAttribute<FunctionAttribute>();
         var trigger = method.GetParameters().Select(parameter => parameter.GetCustomAttribute<HttpTriggerAttribute>()).Single(attribute => attribute is not null)!;
 

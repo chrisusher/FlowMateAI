@@ -10,11 +10,16 @@
 - Put each property in an object initialiser on its own line, including nested initialisers.
 - Follow `.editorconfig`; check object initialisers manually when the formatter leaves them on one line.
 
+## Dependency injection
+
+- Inject application dependencies, such as services, repositories and collaborators, through constructors rather than constructing them with `new` inside application classes.
+- Register dependencies with appropriate lifetimes in the dependency injection container. Constructing data objects, value objects and exceptions directly is appropriate; composition roots and tests may construct dependencies explicitly.
+
 ## Azure Functions
 
 - Define each HTTP-triggered function in its own `.cs` file when creating Azure Functions.
 - Place HTTP function files in folders matching their route segments, including route parameters.
-- Move duplicated function logic into shared base classes or other shared abstractions.
+- Move duplicated function logic into shared base classes or other shared abstractions; do not use partial classes to split functions.
 
 ## Service classes and persistence
 

@@ -58,7 +58,7 @@ public sealed class WorkspaceItemsRepositoryTests
                     Title = "Chat"
                 }]
         };
-        var writer = new WorkspaceRepository(database);
+        var writer = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
         var saved = await writer.SaveAsync("user-1", workspace, null);
         Assert.That(saved, Is.Not.Null);
         var reader = new WorkspaceItemsRepository(database);

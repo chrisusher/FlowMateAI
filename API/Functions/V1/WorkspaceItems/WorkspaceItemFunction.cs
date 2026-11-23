@@ -1,12 +1,11 @@
 using API.Security;
-using Services.Repositories;
 using Services.Users;
 
 namespace API.Functions.V1.WorkspaceItems;
 
-public sealed partial class WorkspaceItems(Auth0TokenValidator tokens, IUserService users, IWorkspaceItemsRepository items)
+public abstract class WorkspaceItemFunction(Auth0TokenValidator tokens, IUserService users)
 {
-    private async Task<HttpResponseData> ListAsync<T>(HttpRequestData request, Func<string, CancellationToken, Task<IReadOnlyList<T>>> list, CancellationToken cancellationToken)
+    protected async Task<HttpResponseData> ListAsync<T>(HttpRequestData request, Func<string, CancellationToken, Task<IReadOnlyList<T>>> list, CancellationToken cancellationToken)
     {
         var (userId, _) = await HttpFunction.UserAsync(request, tokens, users, cancellationToken);
 
@@ -22,7 +21,7 @@ public sealed partial class WorkspaceItems(Auth0TokenValidator tokens, IUserServ
         return response;
     }
 
-    private async Task<HttpResponseData> GetAsync<T>(HttpRequestData request, string id, Func<string, string, CancellationToken, Task<T?>> get, CancellationToken cancellationToken) where T : class
+    protected async Task<HttpResponseData> GetAsync<T>(HttpRequestData request, string id, Func<string, string, CancellationToken, Task<T?>> get, CancellationToken cancellationToken) where T : class
     {
         var (userId, _) = await HttpFunction.UserAsync(request, tokens, users, cancellationToken);
 

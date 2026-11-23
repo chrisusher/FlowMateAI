@@ -52,7 +52,7 @@ public sealed class WorkspacePersistenceTests
 
         await using (var database = new DatabaseContext(options))
         {
-            var repository = new WorkspaceRepository(database);
+            var repository = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
             var original = await repository.GetAsync("user");
             Assert.That(original!.Workspace!.DisplayName, Is.EqualTo("Test"));
             var saved = await repository.SaveAsync("user", original.Workspace, original.ETag);
@@ -61,7 +61,7 @@ public sealed class WorkspacePersistenceTests
 
         await using (var second = new DatabaseContext(options))
         {
-            var repository = new WorkspaceRepository(second);
+            var repository = new WorkspaceRepository(second, new WorkspaceCollectionSynchronizer(second));
             var current = await repository.GetAsync("user");
             current!.Workspace!.Sessions[0].PlannedSeconds = 1800;
             await repository.SaveAsync("user", current.Workspace, current.ETag);

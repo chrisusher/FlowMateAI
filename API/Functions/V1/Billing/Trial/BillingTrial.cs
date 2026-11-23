@@ -4,7 +4,7 @@ using Services.Billing;
 using Services.Users;
 using Services.ApiRequests;
 
-namespace API.Functions.V1.Billing;
+namespace API.Functions.V1.Billing.Trial;
 
 public sealed class BillingTrial(Auth0TokenValidator tokens, IBillingService billing, IUserService users, IAuthenticatedApiRateLimiter limiter)
 {

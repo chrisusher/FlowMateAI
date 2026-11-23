@@ -1,15 +1,13 @@
-using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Microsoft.EntityFrameworkCore;
 using Services.Database;
-using Shared.Models;
 
 namespace Services.Repositories;
 
 /// <summary>Synchronises the collection projections from the authoritative workspace.</summary>
-internal sealed class WorkspaceCollectionSynchronizer(DatabaseContext database)
+public sealed class WorkspaceCollectionSynchronizer(DatabaseContext database)
 {
-    public async Task SynchronizeAsync(string userId, CancellationToken cancellationToken)
+    public async Task SynchroniseAsync(string userId, CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 5; attempt++)
         {
