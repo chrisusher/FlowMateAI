@@ -2,7 +2,7 @@ using API.Security;
 using Services.Repositories;
 using Services.Users;
 
-namespace API.Functions.V1.WorkspaceItems;
+namespace API.Functions.V1.Projects;
 
 public sealed class ListProjects(Auth0TokenValidator tokens, IUserService users, IWorkspaceItemsRepository items)
 {
