@@ -18,7 +18,7 @@
 ## Azure Functions
 
 - Define each HTTP-triggered function in its own `.cs` file when creating Azure Functions.
-- Place HTTP function files in folders matching their route segments, including route parameters.
+- Place HTTP function files in folders matching their literal route segments, excluding route parameters such as `{id}`.
 - Move duplicated function logic into shared base classes or other shared abstractions; do not use partial classes to split functions.
 
 ## Service classes and persistence
