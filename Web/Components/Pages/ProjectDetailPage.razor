@@ -11,7 +11,7 @@
         <div>
             <a class="project-back" href="projects">&#8592; All projects</a>
             <h1>@project.Name</h1>
-            <p class="subheading">@(project.IsArchived ? "This project is archived. Restore it to add tasks." : "All tasks in this project.")</p>
+            <p class="subheading">@(project.IsArchived ? "This project is archived. Restore it to add tasks." : "Tasks in this project.")</p>
         </div>
         @if (!project.IsArchived)
         {

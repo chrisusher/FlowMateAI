@@ -134,8 +134,25 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(Tasks.DialogOpen, Is.True);
         Assert.That(Tasks.Draft.Title, Is.EqualTo("Take a reset"));
         Tasks.CloseTaskDialog();
+        cut.Find(".filter-chip").Click();
         cut.FindAll(".check-circle")[1].Click();
         Assert.That(PlannedTask.IsComplete, Is.False);
+    }
+
+    [Test]
+    public void AllTasksFilterTogglesCompletedTasksAndUpdatesWhenReopened()
+    {
+        PlannedTask.IsComplete = true;
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.FindAll(".task-title").Select(Content), Does.Not.Contain(PlannedTask.Title));
+        Assert.That(cut.Find(".filter-chip").GetAttribute("aria-pressed"), Is.EqualTo("false"));
+        cut.Find(".filter-chip").Click();
+        Assert.That(cut.Find(".filter-chip").GetAttribute("aria-pressed"), Is.EqualTo("true"));
+        Assert.That(cut.FindAll(".task-title").Select(Content), Does.Contain(PlannedTask.Title));
+        cut.FindAll(".check-circle")[1].Click();
+        cut.Find(".filter-chip").Click();
+        Assert.That(cut.FindAll(".task-title").Select(Content), Does.Contain(PlannedTask.Title));
     }
 
     [Test]
@@ -387,7 +404,12 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         var cut = Render<ProjectDetailPage>(p => p.Add(c => c.ProjectId, other.Id));
 
         Assert.That(Content(cut.Find("h1")), Is.EqualTo("Client work"));
+        Assert.That(cut.FindAll(".task-title"), Is.Empty);
+        Assert.That(cut.Find(".empty-state").TextContent, Does.Contain("No open tasks"));
+        cut.Find(".filter-chip").Click();
         Assert.That(cut.FindAll(".task-title").Select(Content), Is.EqualTo(new[] { "Client task" }));
+        cut.Find(".filter-chip").Click();
+        Assert.That(cut.FindAll(".task-title"), Is.Empty);
         Assert.That(cut.FindAll(".filter-chip"), Has.Exactly(1).Items);
         cut.Find(".page-heading button").Click();
         Assert.That(Tasks.Draft.ProjectId, Is.EqualTo(other.Id));

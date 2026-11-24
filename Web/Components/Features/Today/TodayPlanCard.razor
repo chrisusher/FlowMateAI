@@ -14,11 +14,11 @@
         </button>
     </div>
     <div class="task-list">
-        @if (!Stats.PlannedTasks.Any())
+        @if (!Stats.PlannedTasks.Any(task => !task.IsComplete))
         {
-            <div class="empty-state">Your day is open. Add a task to get started.</div>
+            <div class="empty-state">No open tasks planned for today. Add a task to get started.</div>
         }
-        @foreach (var task in Stats.PlannedTasks)
+        @foreach (var task in Stats.PlannedTasks.Where(task => !task.IsComplete))
         {
             <div class="task-row @(task.IsComplete ? "completed" : "")">
                 <button class="check-circle @(task.IsComplete ? "checked" : "")" @onclick="() => Tasks.ToggleComplete(task)">@(task.IsComplete ? "\u2713" : "")</button>
