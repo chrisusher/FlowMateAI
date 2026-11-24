@@ -9,8 +9,8 @@ public sealed class AuthoritativeProjectsTests
     [Test]
     public async Task SaveAsync_NewEmptyWorkspace_InitialisesProjectStorage()
     {
-        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-        await using var database = new DatabaseContext(options);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         var workspace = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
 
         var saved = await workspace.SaveAsync("user", new WorkspaceSnapshot(), null);
@@ -24,14 +24,18 @@ public sealed class AuthoritativeProjectsTests
         };
         var created = await new ProjectWriteRepository(database).CreateAsync("user", project, BillingPlan.Free);
         Assert.That(created.Rejection, Is.EqualTo(ProjectChangeRejection.None));
-        Assert.That((await workspace.GetAsync("user"))!.Workspace!.Projects.Single().Id, Is.EqualTo("project"));
+
+        await using var verification = testDatabase.CreateContext();
+        var reloaded = await new WorkspaceRepository(verification, new WorkspaceCollectionSynchronizer(verification)).GetAsync("user");
+        Assert.That(reloaded!.Workspace!.Projects.Single().Id, Is.EqualTo("project"));
+        Assert.That((await verification.ProjectIndexes.AsNoTracking().SingleAsync()).ActiveCount, Is.EqualTo(1));
     }
 
     [Test]
     public async Task GetAsync_AuthoritativeProjects_UsesProjectDocuments()
     {
-        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-        await using var database = new DatabaseContext(options);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         database.Workspaces.Add(new WorkspaceDocument
         {
             UserId = "user",

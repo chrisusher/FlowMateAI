@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="../../API/API.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../Services.Tests/CosmosTestEnvironment.cs" Link="CosmosTestEnvironment.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../API/openapi.yml" Link="openapi.yml" CopyToOutputDirectory="PreserveNewest" />

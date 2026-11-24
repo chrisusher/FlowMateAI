@@ -22,10 +22,9 @@ using Shared.Enums;
 using Shared.Models;
 using Services.Database;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Azure.Cosmos;
 using API.Functions.V1.Projects.Archive;
 using API.Functions.V1.Projects.Restore;
-using Testcontainers.CosmosDb;
+using Services.Tests;
 
 namespace API.Tests;
 
@@ -282,84 +281,62 @@ public sealed class Auth0TokenValidatorTests
     [Test]
     public async Task Run_AuthenticatedProjectLifecycle_PersistsChangesAndIsolatesAccounts()
     {
-        await using var emulator = new CosmosDbBuilder("mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview").Build();
-        await emulator.StartAsync();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         const string userId = "auth0|customer-1";
-        var options = new DbContextOptionsBuilder<DatabaseContext>()
-            .UseCosmos(emulator.GetConnectionString(), $"flowmate-http-test-{Guid.NewGuid():N}", cosmos => cosmos
-                .ConnectionMode(ConnectionMode.Gateway)
-                .HttpClientFactory(() => emulator.HttpClient)
-                .RequestTimeout(TimeSpan.FromSeconds(30))).Options;
-        await using var database = new DatabaseContext(options);
-        await database.Database.EnsureCreatedAsync();
+        var workspaces = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
+        await workspaces.SaveAsync(userId, new WorkspaceSnapshot(), null);
+        var billing = new TestBilling();
+        var service = new ProjectWriteService(new ProjectWriteRepository(database), billing, new ProjectArchiveRepository(database));
+        using var key = RSA.Create(2048);
+        var validator = CreateValidator(key);
+        var users = new TestUserService("person@example.test");
+        var limiter = new AllowRequests();
+        var authorization = $"Bearer {CreateToken(key)}";
 
-        try
-        {
-            var workspaces = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
-            await workspaces.SaveAsync(userId, new WorkspaceSnapshot(), null);
-            var billing = new TestBilling();
-            var service = new ProjectWriteService(new ProjectWriteRepository(database), billing, new ProjectArchiveRepository(database));
-            using var key = RSA.Create(2048);
-            var validator = CreateValidator(key);
-            var users = new TestUserService("person@example.test");
-            var limiter = new AllowRequests();
-            var authorization = $"Bearer {CreateToken(key)}";
+        var create = new CreateProject(validator, users, limiter, service);
+        var createRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectCreateRequest("project", "Client work", "#112233", DateTimeOffset.UtcNow), SharedCommon.JsonOptions));
+        var created = await create.Run(createRequest, CancellationToken.None);
+        Assert.That(created.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var createdBody = await ReadResponseAsync<ProjectWriteResponse>(created);
+        await AccountOperation.CompleteAsync(createRequest.FunctionContext);
 
-            var create = new CreateProject(validator, users, limiter, service);
-            var createRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectCreateRequest("project", "Client work", "#112233", DateTimeOffset.UtcNow), SharedCommon.JsonOptions));
-            var created = await create.Run(createRequest, CancellationToken.None);
-            Assert.That(created.StatusCode, Is.EqualTo(HttpStatusCode.Created));
-            var createdBody = await ReadResponseAsync<ProjectWriteResponse>(created);
-            await AccountOperation.CompleteAsync(createRequest.FunctionContext);
+        var rename = new RenameProject(validator, users, limiter, service);
+        var renameRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectRenameRequest("Renamed", createdBody.Revision), SharedCommon.JsonOptions));
+        var renamed = await rename.Run(renameRequest, "project", CancellationToken.None);
+        Assert.That(renamed.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var renamedBody = await ReadResponseAsync<ProjectWriteResponse>(renamed);
+        Assert.That(renamedBody.Project.Name, Is.EqualTo("Renamed"));
+        await AccountOperation.CompleteAsync(renameRequest.FunctionContext);
 
-            var rename = new RenameProject(validator, users, limiter, service);
-            var renameRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectRenameRequest("Renamed", createdBody.Revision), SharedCommon.JsonOptions));
-            var renamed = await rename.Run(renameRequest, "project", CancellationToken.None);
-            Assert.That(renamed.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            var renamedBody = await ReadResponseAsync<ProjectWriteResponse>(renamed);
-            Assert.That(renamedBody.Project.Name, Is.EqualTo("Renamed"));
-            await AccountOperation.CompleteAsync(renameRequest.FunctionContext);
+        var staleRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectRenameRequest("Stale", createdBody.Revision), SharedCommon.JsonOptions));
+        var stale = await rename.Run(staleRequest, "project", CancellationToken.None);
+        Assert.That(stale.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        await AccountOperation.CompleteAsync(staleRequest.FunctionContext);
 
-            var staleRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectRenameRequest("Stale", createdBody.Revision), SharedCommon.JsonOptions));
-            var stale = await rename.Run(staleRequest, "project", CancellationToken.None);
-            Assert.That(stale.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
-            await AccountOperation.CompleteAsync(staleRequest.FunctionContext);
+        var currentWorkspace = await database.Workspaces.AsNoTracking().SingleAsync(item => item.UserId == userId && item.Id == "workspace");
+        var archive = new ArchiveProject(validator, users, limiter, service);
+        var archiveRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectArchiveRequest(renamedBody.Revision, currentWorkspace.ETag), SharedCommon.JsonOptions));
+        var archived = await archive.Run(archiveRequest, "project", CancellationToken.None);
+        Assert.That(archived.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var archivedBody = await ReadResponseAsync<ProjectWriteResponse>(archived);
+        Assert.That(archivedBody.Project.IsArchived, Is.True);
+        Assert.That(archivedBody.WorkspaceRevision, Is.Not.Empty);
+        Assert.That(archivedBody.Timer, Is.Not.Null);
+        await AccountOperation.CompleteAsync(archiveRequest.FunctionContext);
 
-            var currentWorkspace = await database.Workspaces.AsNoTracking().SingleAsync(item => item.UserId == userId && item.Id == "workspace");
-            var archive = new ArchiveProject(validator, users, limiter, service);
-            var archiveRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectArchiveRequest(renamedBody.Revision, currentWorkspace.ETag), SharedCommon.JsonOptions));
-            var archived = await archive.Run(archiveRequest, "project", CancellationToken.None);
-            Assert.That(archived.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            var archivedBody = await ReadResponseAsync<ProjectWriteResponse>(archived);
-            Assert.That(archivedBody.Project.IsArchived, Is.True);
-            Assert.That(archivedBody.WorkspaceRevision, Is.Not.Empty);
-            Assert.That(archivedBody.Timer, Is.Not.Null);
-            await AccountOperation.CompleteAsync(archiveRequest.FunctionContext);
+        var restore = new RestoreProject(validator, users, limiter, service);
+        var restoreRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectStateRequest(archivedBody.Revision), SharedCommon.JsonOptions));
+        var restored = await restore.Run(restoreRequest, "project", CancellationToken.None);
+        Assert.That(restored.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That((await ReadResponseAsync<ProjectWriteResponse>(restored)).Project.IsArchived, Is.False);
+        await AccountOperation.CompleteAsync(restoreRequest.FunctionContext);
 
-            var restore = new RestoreProject(validator, users, limiter, service);
-            var restoreRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectStateRequest(archivedBody.Revision), SharedCommon.JsonOptions));
-            var restored = await restore.Run(restoreRequest, "project", CancellationToken.None);
-            Assert.That(restored.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That((await ReadResponseAsync<ProjectWriteResponse>(restored)).Project.IsArchived, Is.False);
-            await AccountOperation.CompleteAsync(restoreRequest.FunctionContext);
-
-            database.ChangeTracker.Clear();
-            var reloaded = await workspaces.GetAsync(userId);
-            Assert.That(reloaded!.Workspace!.Projects.Single().Name, Is.EqualTo("Renamed"));
-            Assert.That(reloaded.Workspace.Projects.Single().IsArchived, Is.False);
-            Assert.That(await new WorkspaceItemsRepository(database).GetProjectAsync("other-account", "project"), Is.Null);
-        }
-        finally
-        {
-            try
-            {
-                await database.Database.EnsureDeletedAsync();
-            }
-            catch (CosmosException exception)
-            {
-                TestContext.Progress.WriteLine($"Emulator database cleanup failed: {exception.StatusCode}. Remove the isolated emulator to clear its data.");
-            }
-        }
+        database.ChangeTracker.Clear();
+        var reloaded = await workspaces.GetAsync(userId);
+        Assert.That(reloaded!.Workspace!.Projects.Single().Name, Is.EqualTo("Renamed"));
+        Assert.That(reloaded.Workspace.Projects.Single().IsArchived, Is.False);
+        Assert.That(await new WorkspaceItemsRepository(database).GetProjectAsync("other-account", "project"), Is.Null);
     }
 
     private static async Task<T> ReadResponseAsync<T>(HttpResponseData response)

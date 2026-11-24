@@ -4,6 +4,8 @@ The repository tests use the Linux Azure Cosmos DB emulator through Testcontaine
 
 The test setup starts the emulator once for the run, creates a unique Cosmos database for each persistence test, and deletes each database during teardown. The emulator container is removed when the test run finishes. If Docker is unavailable, the test fixture reports the required setup instead of silently falling back to an in-memory provider.
 
+The API test project shares this environment for its authenticated project lifecycle test. Each test project starts and stops its own emulator when run.
+
 Run the tests with:
 
 ```powershell
