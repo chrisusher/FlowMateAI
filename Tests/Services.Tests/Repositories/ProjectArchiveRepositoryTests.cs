@@ -9,7 +9,7 @@ namespace Services.Tests.Repositories;
 public sealed class ProjectArchiveRepositoryTests
 {
     [Test]
-    public async Task ArchiveClearsIdleSelectionAndPreservesRelatedRecords()
+    public async Task ArchiveAsync_IdleSelection_ClearsSelectionAndPreservesHistory()
     {
         await using var database = await CreateDatabaseAsync();
         var repository = new ProjectArchiveRepository(database);
@@ -28,7 +28,7 @@ public sealed class ProjectArchiveRepositoryTests
     }
 
     [Test]
-    public async Task ActiveTimerPreventsArchiveWithoutLeavingAGuard()
+    public async Task ArchiveAsync_ActiveTimer_RejectsWithoutLeavingGuard()
     {
         await using var database = await CreateDatabaseAsync();
         var workspace = await database.Workspaces.SingleAsync();
@@ -44,7 +44,7 @@ public sealed class ProjectArchiveRepositoryTests
     }
 
     [Test]
-    public async Task StaleWorkspaceRevisionCannotStartArchive()
+    public async Task ArchiveAsync_StaleWorkspaceRevision_RejectsChange()
     {
         await using var database = await CreateDatabaseAsync();
         var result = await new ProjectArchiveRepository(database).ArchiveAsync("user", "project", "project-revision", "stale-workspace");
@@ -55,7 +55,7 @@ public sealed class ProjectArchiveRepositoryTests
     }
 
     [Test]
-    public async Task WorkspaceSaveCannotPassAnExistingArchiveGuard()
+    public async Task SaveAsync_ExistingArchiveGuard_RejectsWorkspaceWrite()
     {
         await using var database = await CreateDatabaseAsync();
         var workspace = await database.Workspaces.SingleAsync();
@@ -75,7 +75,7 @@ public sealed class ProjectArchiveRepositoryTests
 
     [TestCase(false)]
     [TestCase(true)]
-    public async Task RecoveryCompletesAnInterruptedArchiveOnlyOnce(bool alreadyArchived)
+    public async Task RecoverAsync_InterruptedArchive_CompletesExactlyOnce(bool alreadyArchived)
     {
         await using var database = await CreateDatabaseAsync();
         var workspace = await database.Workspaces.SingleAsync();
@@ -104,7 +104,7 @@ public sealed class ProjectArchiveRepositoryTests
     }
 
     [Test]
-    public async Task WorkspaceReadRecoversAnInterruptedArchive()
+    public async Task GetAsync_InterruptedArchive_RecoversProject()
     {
         await using var database = await CreateDatabaseAsync();
         var workspace = await database.Workspaces.SingleAsync();

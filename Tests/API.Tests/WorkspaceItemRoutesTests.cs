@@ -11,7 +11,7 @@ public sealed class WorkspaceItemRoutesTests
     [TestCase("RenameProject", "v1/projects/{id}", "put")]
     [TestCase("RestoreProject", "v1/projects/{id}/restore", "post")]
     [TestCase("ArchiveProject", "v1/projects/{id}/archive", "post")]
-    public void RoutesExposeProjectWriteFunctions(string functionName, string route, string verb)
+    public void Run_ProjectWriteFunctions_ExposeExpectedRoutes(string functionName, string route, string verb)
     {
         var method = typeof(ListProjects).Assembly.GetTypes().Single(type => type.Name == functionName).GetMethod("Run")!;
         var function = method.GetCustomAttribute<FunctionAttribute>();

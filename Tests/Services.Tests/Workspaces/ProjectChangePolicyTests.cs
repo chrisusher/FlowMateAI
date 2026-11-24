@@ -8,7 +8,7 @@ public sealed class ProjectChangePolicyTests
 {
     [TestCase(BillingPlan.Free, 3)]
     [TestCase(BillingPlan.Pro, 25)]
-    public void AddAndRestoreRespectActiveProjectLimit(BillingPlan plan, int limit)
+    public void CanAddOrRestore_ActiveProjectLimit_RejectsExcessProjects(BillingPlan plan, int limit)
     {
         var projects = Enumerable.Range(0, limit).Select(index => new ProjectRecord
         {
@@ -24,7 +24,7 @@ public sealed class ProjectChangePolicyTests
     [TestCase(TimerPhase.ShortBreak)]
     [TestCase(TimerPhase.LongBreak)]
     [TestCase(TimerPhase.Paused)]
-    public void ArchiveRejectsActiveTimersReferencingAProjectViaItsTask(TimerPhase phase)
+    public void CanArchive_ActiveTimerReferencingTask_RejectsArchive(TimerPhase phase)
     {
         var project = new ProjectRecord
         {
@@ -47,7 +47,7 @@ public sealed class ProjectChangePolicyTests
     }
 
     [Test]
-    public void ArchiveChecksDirectTimerReferenceAndExistingState()
+    public void CanArchive_DirectTimerAndProjectState_ReturnsExpectedDecision()
     {
         var timer = new TimerSnapshot
         {

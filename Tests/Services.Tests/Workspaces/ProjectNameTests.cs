@@ -9,7 +9,7 @@ public sealed class ProjectNameTests
     [TestCase("  ", ProjectNameValidation.Required, "")]
     [TestCase("  Project  ", ProjectNameValidation.Valid, "Project")]
     [TestCase("Project\nName", ProjectNameValidation.ContainsControlCharacters, "Project\nName")]
-    public void ValidatesAndNormalises(string? input, ProjectNameValidation expected, string expectedName)
+    public void Validate_ProjectNames_NormalisesAndValidates(string? input, ProjectNameValidation expected, string expectedName)
     {
         var result = ProjectName.Validate(input, out var normalised);
 
@@ -18,7 +18,7 @@ public sealed class ProjectNameTests
     }
 
     [Test]
-    public void EnforcesTheEightyCharacterLimitAfterTrimming()
+    public void Validate_TrimmedProjectName_EnforcesEightyCharacterLimit()
     {
         Assert.That(ProjectName.Validate($" {new string('x', 80)} ", out _), Is.EqualTo(ProjectNameValidation.Valid));
         Assert.That(ProjectName.Validate(new string('x', 81), out _), Is.EqualTo(ProjectNameValidation.TooLong));

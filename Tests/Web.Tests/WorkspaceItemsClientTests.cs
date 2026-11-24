@@ -9,7 +9,7 @@ namespace Web.Tests;
 public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
 {
     [Test]
-    public async Task ProjectWritesUseAuthenticatedResourceRoutesAndRecordRevisions()
+    public async Task ProjectWrites_AuthenticatedRequests_UseResourceRoutesAndRevisions()
     {
         await SignInAsync();
         var project = new ProjectRecord

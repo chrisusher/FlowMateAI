@@ -9,7 +9,7 @@ namespace Services.Tests.Repositories;
 public sealed class ProjectWriteRepositoryTests
 {
     [Test]
-    public void ProjectAndIndexQueriesTranslateForCosmos()
+    public void Query_ProjectAndIndex_TranslatesForCosmos()
     {
         using var database = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
             .UseCosmos("https://localhost:8081", Convert.ToBase64String(new byte[64]), "tests").Options);
@@ -19,7 +19,7 @@ public sealed class ProjectWriteRepositoryTests
     }
 
     [Test]
-    public async Task CreateReservesSlotAndCanBeRetriedWithoutDuplicatingRecord()
+    public async Task CreateAsync_RetriedRequest_ReservesOneSlotAndRecord()
     {
         await using var database = CreateDatabase();
         database.Workspaces.Add(new WorkspaceDocument
@@ -65,7 +65,7 @@ public sealed class ProjectWriteRepositoryTests
     }
 
     [Test]
-    public async Task RenameRequiresTheCurrentRecordRevisionAndCorrectOwner()
+    public async Task RenameAsync_StaleRevisionOrOtherOwner_RejectsChange()
     {
         await using var database = CreateDatabase();
         database.Workspaces.Add(new WorkspaceDocument
@@ -95,7 +95,7 @@ public sealed class ProjectWriteRepositoryTests
     }
 
     [Test]
-    public async Task RestoreUsesAnActiveSlotAndRejectsStaleOrOverLimitRequests()
+    public async Task RestoreAsync_StaleOrOverLimitRequest_RejectsChange()
     {
         await using var database = CreateDatabase();
         database.Workspaces.Add(new WorkspaceDocument

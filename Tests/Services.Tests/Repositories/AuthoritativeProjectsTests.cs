@@ -7,7 +7,7 @@ namespace Services.Tests.Repositories;
 public sealed class AuthoritativeProjectsTests
 {
     [Test]
-    public async Task NewEmptyWorkspaceIsReadyForProjectWritesWithoutManualCutover()
+    public async Task SaveAsync_NewEmptyWorkspace_InitialisesProjectStorage()
     {
         var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         await using var database = new DatabaseContext(options);
@@ -28,7 +28,7 @@ public sealed class AuthoritativeProjectsTests
     }
 
     [Test]
-    public async Task ReadsAndSynchronisationUseProjectDocumentsAfterCutover()
+    public async Task GetAsync_AuthoritativeProjects_UsesProjectDocuments()
     {
         var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
         await using var database = new DatabaseContext(options);

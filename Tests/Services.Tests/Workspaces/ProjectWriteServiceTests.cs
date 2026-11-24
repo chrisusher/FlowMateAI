@@ -8,7 +8,7 @@ namespace Services.Tests.Workspaces;
 public sealed class ProjectWriteServiceTests
 {
     [Test]
-    public async Task CreateValidatesAndNormalisesBeforeUsingTheAccountsPlan()
+    public async Task CreateAsync_ProjectName_ValidatesAndUsesAccountPlan()
     {
         var repository = new RecordingRepository();
         var billing = new StubBillingRepository
@@ -41,7 +41,7 @@ public sealed class ProjectWriteServiceTests
     }
 
     [Test]
-    public async Task RenameRequiresRevisionAndValidName()
+    public async Task RenameAsync_MissingRevisionOrInvalidName_RejectsChange()
     {
         var repository = new RecordingRepository();
         var service = new ProjectWriteService(repository, new StubBillingRepository());

@@ -442,7 +442,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ProjectEditorDialogTrimsNamesPersistsAndCancels()
+    public async Task SaveProject_ValidName_CreatesProjectAndSupportsCancel()
     {
         await SignInAsync();
         UseProjectApi();
@@ -475,7 +475,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ProjectCanBeRenamedWithoutChangingTasksOrFocusHistory()
+    public async Task SaveProject_Rename_PreservesTasksAndFocusHistory()
     {
         await SignInAsync();
         UseProjectApi();
@@ -493,7 +493,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ProjectCreateWaitsForTheApiAndReusesItsIdAfterFailure()
+    public async Task SaveProject_FailedCreate_RetainsDraftAndReusesId()
     {
         await SignInAsync();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -546,7 +546,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task RenameKeepsDraftWhenServerProjectChanged()
+    public async Task SaveProject_RemoteProjectChanged_KeepsRenameDraft()
     {
         await SignInAsync();
         Api.Respond = (_, _) =>
@@ -578,7 +578,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ProjectCanBeArchivedAndRestoredWithoutLosingRelatedRecords()
+    public async Task ArchiveAndRestore_ProjectWithHistory_PreservesRelatedRecords()
     {
         await SignInAsync();
         UseProjectApi();
@@ -613,7 +613,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ArchivingSelectedProjectClearsIdleTimerSelection()
+    public async Task ConfirmArchiveAsync_IdleSelectedProject_ClearsTimerSelection()
     {
         await SignInAsync();
         UseProjectApi();
@@ -629,7 +629,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ArchiveFailureLeavesProjectAndTimerUntouched()
+    public async Task ConfirmArchiveAsync_RejectedRequest_PreservesProjectAndTimer()
     {
         await SignInAsync();
         UseProjectApi();
@@ -668,7 +668,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ArchiveDoesNotOverwriteTimerChangesMadeWhileRequestIsInFlight()
+    public async Task ConfirmArchiveAsync_ConcurrentTimerChange_PreservesTimerDraft()
     {
         await SignInAsync();
         UseProjectApi();
@@ -732,7 +732,7 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ArchivedProjectFreesAnActiveSlotAndInvalidNamesAreRejected()
+    public async Task SaveProject_ArchivedProjectAndInvalidNames_EnforcesLimitAndValidation()
     {
         await SignInAsync();
         UseProjectApi();

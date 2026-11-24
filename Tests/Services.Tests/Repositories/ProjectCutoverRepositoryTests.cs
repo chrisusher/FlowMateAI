@@ -7,7 +7,7 @@ namespace Services.Tests.Repositories;
 public sealed class ProjectCutoverRepositoryTests
 {
     [Test]
-    public async Task PreviewIsReadOnlyAndApplyPreservesProjectsAndSetsIndex()
+    public async Task ApplyAsync_VerifiedLegacyProjects_PreservesRecordsAndSetsIndex()
     {
         await using var database = CreateDatabase();
         database.Workspaces.Add(new WorkspaceDocument
@@ -53,7 +53,7 @@ public sealed class ProjectCutoverRepositoryTests
     }
 
     [Test]
-    public async Task RejectsDifferentDestinationOrChangedRevisionBeforeWriting()
+    public async Task ApplyAsync_ConflictingDestinationOrRevision_RejectsWithoutWriting()
     {
         await using var database = CreateDatabase();
         database.Workspaces.Add(new WorkspaceDocument

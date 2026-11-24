@@ -9,7 +9,7 @@ namespace Services.Tests.Workspaces;
 public sealed class WorkspaceServiceTests
 {
     [Test]
-    public async Task WorkspaceSaveCannotChangeAuthoritativeProjects()
+    public async Task SaveAsync_ChangedAuthoritativeProjects_RejectsWorkspaceWrite()
     {
         var repository = new InMemoryWorkspaceRepository();
         var current = new WorkspaceSnapshot
@@ -38,7 +38,7 @@ public sealed class WorkspaceServiceTests
     }
 
     [Test]
-    public async Task WorkspaceSaveCannotStartATimerForAnArchivedProject()
+    public async Task SaveAsync_ArchivedTimerProject_RejectsWorkspaceWrite()
     {
         var repository = new InMemoryWorkspaceRepository();
         var workspace = new WorkspaceSnapshot
