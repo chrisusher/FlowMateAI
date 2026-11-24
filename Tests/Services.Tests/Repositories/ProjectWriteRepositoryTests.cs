@@ -9,10 +9,10 @@ namespace Services.Tests.Repositories;
 public sealed class ProjectWriteRepositoryTests
 {
     [Test]
-    public void Query_ProjectAndIndex_TranslatesForCosmos()
+    public async Task Query_ProjectAndIndex_TranslatesForCosmos()
     {
-        using var database = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
-            .UseCosmos("https://localhost:8081", Convert.ToBase64String(new byte[64]), "tests").Options);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
 
         Assert.DoesNotThrow(() => database.ProjectIndexes.Where(item => item.UserId == "user" && item.Id == "project-index").ToQueryString());
         Assert.DoesNotThrow(() => database.Projects.Where(item => item.UserId == "user" && item.Id == "project").ToQueryString());
@@ -21,7 +21,8 @@ public sealed class ProjectWriteRepositoryTests
     [Test]
     public async Task CreateAsync_RetriedRequest_ReservesOneSlotAndRecord()
     {
-        await using var database = CreateDatabase();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         database.Workspaces.Add(new WorkspaceDocument
         {
             UserId = "user",
@@ -35,6 +36,22 @@ public sealed class ProjectWriteRepositoryTests
             TotalCount = 4,
             NextPosition = 4
         });
+
+        for (var position = 0; position < 4; position++)
+        {
+            database.Projects.Add(new WorkspaceProjectDocument
+            {
+                UserId = "user",
+                Id = $"existing-{position}",
+                Position = position,
+                Project = new ProjectRecord
+                {
+                    Id = $"existing-{position}",
+                    Name = $"Existing {position}",
+                    IsArchived = position >= 2
+                }
+            });
+        }
         await database.SaveChangesAsync();
         var repository = new ProjectWriteRepository(database);
         var project = new ProjectRecord
@@ -48,9 +65,9 @@ public sealed class ProjectWriteRepositoryTests
 
         Assert.That(created.Rejection, Is.EqualTo(ProjectChangeRejection.None));
         Assert.That(retried.Rejection, Is.EqualTo(ProjectChangeRejection.None));
-        Assert.That(await database.Projects.CountAsync(), Is.EqualTo(1));
-        Assert.That((await database.Projects.SingleAsync()).Position, Is.EqualTo(4));
-        var index = await database.ProjectIndexes.SingleAsync();
+        Assert.That(await database.Projects.CountAsync(), Is.EqualTo(5));
+        Assert.That((await database.Projects.AsNoTracking().SingleAsync(item => item.Id == "new-project")).Position, Is.EqualTo(4));
+        var index = await database.ProjectIndexes.AsNoTracking().SingleAsync();
         Assert.That(index.ActiveCount, Is.EqualTo(3));
         Assert.That(index.TotalCount, Is.EqualTo(5));
         Assert.That(index.NextPosition, Is.EqualTo(5));
@@ -61,13 +78,14 @@ public sealed class ProjectWriteRepositoryTests
             Name = "Over limit"
         }, BillingPlan.Free);
         Assert.That(rejected.Rejection, Is.EqualTo(ProjectChangeRejection.ProjectLimit));
-        Assert.That(await database.Projects.CountAsync(), Is.EqualTo(1));
+        Assert.That(await database.Projects.CountAsync(), Is.EqualTo(5));
     }
 
     [Test]
     public async Task RenameAsync_StaleRevisionOrOtherOwner_RejectsChange()
     {
-        await using var database = CreateDatabase();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         database.Workspaces.Add(new WorkspaceDocument
         {
             UserId = "user",
@@ -78,26 +96,35 @@ public sealed class ProjectWriteRepositoryTests
         {
             UserId = "user",
             Id = "project",
-            ETag = "revision-1",
             Project = new ProjectRecord
             {
                 Id = "project",
                 Name = "Before"
             }
         });
+        database.ProjectIndexes.Add(new ProjectIndexDocument
+        {
+            UserId = "user",
+            ActiveCount = 1,
+            TotalCount = 1,
+            NextPosition = 1
+        });
         await database.SaveChangesAsync();
+        var revision = (await database.Projects.AsNoTracking().SingleAsync()).ETag!;
         var repository = new ProjectWriteRepository(database);
 
-        Assert.That((await repository.RenameAsync("other", "project", "Other", "revision-1")).Rejection, Is.EqualTo(ProjectChangeRejection.StorageNotReady));
+        Assert.That((await repository.RenameAsync("other", "project", "Other", revision)).Rejection, Is.EqualTo(ProjectChangeRejection.StorageNotReady));
         Assert.That((await repository.RenameAsync("user", "project", "Stale", "old")).Rejection, Is.EqualTo(ProjectChangeRejection.Conflict));
-        Assert.That((await repository.RenameAsync("user", "project", "After", "revision-1")).Rejection, Is.EqualTo(ProjectChangeRejection.None));
-        Assert.That((await database.Projects.SingleAsync()).Project!.Name, Is.EqualTo("After"));
+        Assert.That((await repository.RenameAsync("user", "project", "After", revision)).Rejection, Is.EqualTo(ProjectChangeRejection.None));
+        await using var verification = testDatabase.CreateContext();
+        Assert.That((await verification.Projects.AsNoTracking().SingleAsync()).Project!.Name, Is.EqualTo("After"));
     }
 
     [Test]
     public async Task RestoreAsync_StaleOrOverLimitRequest_RejectsChange()
     {
-        await using var database = CreateDatabase();
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         database.Workspaces.Add(new WorkspaceDocument
         {
             UserId = "user",
@@ -115,25 +142,39 @@ public sealed class ProjectWriteRepositoryTests
         {
             UserId = "user",
             Id = "archived",
-            ETag = "revision",
+            Position = 3,
             Project = new ProjectRecord
             {
                 Id = "archived",
                 IsArchived = true
             }
         });
+
+        for (var position = 0; position < 3; position++)
+        {
+            database.Projects.Add(new WorkspaceProjectDocument
+            {
+                UserId = "user",
+                Id = $"active-{position}",
+                Position = position,
+                Project = new ProjectRecord
+                {
+                    Id = $"active-{position}",
+                    Name = $"Active {position}"
+                }
+            });
+        }
         await database.SaveChangesAsync();
+        var revision = (await database.Projects.AsNoTracking().SingleAsync(item => item.Id == "archived")).ETag!;
         var repository = new ProjectWriteRepository(database);
 
         Assert.That((await repository.RestoreAsync("user", "archived", "stale", BillingPlan.Free)).Rejection, Is.EqualTo(ProjectChangeRejection.Conflict));
-        Assert.That((await repository.RestoreAsync("user", "archived", "revision", BillingPlan.Free)).Rejection, Is.EqualTo(ProjectChangeRejection.ProjectLimit));
-        Assert.That((await database.Projects.SingleAsync()).Project!.IsArchived, Is.True);
-        var restored = await repository.RestoreAsync("user", "archived", "revision", BillingPlan.Pro);
+        Assert.That((await repository.RestoreAsync("user", "archived", revision, BillingPlan.Free)).Rejection, Is.EqualTo(ProjectChangeRejection.ProjectLimit));
+        Assert.That((await database.Projects.AsNoTracking().SingleAsync(item => item.Id == "archived")).Project!.IsArchived, Is.True);
+        var restored = await repository.RestoreAsync("user", "archived", revision, BillingPlan.Pro);
         Assert.That(restored.Rejection, Is.EqualTo(ProjectChangeRejection.None));
         Assert.That(restored.Project!.IsArchived, Is.False);
-        Assert.That((await database.ProjectIndexes.SingleAsync()).ActiveCount, Is.EqualTo(4));
+        await using var verification = testDatabase.CreateContext();
+        Assert.That((await verification.ProjectIndexes.AsNoTracking().SingleAsync()).ActiveCount, Is.EqualTo(4));
     }
-
-    private static DatabaseContext CreateDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options);
 }
