@@ -25,16 +25,31 @@ paths:
       summary: Get the signed-in user's workspace
       security:
         - bearerAuth: []
+      parameters:
+        - name: collections
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [separate]
+          description: Return workspace metadata and collection hashes for validating separate collection reads. Omit to return the complete snapshot.
       responses:
         '200':
           description: Workspace and current revision.
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+            X-Workspace-Collections:
+              description: Set to separate when the response is a collection manifest.
+              schema:
+                type: string
+                enum: [separate]
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkspaceResponse'
+                anyOf:
+                  - $ref: '#/components/schemas/WorkspaceResponse'
+                  - $ref: '#/components/schemas/WorkspaceCollectionManifest'
         '401':
           $ref: '#/components/responses/Unauthorized'
     put:
@@ -70,6 +85,192 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '409':
           description: The workspace revision conflicts with the latest saved revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/projects:
+    get:
+      operationId: listProjects
+      summary: List the signed-in user's projects
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/projects/{id}:
+    get:
+      operationId: getProject
+      summary: Get one of the signed-in user's projects
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List the signed-in user's tasks
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/tasks/{id}:
+    get:
+      operationId: getTask
+      summary: Get one of the signed-in user's tasks
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/sessions:
+    get:
+      operationId: listSessions
+      summary: List the signed-in user's sessions
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/sessions/{id}:
+    get:
+      operationId: getSession
+      summary: Get one of the signed-in user's sessions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /v1/conversations:
+    get:
+      operationId: listConversations
+      summary: List the signed-in user's conversations
+      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Records in workspace order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /v1/conversations/{id}:
+    get:
+      operationId: getConversation
+      summary: Get one of the signed-in user's conversations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The requested record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The record was not found.
           content:
             application/json:
               schema:
@@ -198,6 +399,38 @@ paths:
           $ref: '#/components/responses/BillingAction'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /v1/account:
+    delete:
+      operationId: deleteAccount
+      summary: Delete the authenticated user's account
+      description: Cancels the Stripe subscription before deleting application data and the Auth0 identity. The request requires the authenticated email and the exact confirmation phrase.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountDeletionRequest'
+      responses:
+        '204':
+          description: Account and application data deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: The subscription could not be cancelled, so no application data was removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Deletion is incomplete and can be retried.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /v1/webhooks/stripe:
     post:
       operationId: receiveStripeWebhook
@@ -327,6 +560,16 @@ components:
       properties:
         annual:
           type: boolean
+    AccountDeletionRequest:
+      type: object
+      required: [confirmation, email]
+      properties:
+        confirmation:
+          type: string
+          example: DELETE MY ACCOUNT
+        email:
+          type: string
+          format: email
     CoachRequest:
       type: object
       required: [prompt]
@@ -389,6 +632,23 @@ components:
         workspace:
           $ref: '#/components/schemas/WorkspaceSnapshot'
         revision:
+          type: string
+    WorkspaceCollectionManifest:
+      description: SHA-256 hashes of the ordered collections serialised with the shared JSON options; a mismatch requires a fresh complete workspace read.
+      type: object
+      required: [workspace, revision, projectsHash, tasksHash, sessionsHash, conversationsHash]
+      properties:
+        workspace:
+          $ref: '#/components/schemas/WorkspaceSnapshot'
+        revision:
+          type: string
+        projectsHash:
+          type: string
+        tasksHash:
+          type: string
+        sessionsHash:
+          type: string
+        conversationsHash:
           type: string
     WorkspaceSnapshot:
       type: object

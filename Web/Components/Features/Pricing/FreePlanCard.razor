@@ -9,6 +9,10 @@
         <small>forever</small>
     </div>
     <p>Everything you need to build a steady focus habit.</p>
+    @if (Billing.BillingState is not null && Billing.CurrentPlan == BillingPlan.Free)
+    {
+        <span class="current-plan-badge">Current plan</span>
+    }
     <button class="plan-button secondary" disabled>@Billing.FreePlanButtonText</button>
     <ul>
         <li>&#10003; Up to 3 projects</li>
@@ -16,5 +20,7 @@
         <li>&#10003; Focus timer and reports</li>
         <li>&#10003; 30 days of report history</li>
         <li>&#10003; 10 coach prompts each month</li>
+        <li>&#10003; Read-only AI assistant connections</li>
+        <li>&#10003; 10 MCP calls per rolling minute and 100 per UTC day</li>
     </ul>
 </article>

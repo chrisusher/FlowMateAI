@@ -16,7 +16,7 @@ Auth0:ManagementClientId        (secret)
 Auth0:ManagementClientSecret    (secret)
 ```
 
-Create an Auth0 machine-to-machine application authorized for the Auth0 Management API with the `read:users` scope. The CLI requests a Management API token and resolves email through `/api/v2/users-by-email`. See [Auth0's production token setup](https://auth0.com/docs/secure/tokens/access-tokens/management-api-access-tokens/get-management-api-access-tokens-for-production).
+Create an Auth0 machine-to-machine application authorized for the Auth0 Management API with the `read:users` scope. The authenticated account-deletion endpoint additionally requires `delete:users`; the CLI itself only resolves email through `/api/v2/users-by-email`. The CLI requests a Management API token through the same server-side settings. See [Auth0's production token setup](https://auth0.com/docs/secure/tokens/access-tokens/management-api-access-tokens/get-management-api-access-tokens-for-production).
 
 ## Grant Pro access for a preview
 
@@ -60,3 +60,16 @@ aspire resource cli reset-user-data --email person@example.com --user-id "auth0|
 ```
 
 The reset process is launched as `dotnet <absolute CLI.dll path> ...` with an absolute working directory. Its stdout/stderr and exit status are forwarded by Aspire. The resource is excluded from the publish manifest; this is a local administration tool.
+
+## Repair a workspace and historical focus totals
+
+`user repair-workspace` targets one exact Cosmos `/UserId` partition. It previews by default. It reads both legacy JSON-string workspaces and structured workspaces, then writes the workspace and its derived records as native Cosmos properties. It never changes the historical blob archive. It leaves existing planned durations untouched. Specify `--planned-minutes` only when you have confirmed the missing records used that duration; the original duration cannot be recovered reliably from old records. The standard focus timer is 25 minutes.
+
+Set `Database:DatabaseName` and the endpoint/key explicitly for the intended environment, then close the account's active browser tabs and resolve any pending local changes. Check the printed endpoint, database, user ID, record count and all-history before/after totals before applying. For example:
+
+```powershell
+dotnet run --project CLI -- user repair-workspace --user-id "auth0|abc123" --planned-minutes 25
+dotnet run --project CLI -- user repair-workspace --user-id "auth0|abc123" --planned-minutes 25 --apply --backup ./test-workspace-backup.json
+```
+
+Omit `--planned-minutes` to migrate the storage representation without changing historical counts. Applying requires a new backup file; the command refuses to overwrite an existing file and uses the original Cosmos ETag to reject concurrent workspace changes. Keep the backup private because it contains the complete workspace. The workspace and derived records are separate writes, so failures can leave the latter partially updated; after checking the workspace and backup, rerun the command to regenerate them. Back up the Cosmos account independently before bulk administrative work. Reopen the app and check the relevant reporting period after repair. Unsynchronised browser drafts can conflict and must not be blindly used to overwrite the repaired workspace.

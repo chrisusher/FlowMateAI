@@ -3,6 +3,7 @@ using Services.Billing;
 using Services.Workspaces;
 using Shared.Data;
 using Shared.Exceptions;
+using Shared.Models;
 using Shared.Models.Coach;
 
 namespace Services.Coach;
@@ -51,25 +52,27 @@ public sealed class FoundryFocusCoachService(
             {
                 localDate = DateData.LocalDate(now, workspace.TimeZone),
                 timeZone = workspace.TimeZone,
-                projects = workspace.Projects.Select(p => new
+                projects = workspace.Projects.Take(10).Select(p => new
                 {
-                    p.Name,
-                    tasks = workspace.Tasks.Where(t => t.ProjectId == p.Id).Select(t => new
+                    name = LimitText(p.Name, 120),
+                    tasks = workspace.Tasks.Where(t => t.ProjectId == p.Id).Take(5).Select(t => new
                     {
-                        t.Title,
+                        title = LimitText(t.Title, 200),
                         priority = t.Priority.ToString(),
                         t.IsComplete,
                         t.PlannedToday,
                         dueDate = t.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                     })
                 }),
+                focusSessionsToday = Math.Round(FocusSessionRecord.TotalSessions(recent.Where(s => DateData.LocalDate(s.StartedAt, workspace.TimeZone) == DateData.LocalDate(now, workspace.TimeZone))), 1, MidpointRounding.AwayFromZero),
+                focusSessionsLast7Days = Math.Round(FocusSessionRecord.TotalSessions(recent.Where(s => s.EndedAt >= now.AddDays(-7))), 1, MidpointRounding.AwayFromZero),
+                focusSessionsLast30Days = Math.Round(FocusSessionRecord.TotalSessions(recent), 1, MidpointRounding.AwayFromZero),
                 focusMinutesToday = DateData.MinutesForLocalDay(recent, now, workspace.TimeZone),
 
-                focusMinutesLast7Days = recent
-                    .Where(s => s.EndedAt >= now.AddDays(-7))
-                    .Sum(s => s.FocusMinutes),
+                focusMinutesLast7Days = FocusSessionRecord.TotalMinutes(recent
+                    .Where(s => s.EndedAt >= now.AddDays(-7))),
 
-                focusMinutesLast30Days = recent.Sum(s => s.FocusMinutes)
+                focusMinutesLast30Days = FocusSessionRecord.TotalMinutes(recent)
             };
 
             var url = $"{endpoint}/openai/deployments/{Uri.EscapeDataString(deployment)}/chat/completions?api-version={Uri.EscapeDataString(apiVersion)}";
@@ -86,12 +89,12 @@ public sealed class FoundryFocusCoachService(
             };
 
             messages
-                .AddRange(history.TakeLast(10)
+                .AddRange(history.TakeLast(6)
                     .Where(m => m.Role is ChatMessageRole.User or ChatMessageRole.Assistant)
                     .Select(m => (object)new
                     {
                         role = m.Role.ToWireValue(),
-                        content = m.Text
+                        content = LimitText(m.Text, 2000)
                     }));
 
             messages.Add(new
@@ -102,15 +105,17 @@ public sealed class FoundryFocusCoachService(
 
             var completionRequest = new
             {
-                temperature = 0.35,
-                max_tokens = 500,
+                reasoning_effort = "none",
+                max_completion_tokens = 500,
                 messages
             };
             request.Content = new StringContent(JsonSerializer.Serialize(completionRequest), Encoding.UTF8, "application/json");
 
-            using var response = await clients.CreateClient().SendAsync(request, cancellationToken);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            using var response = await clients.CreateClient().SendAsync(request, timeout.Token);
             response.EnsureSuccessStatusCode();
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(timeout.Token));
             var text = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
 
             if (string.IsNullOrWhiteSpace(text))
@@ -126,5 +131,8 @@ public sealed class FoundryFocusCoachService(
             throw;
         }
     }
+
+    private static string LimitText(string? value, int maximumLength) =>
+        string.IsNullOrEmpty(value) || value.Length <= maximumLength ? value ?? "" : value[..maximumLength];
 }
 

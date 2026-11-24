@@ -1,0 +1,143 @@
+.project-card {
+    padding: 18px;
+    position: relative
+}
+
+.project-card-link::after {
+    content: "";
+    position: absolute;
+    inset: 0
+}
+
+.project-card-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px
+}
+
+.project-menu, .project-add-task {
+    position: relative;
+    z-index: 1
+}
+
+.project-add-task {
+    margin-top: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 7px 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-weight: 600
+}
+
+.project-add-task:hover {
+    border-color: var(--accent)
+}
+
+.project-card-head {
+    display: flex;
+    justify-content: space-between
+}
+
+.project-square {
+    height: 31px;
+    width: 31px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    color: white;
+    font-size: 1rem
+}
+
+.project-menu {
+    position: relative;
+    font-size: 17px;
+    color: #999
+}
+
+.project-menu summary {
+    cursor: pointer;
+    list-style: none;
+    min-width: 28px;
+    text-align: center
+}
+
+.project-menu summary::-webkit-details-marker {
+    display: none
+}
+
+.project-menu-actions {
+    position: absolute;
+    z-index: 2;
+    top: 100%;
+    right: 0;
+    min-width: 130px;
+    padding: 5px;
+    display: grid;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    box-shadow: 0 8px 24px #0002
+}
+
+.project-menu-actions button {
+    border: 0;
+    border-radius: 6px;
+    padding: 8px 9px;
+    color: var(--text);
+    background: transparent;
+    text-align: left;
+    font: inherit;
+    font-size: 0.9375rem
+}
+
+.project-menu-actions button:hover,
+.project-menu-actions button:focus-visible {
+    background: var(--accent-soft)
+}
+
+.project-card h3 {
+    font: 650 13px Manrope;
+    margin: 16px 0 3px
+}
+
+.project-card>p {
+    font-size: 0.875rem;
+    color: #999;
+    margin: 0
+}
+
+.project-progress {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 17px 0 14px
+}
+
+.project-progress>span {
+    height: 4px;
+    background: #f0f1ed;
+    border-radius: 6px;
+    flex: 1
+}
+
+.project-progress i {
+    display: block;
+    height: 100%;
+    background: #66b99a;
+    border-radius: 6px
+}
+
+.project-progress small {
+    font-size: 0.875rem;
+    color: #999
+}
+
+.project-card-foot {
+    padding-top: 11px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    color: #999;
+    font-size: 0.875rem
+}
+

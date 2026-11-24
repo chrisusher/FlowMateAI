@@ -69,7 +69,9 @@
 
         <div class="onboarding-footer">
             <p>The coach can help you choose a next task and reflect on your focus. Free includes up to 3 active projects and 10 coach prompts each month; Pro includes up to 25 projects, 100 prompts, and one year of reports.</p>
+            <p>Connect an AI assistant to turn your recorded focus time into timesheets.</p>
             <div class="onboarding-actions">
+                <a class="quiet-button" href="settings#integrations">Connect your AI assistant</a>
                 <button type="button" class="quiet-button" @onclick='() => Go("coach")'>Meet your focus coach</button>
                 <button type="button" class="quiet-button" @onclick='() => Go("pricing")'>Compare Free and Pro</button>
             </div>
@@ -85,7 +87,7 @@
         !task.IsComplete &&
         Store.Project(task.ProjectId) is { IsArchived: false });
 
-    private bool HasFocusSession => Store.Data.Sessions.Any(session => session.FocusMinutes > 0);
+    private bool HasFocusSession => Store.Data.Sessions.Any(session => session.ElapsedSeconds > 0);
 
     private bool IsTimerActive => Store.Data.Timer.Phase is
         TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused;

@@ -1,0 +1,31 @@
+.project-tip {
+    margin-top: 16px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 11px
+}
+
+.project-tip>span {
+    color: #787de3;
+    font-size: 18px
+}
+
+.project-tip strong {
+    font-size: 0.875rem
+}
+
+.project-tip p {
+    margin: 2px 0 0;
+    color: #999;
+    font-size: 0.875rem
+}
+
+.project-tip a {
+    margin-left: auto;
+    color: #7478d3;
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap
+}
+

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using ChrisUsher.Core.Shared.Currency;
@@ -11,7 +12,9 @@ public sealed class StripeBillingService(
     FlowMateEnvironment environment,
     IConfiguration configuration,
     IHttpClientFactory clients,
-    IBillingRepository repository) : IBillingService
+    IBillingRepository repository,
+    IAccountDeletionMarkerRepository deletionMarkers,
+    IUserRepository? users = null) : IBillingService
 {
     private const string STRIPE_API = "https://api.stripe.com/v1/";
 
@@ -41,10 +44,10 @@ public sealed class StripeBillingService(
     {
         var prices = new List<BillingPrice>();
 
-        foreach (var (id, interval) in new[]
+        foreach (var (id, configuredInterval) in new[]
         {
-            (configuration["Stripe:MonthlyPriceId"], "month"),
-            (configuration["Stripe:AnnualPriceId"], "year")
+            (configuration["Stripe:MonthlyPriceId"], BillingInterval.Monthly),
+            (configuration["Stripe:AnnualPriceId"], BillingInterval.Annual)
         })
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -62,14 +65,24 @@ public sealed class StripeBillingService(
             var root = document.RootElement;
             var currency = root.GetProperty("currency").GetString() ?? "gbp";
             var amount = root.GetProperty("unit_amount").GetInt64();
-            var actualInterval = root.GetProperty("recurring").GetProperty("interval").GetString() ?? interval;
+            var recurring = root.GetProperty("recurring");
+            var actualInterval = recurring.GetProperty("interval").GetString();
+            var actualIntervalCount = recurring.TryGetProperty("interval_count", out var intervalCount)
+                ? intervalCount.GetInt32()
+                : 1;
+
+            if (!MatchesConfiguredInterval(configuredInterval, actualInterval, actualIntervalCount))
+            {
+                continue;
+            }
 
             var currencyCode = Enum.TryParse<CurrencyCode>(currency, true, out var parsedCurrency)
                 ? parsedCurrency
                 : CurrencyCode.Unknown;
 
             var display = CurrencyLogic.FormatPrice(amount / 100m, currencyCode);
-            prices.Add(new(actualInterval, currency, amount, $"{display} / {(actualInterval == "year" ? "year" : "month")}"));
+            var displayInterval = configuredInterval == BillingInterval.Annual ? "year" : "month";
+            prices.Add(new(displayInterval, currency, amount, $"{display} / {displayInterval}"));
         }
 
         return prices;
@@ -87,6 +100,15 @@ public sealed class StripeBillingService(
         {
             return Failure(BillingActionCode.BillingUnavailable, "Checkout is not configured yet.");
         }
+
+        var operationId = Guid.NewGuid().ToString("N");
+
+        if (!await deletionMarkers.TryBeginCheckoutAsync(userId, operationId, cancellationToken))
+        {
+            return Failure(BillingActionCode.CheckoutInProgress, "Checkout is unavailable while another request or account deletion is in progress.");
+        }
+
+        var checkoutOutcomeUnknown = false;
 
         try
         {
@@ -150,7 +172,10 @@ public sealed class StripeBillingService(
                 form["subscription_data[trial_settings][end_behavior][missing_payment_method]"] = "cancel";
             }
 
+            checkoutOutcomeUnknown = true;
             using var response = await SendAsync(HttpMethod.Post, "checkout/sessions", form, CheckoutIdempotencyKey(userId), cancellationToken);
+            checkoutOutcomeUnknown = !response.IsSuccessStatusCode && response.StatusCode is not
+                (HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.UnprocessableEntity);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -164,6 +189,14 @@ public sealed class StripeBillingService(
         catch (HttpRequestException)
         {
             return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. Try again in a moment.");
+        }
+        finally
+        {
+            // An ambiguous Stripe response must remain locked for support to reconcile.
+            if (!checkoutOutcomeUnknown)
+            {
+                await deletionMarkers.EndCheckoutAsync(userId, operationId, CancellationToken.None);
+            }
         }
     }
 
@@ -333,6 +366,170 @@ public sealed class StripeBillingService(
         }
     }
 
+    public async Task<BillingActionResponse> CancelSubscriptionAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(entitlement.StripeCustomerId) && string.IsNullOrWhiteSpace(entitlement.StripeSubscriptionId))
+        {
+            return new(true, null, null, null);
+        }
+
+        try
+        {
+            var subscriptionIds = new HashSet<string>(StringComparer.Ordinal);
+
+            if (!string.IsNullOrWhiteSpace(entitlement.StripeSubscriptionId))
+            {
+                subscriptionIds.Add(entitlement.StripeSubscriptionId);
+            }
+
+            if (!string.IsNullOrWhiteSpace(entitlement.StripeCustomerId))
+            {
+                string? checkoutCursor = null;
+                var checkoutIds = new List<string>();
+
+                do
+                {
+                    var path = $"checkout/sessions?customer={Uri.EscapeDataString(entitlement.StripeCustomerId)}&status=open&limit=100";
+
+                    if (checkoutCursor is not null)
+                    {
+                        path += $"&starting_after={Uri.EscapeDataString(checkoutCursor)}";
+                    }
+
+                    using var sessionsResponse = await SendAsync(HttpMethod.Get, path, null, null, cancellationToken);
+                    var body = await sessionsResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                    if (!sessionsResponse.IsSuccessStatusCode)
+                    {
+                        return Failure(BillingActionCode.StripeError, StripeError(body));
+                    }
+
+                    using var page = JsonDocument.Parse(body);
+                    var sessions = page.RootElement.GetProperty("data").EnumerateArray().ToArray();
+
+                    foreach (var session in sessions)
+                    {
+                        if (session.GetProperty("mode").GetString() != "subscription")
+                        {
+                            continue;
+                        }
+
+                        var id = session.GetProperty("id").GetString();
+
+                        if (string.IsNullOrWhiteSpace(id))
+                        {
+                            return Failure(BillingActionCode.StripeError, "Stripe returned an invalid checkout session.");
+                        }
+
+                        checkoutIds.Add(id);
+                    }
+
+                    var hasMore = page.RootElement.GetProperty("has_more").GetBoolean();
+
+                    if (hasMore && sessions.Length == 0)
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete checkout session list.");
+                    }
+
+                    checkoutCursor = hasMore ? sessions[^1].GetProperty("id").GetString() : null;
+
+                    if (hasMore && string.IsNullOrWhiteSpace(checkoutCursor))
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete checkout session list.");
+                    }
+                } while (checkoutCursor is not null);
+
+                foreach (var id in checkoutIds)
+                {
+                    using var expired = await SendAsync(HttpMethod.Post, $"checkout/sessions/{Uri.EscapeDataString(id)}/expire", null, null, cancellationToken);
+
+                    if (!expired.IsSuccessStatusCode)
+                    {
+                        return Failure(BillingActionCode.StripeError, StripeError(await expired.Content.ReadAsStringAsync(cancellationToken)));
+                    }
+                }
+
+                string? cursor = null;
+
+                do
+                {
+                    var path = $"subscriptions?customer={Uri.EscapeDataString(entitlement.StripeCustomerId)}&status=all&limit=100";
+
+                    if (cursor is not null)
+                    {
+                        path += $"&starting_after={Uri.EscapeDataString(cursor)}";
+                    }
+
+                    using var listResponse = await SendAsync(HttpMethod.Get, path, null, null, cancellationToken);
+                    var body = await listResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                    if (!listResponse.IsSuccessStatusCode)
+                    {
+                        return Failure(BillingActionCode.StripeError, StripeError(body));
+                    }
+
+                    using var page = JsonDocument.Parse(body);
+                    var items = page.RootElement.GetProperty("data").EnumerateArray().ToArray();
+
+                    foreach (var item in items)
+                    {
+                        var id = item.GetProperty("id").GetString();
+                        var status = item.GetProperty("status").GetString();
+
+                        if (!string.IsNullOrWhiteSpace(id))
+                        {
+                            if (status is "canceled" or "incomplete_expired")
+                            {
+                                subscriptionIds.Remove(id);
+                            }
+                            else
+                            {
+                                subscriptionIds.Add(id);
+                            }
+                        }
+                    }
+
+                    var hasMore = page.RootElement.GetProperty("has_more").GetBoolean();
+
+                    if (hasMore && items.Length == 0)
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete subscription list.");
+                    }
+
+                    cursor = hasMore ? items[^1].GetProperty("id").GetString() : null;
+
+                    if (hasMore && string.IsNullOrWhiteSpace(cursor))
+                    {
+                        return Failure(BillingActionCode.StripeError, "Stripe returned an incomplete subscription list.");
+                    }
+                } while (cursor is not null);
+            }
+
+            foreach (var subscriptionId in subscriptionIds)
+            {
+                using var response = await SendAsync(HttpMethod.Delete, $"subscriptions/{Uri.EscapeDataString(subscriptionId)}", null,
+                    $"flowmate-account-deletion-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId + "\n" + subscriptionId))).ToLowerInvariant()}", cancellationToken);
+
+                if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+                {
+                    return Failure(BillingActionCode.StripeError, StripeError(await response.Content.ReadAsStringAsync(cancellationToken)));
+                }
+            }
+
+            return new(true, null, null, null);
+        }
+        catch (HttpRequestException)
+        {
+            return Failure(BillingActionCode.StripeUnavailable, "Stripe could not be reached. No account data was removed.");
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return Failure(BillingActionCode.StripeError, "Stripe returned an invalid subscription list. No account data was removed.");
+        }
+    }
+
     public async Task<bool> ProcessWebhookAsync(string payload, string? signature, CancellationToken cancellationToken = default)
     {
         if (!VerifySignature(payload, signature, configuration["Stripe:WebhookSecret"]))
@@ -357,9 +554,15 @@ public sealed class StripeBillingService(
 
             if (!string.IsNullOrWhiteSpace(userId))
             {
-                var entitlement = await repository.GetEntitlementAsync(userId, cancellationToken);
-                ApplySubscription(entitlement, subscription);
-                await repository.SaveEntitlementAsync(entitlement, cancellationToken);
+                if (await deletionMarkers.IsMarkedAsync(userId, cancellationToken) ||
+                    (users is not null && string.IsNullOrWhiteSpace(await users.FindEmailByUserIdAsync(userId, cancellationToken))))
+                {
+                    await repository.MarkEventProcessedAsync(eventId, cancellationToken);
+
+                    return true;
+                }
+
+                await repository.UpdateExistingEntitlementAsync(userId, entitlement => ApplySubscription(entitlement, subscription), cancellationToken);
             }
         }
         await repository.MarkEventProcessedAsync(eventId, cancellationToken);
@@ -504,6 +707,15 @@ public sealed class StripeBillingService(
     }
 
     private static bool IsEntitled(string status) => SubscriptionEntitlementExtensions.FromProviderStatus(status) == SubscriptionEntitlement.Entitled;
+
+    private static bool MatchesConfiguredInterval(BillingInterval configuredInterval, string? actualInterval, int actualIntervalCount) =>
+        configuredInterval switch
+        {
+            BillingInterval.Monthly => actualInterval == "month" && actualIntervalCount == 1,
+            BillingInterval.Annual => (actualInterval == "year" && actualIntervalCount == 1)
+                || (actualInterval == "month" && actualIntervalCount == 12),
+            _ => false
+        };
 
     private static DateTimeOffset? UnixTime(JsonElement root, string field) => root.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.Number ? DateTimeOffset.FromUnixTimeSeconds(value.GetInt64()) : null;
 

@@ -8,8 +8,10 @@ using API.Security;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using API.Functions.V1;
 using Services.Users;
+using Services.Repositories;
 
 namespace API.Tests;
 
@@ -54,6 +56,16 @@ public sealed class Auth0TokenValidatorTests
         var principal = await validator.ValidateAsync($"Bearer {token}");
 
         Assert.That(principal?.FindFirst("sub")?.Value, Is.EqualTo("auth0|customer-1"));
+    }
+
+    [Test]
+    public async Task DeletedSubjectCannotUseTokenButCanRetryDeletion()
+    {
+        using var key = RSA.Create(2048);
+        var validator = CreateValidator(key, markers: new MarkedAccounts());
+        var token = $"Bearer {CreateToken(key, subject: "auth0|customer-1")}";
+        Assert.That(await validator.ValidateAsync(token), Is.Null);
+        Assert.That(await validator.ValidateForDeletionAsync(token), Is.Not.Null);
     }
 
     [TestCase("")]
@@ -200,12 +212,29 @@ public sealed class Auth0TokenValidatorTests
         Assert.That(handler.UserInfoRequests, Is.EqualTo(1));
     }
 
+    [Test]
+    public async Task AuthenticatedRequestRemainsAdmittedUntilRequestCompletion()
+    {
+        using var key = RSA.Create(2048);
+        var markers = new TrackingOperations();
+        var request = new TestHttpRequestData($"Bearer {CreateToken(key)}", markers);
+
+        var result = await HttpFunction.UserAsync(request, CreateValidator(key), new TestUserService("person@example.test"), CancellationToken.None);
+
+        Assert.That(result.UserId, Is.EqualTo("auth0|customer-1"));
+        Assert.That(await markers.MarkAsync(result.UserId!), Is.True);
+        Assert.That(await markers.TryBeginOperationAsync(result.UserId!, "late-request"), Is.False);
+        await AccountOperation.CompleteAsync(request.FunctionContext);
+        Assert.That(await markers.MarkAsync(result.UserId!), Is.False);
+    }
+
     private static Auth0TokenValidator CreateValidator(
         RSA key,
         HttpStatusCode status = HttpStatusCode.OK,
         bool includeConfiguration = true,
         bool timeout = false,
-        TestHttpMessageHandler? handler = null)
+        TestHttpMessageHandler? handler = null,
+        IAccountDeletionMarkerRepository? markers = null)
     {
         var settings = new Dictionary<string, string?>();
 
@@ -234,7 +263,11 @@ public sealed class Auth0TokenValidatorTests
         });
         var clients = new TestHttpClientFactory(handler ?? new TestHttpMessageHandler(status, jwks, timeout));
 
-        return new Auth0TokenValidator(configuration, clients);
+        var provider = new ServiceCollection()
+            .AddSingleton(markers ?? new UnmarkedAccounts())
+            .BuildServiceProvider();
+
+        return new Auth0TokenValidator(configuration, clients, provider.GetRequiredService<IServiceScopeFactory>());
     }
 
     private static TestHttpMessageHandler CreateHandler(RSA key, string? profileJson = null)
@@ -269,7 +302,11 @@ public sealed class Auth0TokenValidatorTests
         long? notBefore = null,
         RSA? signingKey = null)
     {
-        var header = Base64Url(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { alg = "RS256", kid = keyId })));
+        var header = Base64Url(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        {
+            alg = "RS256",
+            kid = keyId
+        })));
         var payload = new Dictionary<string, object?>
         {
             ["iss"] = issuer,
@@ -306,8 +343,14 @@ public sealed class Auth0TokenValidatorTests
 
     private sealed class TestHttpMessageHandler(HttpStatusCode status, string jwks, bool timeout, string profileJson = "") : HttpMessageHandler
     {
-        public int UserInfoRequests { get; private set; }
-        public string? UserInfoAuthorization { get; private set; }
+        public int UserInfoRequests
+        {
+            get; private set;
+        }
+        public string? UserInfoAuthorization
+        {
+            get; private set;
+        }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -336,9 +379,18 @@ public sealed class Auth0TokenValidatorTests
 
     private sealed class TestUserService(string? storedEmail) : IUserService
     {
-        public int EmailLookupCalls { get; private set; }
-        public int RegistrationCalls { get; private set; }
-        public string? RegisteredEmail { get; private set; }
+        public int EmailLookupCalls
+        {
+            get; private set;
+        }
+        public int RegistrationCalls
+        {
+            get; private set;
+        }
+        public string? RegisteredEmail
+        {
+            get; private set;
+        }
 
         public Task EnsureRegisteredAsync(string userId, string email, CancellationToken cancellationToken = default)
         {
@@ -359,10 +411,16 @@ public sealed class Auth0TokenValidatorTests
         }
     }
 
-    private sealed class TestHttpRequestData(string authorization) : HttpRequestData(new TestFunctionContext())
+    private sealed class TestHttpRequestData : HttpRequestData
     {
+        public TestHttpRequestData(string authorization, IAccountDeletionMarkerRepository? markers = null)
+            : base(new TestFunctionContext(markers ?? new UnmarkedAccounts()))
+        {
+            Headers.Add("Authorization", authorization);
+        }
+
         public override Stream Body => Stream.Null;
-        public override HttpHeadersCollection Headers { get; } = new() { { "Authorization", authorization } };
+        public override HttpHeadersCollection Headers { get; } = new();
         public override IReadOnlyCollection<IHttpCookie> Cookies => Array.Empty<IHttpCookie>();
         public override Uri Url => new("https://api.flowmate.test/test");
         public override IEnumerable<ClaimsIdentity> Identities => Array.Empty<ClaimsIdentity>();
@@ -370,17 +428,78 @@ public sealed class Auth0TokenValidatorTests
         public override HttpResponseData CreateResponse() => throw new NotSupportedException();
     }
 
-    private sealed class TestFunctionContext : FunctionContext
+    private sealed class TestFunctionContext(IAccountDeletionMarkerRepository markers) : FunctionContext
     {
         public override string InvocationId => "test-invocation";
         public override string FunctionId => "test-function";
         public override TraceContext TraceContext => null!;
         public override BindingContext BindingContext => null!;
         public override RetryContext RetryContext => null!;
-        public override IServiceProvider InstanceServices { get; set; } = null!;
+        public override IServiceProvider InstanceServices
+        {
+            get; set;
+        } = new ServiceCollection()
+            .AddSingleton(markers)
+            .BuildServiceProvider();
         public override FunctionDefinition FunctionDefinition => null!;
         public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();
         public override IInvocationFeatures Features => null!;
         public override CancellationToken CancellationToken => CancellationToken.None;
     }
+
+    private sealed class UnmarkedAccounts : IAccountDeletionMarkerRepository
+    {
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class MarkedAccounts : IAccountDeletionMarkerRepository
+    {
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class TrackingOperations : IAccountDeletionMarkerRepository
+    {
+        private bool _active;
+        private bool _marked;
+
+        public Task<bool> MarkAsync(string userId, CancellationToken cancellationToken = default)
+        {
+            _marked = true;
+
+            return Task.FromResult(_active);
+        }
+
+        public Task<bool> IsMarkedAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(_marked);
+        public Task<bool> TryBeginCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task EndCheckoutAsync(string userId, string operationId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> TryBeginOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default)
+        {
+            if (_marked)
+            {
+                return Task.FromResult(false);
+            }
+            _active = true;
+
+            return Task.FromResult(true);
+        }
+        
+        public Task EndOperationAsync(string userId, string operationId, CancellationToken cancellationToken = default)
+        {
+            _active = false;
+
+            return Task.CompletedTask;
+        }
+    }
+
 }

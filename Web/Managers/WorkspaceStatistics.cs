@@ -84,11 +84,10 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
 
     public IEnumerable<TaskRecord> DoneTasks => PlannedTasks.Where(t => t.IsComplete);
 
-    public int TodayMinutes => Store.Data.Sessions
-        .Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate)
-        .Sum(s => s.FocusMinutes);
+    public int TodayMinutes => FocusSessionRecord.TotalMinutes(Store.Data.Sessions
+        .Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate));
 
-    public int TodaySessions => Store.Data.Sessions.Count(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate);
+    public double TodaySessions => FocusSessionRecord.TotalSessions(Store.Data.Sessions.Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate));
 
     public int FocusStreak
     {
@@ -160,25 +159,25 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
     {
         var date = DateData.LocalDate(session.StartedAt, Store.Data.TimeZone);
 
-        return date >= EffectivePeriodStart && date <= EffectivePeriodEnd && session.FocusMinutes > 0 && session.EndedAt > session.StartedAt;
+        return date >= EffectivePeriodStart && date <= EffectivePeriodEnd && session.ElapsedSeconds > 0 && session.EndedAt > session.StartedAt;
     });
 
-    public int CurrentWeekMinutes => CurrentWeekRecords.Sum(session => session.FocusMinutes);
+    public int CurrentWeekMinutes => FocusSessionRecord.TotalMinutes(CurrentWeekRecords);
 
-    public int CurrentWeekSessions => CurrentWeekRecords.Count();
+    public double CurrentWeekSessions => FocusSessionRecord.TotalSessions(CurrentWeekRecords);
 
     private IEnumerable<FocusSessionRecord> CurrentWeekRecords => Store.Data.Sessions.Where(session =>
     {
         var date = DateData.LocalDate(session.StartedAt, Store.Data.TimeZone);
 
-        return date >= CurrentWeekStart && date <= TodayDate && session.FocusMinutes > 0 && session.EndedAt > session.StartedAt;
+        return date >= CurrentWeekStart && date <= TodayDate && session.ElapsedSeconds > 0 && session.EndedAt > session.StartedAt;
     });
 
     private DateOnly CurrentWeekStart => TodayDate.AddDays(-(((int)TodayDate.DayOfWeek + 6) % 7));
 
-    public int PeriodMinutes => PeriodRecords.Sum(s => s.FocusMinutes);
+    public int PeriodMinutes => FocusSessionRecord.TotalMinutes(PeriodRecords);
 
-    public int PeriodSessions => PeriodRecords.Count();
+    public double PeriodSessions => FocusSessionRecord.TotalSessions(PeriodRecords);
 
     public string PeriodLabel => Period switch
     {
@@ -229,7 +228,7 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
                 .Select(i =>
             {
                 var date = start.AddDays(i);
-                var minutes = PeriodRecords.Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == DateOnly.FromDateTime(date)).Sum(s => s.FocusMinutes);
+                var minutes = FocusSessionRecord.TotalMinutes(PeriodRecords.Where(s => DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == DateOnly.FromDateTime(date)));
                 var label = Period == ReportPeriod.Month ? date.ToString("d") : date.ToString("ddd")[..1];
 
                 return (label, minutes);
@@ -237,21 +236,17 @@ public sealed class WorkspaceStatistics(WorkspaceStore store) : WorkspaceManager
         }
     }
 
-    public int ProjectTodayMinutes(string id) => Store.Data.Sessions
-        .Where(s => s.ProjectId == id && DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate)
-        .Sum(s => s.FocusMinutes);
+    public int ProjectTodayMinutes(string id) => FocusSessionRecord.TotalMinutes(Store.Data.Sessions
+        .Where(s => s.ProjectId == id && DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate));
 
-    public int TaskTodayMinutes(string id) => Store.Data.Sessions
-        .Where(s => s.TaskId == id && DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate)
-        .Sum(s => s.FocusMinutes);
+    public int TaskTodayMinutes(string id) => FocusSessionRecord.TotalMinutes(Store.Data.Sessions
+        .Where(s => s.TaskId == id && DateData.LocalDate(s.StartedAt, Store.Data.TimeZone) == TodayDate));
 
-    public int ProjectMinutes(string id) => Store.Data.Sessions
-        .Where(s => s.ProjectId == id)
-        .Sum(s => s.FocusMinutes);
+    public int ProjectMinutes(string id) => FocusSessionRecord.TotalMinutes(Store.Data.Sessions
+        .Where(s => s.ProjectId == id));
 
-    public int PeriodProjectMinutes(string id) => PeriodRecords
-        .Where(s => s.ProjectId == id)
-        .Sum(s => s.FocusMinutes);
+    public int PeriodProjectMinutes(string id) => FocusSessionRecord.TotalMinutes(PeriodRecords
+        .Where(s => s.ProjectId == id));
 
     private DateOnly AddPeriod(DateOnly date, int amount) => Period switch
     {

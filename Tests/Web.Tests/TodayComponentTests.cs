@@ -81,21 +81,30 @@ public sealed class TodayComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void TodayPlanCardCompletesSelectsAndUnplansTasks()
+    public void TodayPlanCardSelectsAndUnplansTasks()
     {
         var cut = Render<TodayPlanCard>();
         Assert.That(cut.FindAll(".task-row"), Has.Exactly(1).Items);
-        cut.Find(".check-circle").Click();
-        Assert.That(PlannedTask.IsComplete, Is.True);
-        Assert.That(cut.Find(".task-row").ClassName, Does.Contain("completed"));
         cut.Find(".task-title").Click();
         Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(PlannedTask.Id));
         cut.Find(".row-menu").Click();
         Assert.That(PlannedTask.PlannedToday, Is.False);
-        Assert.That(cut.Find(".empty-state").TextContent, Does.Contain("Your day is open"));
+        Assert.That(cut.Find(".empty-state").TextContent, Does.Contain("No open tasks"));
         cut.Find(".add-inline").Click();
         Assert.That(Tasks.DialogOpen, Is.True);
         Assert.That(Tasks.Draft.PlannedToday, Is.True);
+    }
+
+    [Test]
+    public void TodayPlanCardHidesCompletedTasksImmediately()
+    {
+        var cut = Render<TodayPlanCard>();
+        cut.Find(".check-circle").Click();
+
+        Assert.That(PlannedTask.IsComplete, Is.True);
+        Assert.That(cut.FindAll(".task-row"), Is.Empty);
+        Assert.That(cut.Find(".empty-state").TextContent, Does.Contain("No open tasks"));
+        Assert.That(cut.Find(".panel-heading p").TextContent, Does.Contain("1 completed"));
     }
 
     [Test]
@@ -116,7 +125,7 @@ public sealed class TodayComponentTests : WorkspaceComponentTest
         await cut.InvokeAsync(Store.SaveAsync);
         cut.WaitForState(() => cut.FindAll(".focus-total strong").Any(element => Content(element).Contains("30m")));
         Assert.That(Content(cut.Find(".focus-total strong")), Does.Contain("30m"));
-        Assert.That(cut.FindAll(".mini-stat-row strong").Select(Content), Is.EqualTo(new[] { "1", "1", "1 days 🔥" }));
+        Assert.That(cut.FindAll(".mini-stat-row strong").Select(Content), Is.EqualTo(new[] { "1.0", "1", "1 days 🔥" }));
     }
 
     [Test]

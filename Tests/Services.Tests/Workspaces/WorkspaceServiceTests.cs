@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ChrisUsher.Core.Shared;
 using Services.Database;
 using Services.Repositories;
@@ -37,6 +36,21 @@ public sealed class WorkspaceServiceTests
         Assert.That(result.ErrorCode, Is.EqualTo(WorkspaceSaveErrorCode.RevisionConflict));
         Assert.That(repository.Read("user").DisplayName, Is.EqualTo("Initial"));
         Assert.That(repository.SaveCount, Is.Zero);
+    }
+
+    [Test]
+    public async Task SubmittedPlanCannotGrantPaidEntitlements()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        var requested = new WorkspaceSnapshot
+        {
+            Plan = BillingPlan.Pro
+        };
+
+        var result = await CreateService(repository).SaveAsync("user", new(requested, null));
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Response!.Workspace.Plan, Is.EqualTo(BillingPlan.Free));
     }
 
     [Test]
@@ -118,7 +132,11 @@ public sealed class WorkspaceServiceTests
         repository.Seed("user", current, "revision-1");
         var service = CreateService(repository);
         current.Projects[0].IsArchived = true;
-        current.Projects.Add(new() { Id = "four", Name = "Four" });
+        current.Projects.Add(new()
+        {
+            Id = "four",
+            Name = "Four"
+        });
 
         var result = await service.SaveAsync("user", new(current, "revision-1"));
 
@@ -144,7 +162,11 @@ public sealed class WorkspaceServiceTests
             ]
         }, "revision-1");
         var request = repository.Read("user");
-        request.Projects.Add(new() { Id = "four", Name = "Four" });
+        request.Projects.Add(new()
+        {
+            Id = "four",
+            Name = "Four"
+        });
 
         var result = await CreateService(repository).SaveAsync("user", new(request, "revision-1"));
 
@@ -168,7 +190,11 @@ public sealed class WorkspaceServiceTests
         }, "revision-1");
         var request = repository.Read("user");
         request.Projects.Single(project => project.Id == "four").IsArchived = true;
-        request.Projects.Add(new() { Id = "new", Name = "New project" });
+        request.Projects.Add(new()
+        {
+            Id = "new",
+            Name = "New project"
+        });
 
         var result = await CreateService(repository).SaveAsync("user", new(request, "revision-1"));
 
@@ -182,18 +208,24 @@ public sealed class WorkspaceServiceTests
     private sealed class InMemoryWorkspaceRepository : IWorkspaceRepository
     {
         private readonly Dictionary<string, WorkspaceDocument> _documents = new(StringComparer.Ordinal);
-        public int SaveCount { get; private set; }
+        public int SaveCount
+        {
+            get; private set;
+        }
+
+        private static WorkspaceSnapshot Clone(WorkspaceSnapshot snapshot) =>
+            JsonSerializer.Deserialize<WorkspaceSnapshot>(JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions), SharedCommon.JsonOptions)!;
 
         public void Seed(string ownerId, WorkspaceSnapshot snapshot, string revision) =>
             _documents[ownerId] = new WorkspaceDocument
             {
                 UserId = ownerId,
-                Payload = JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions),
+                Workspace = Clone(snapshot),
                 ETag = revision
             };
 
         public WorkspaceSnapshot Read(string ownerId) =>
-            JsonSerializer.Deserialize<WorkspaceSnapshot>(_documents[ownerId].Payload, SharedCommon.JsonOptions)!;
+            Clone(_documents[ownerId].Workspace!);
 
         public Task<WorkspaceDocument?> GetAsync(string ownerId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_documents.TryGetValue(ownerId, out var document) ? document : null);
@@ -209,7 +241,7 @@ public sealed class WorkspaceServiceTests
             var saved = new WorkspaceDocument
             {
                 UserId = ownerId,
-                Payload = JsonSerializer.Serialize(workspace, SharedCommon.JsonOptions),
+                Workspace = Clone(workspace),
                 ETag = $"revision-{SaveCount + 1}"
             };
             _documents[ownerId] = saved;

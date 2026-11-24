@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Shared.Models;
 
 public sealed class FocusSessionRecord
@@ -8,4 +10,15 @@ public sealed class FocusSessionRecord
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset EndedAt { get; set; }
     public int FocusMinutes { get; set; }
+    public double? FocusSeconds { get; set; }
+    public int? PlannedSeconds { get; set; }
+
+    [JsonIgnore]
+    public double ElapsedSeconds => FocusSeconds ?? FocusMinutes * 60d;
+
+    public static double TotalSessions(IEnumerable<FocusSessionRecord> sessions) =>
+        sessions.Sum(session => session.PlannedSeconds is > 0 ? session.ElapsedSeconds / session.PlannedSeconds.Value : 1d);
+
+    public static int TotalMinutes(IEnumerable<FocusSessionRecord> sessions) =>
+        (int)Math.Floor(sessions.Sum(session => session.ElapsedSeconds) / 60d);
 }

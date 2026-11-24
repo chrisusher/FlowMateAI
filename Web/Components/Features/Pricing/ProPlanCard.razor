@@ -7,6 +7,10 @@
     <h2>Make focus a practice.</h2>
     <div class="price">@Billing.PriceLabel</div>
     <p>More history, more insight, and space for every project.</p>
+    @if (Billing.BillingState is not null && Billing.CurrentPlan == BillingPlan.Pro)
+    {
+        <span class="current-plan-badge">Current plan</span>
+    }
     <button class="plan-button primary" disabled="@(Billing.BillingState is null || Billing.HasEntitledSubscription || Billing.CanManageSubscription || Billing.BillingState?.TrialUsed == true || Billing.CheckoutInProgress || !Billing.HasSelectedPrice)" @onclick="Billing.StartTrial">@(Billing.BillingState?.IsManualGrant == true ? "Pro preview access active" : Billing.HasEntitledSubscription ? "Pro subscription active" : Billing.CanManageSubscription ? "Subscription already exists" : Billing.BillingState?.TrialUsed == true ? "Trial already used" : Billing.CheckoutInProgress ? "Opening checkout…" : Billing.HasSelectedPrice ? $"Try Pro for 14 days ({(Billing.Annual ? "annual" : "monthly")})" : "Pricing unavailable")</button>
     @if (!Billing.HasEntitledSubscription && !Billing.CanManageSubscription)
     {
@@ -22,5 +26,7 @@
         <li>&#10003; One year of report history</li>
         <li>&#10003; 100 coach prompts each month</li>
         <li>&#10003; Everything in Free</li>
+        <li>&#10003; Read-only AI assistant connections</li>
+        <li>&#10003; MCP rate-limit exemption</li>
     </ul>
 </article>

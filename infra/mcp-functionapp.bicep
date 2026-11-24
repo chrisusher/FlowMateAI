@@ -56,7 +56,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
     serverFarmId: plan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'DOTNET-ISOLATED|10.0'
+      linuxFxVersion: 'DOTNET-ISOLATED|11.0'
       minTlsVersion: '1.2'
       appSettings: [
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
@@ -78,7 +78,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         }
       }
       scaleAndConcurrency: { maximumInstanceCount: 40, instanceMemoryMB: 2048 }
-      runtime: { name: 'dotnet-isolated', version: '10.0' }
+      runtime: { name: 'dotnet-isolated', version: '11.0' }
     }
   }
 }

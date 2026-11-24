@@ -1,5 +1,6 @@
 @inherits WorkspaceComponentBase
 @inject WorkspaceStatistics Stats
+@inject Auth0Client Auth
 
 <aside class="sidebar">
     <a class="brand" href="">
@@ -19,17 +20,34 @@
                 }
             </a>
         }
+        <a class="side-link assistant-link" href="settings#integrations" aria-label="Connect your AI assistant">
+            <span class="nav-icon" aria-hidden="true">&#8644;</span>
+            <span class="assistant-full" aria-hidden="true">Connect your AI assistant</span>
+            <span class="assistant-compact" aria-hidden="true">Assistant</span>
+        </a>
     </nav>
     <div class="sidebar-bottom">
         <UpgradeCard />
+        <div class="profile-area" @onkeydown="HandleProfileKeyDown">
+        @if (_profileMenuOpen)
+        {
+            <div class="profile-menu" id="sidebar-profile-menu">
+                <a href="settings">Account settings</a>
+                @if (Auth.Session.SignedIn)
+                {
+                    <button type="button" @onclick="Auth.LogoutAsync">Sign out</button>
+                }
+            </div>
+        }
         <a class="profile-link" href="settings" aria-label="Account settings for @Store.Data.DisplayName">
             <span class="avatar" aria-hidden="true">@ProfileInitials</span>
             <span class="profile-copy">
                 <strong>@Store.Data.DisplayName</strong>
                 <small>@Store.Data.Plan plan</small>
             </span>
-            <span class="more-icon" aria-hidden="true">&#8942;</span>
         </a>
+        <button type="button" class="profile-menu-toggle" aria-label="Account menu" aria-expanded="@_profileMenuOpen.ToString().ToLowerInvariant()" aria-controls="sidebar-profile-menu" @onclick="ToggleProfileMenu">&#8942;</button>
+        </div>
     </div>
 </aside>
 

@@ -1,0 +1,8 @@
+.project-back {
+    color: var(--accent);
+    font-weight: 600
+}
+
+.project-back:hover {
+    text-decoration: underline
+}

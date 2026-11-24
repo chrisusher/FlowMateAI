@@ -1,0 +1,147 @@
+.app-frame {
+    min-height: 100vh;
+    display: flex
+}
+
+.main-area {
+    margin-left: 246px;
+    width: calc(100% - 246px);
+    min-height: 100vh
+}
+
+.content-area {
+    max-width: 1270px;
+    margin: 0 auto;
+    padding: 37px 48px 60px
+}
+
+@media(max-width:1050px) {
+    .content-area {
+            padding: 30px 28px
+        }
+}
+
+@media(max-width:1050px) {
+    .main-area {
+            margin-left: 220px;
+            width: calc(100% - 220px)
+        }
+}
+
+@media(max-width:780px) {
+    .main-area {
+            margin-left: 62px;
+            width: calc(100% - 62px)
+        }
+}
+
+@media(max-width:780px) {
+    .content-area {
+            padding: 25px 19px 40px
+        }
+}
+
+@media(max-width:560px) {
+    .content-area {
+            padding: 21px 14px 35px
+        }
+}
+
+.workspace-loading {
+    min-height: 260px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 11px;
+    color: var(--muted);
+    font-size: 1rem
+}
+
+.loading-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--line);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: workspace-spin .8s linear infinite
+}
+
+@media(max-width:780px) and (min-width:561px) {
+    .main-area {
+            margin-left: 176px;
+            width: calc(100% - 176px)
+        }
+}
+
+@media(max-width:560px) {
+    .main-area {
+            margin-left: 0;
+            width: 100%;
+            padding-bottom: 66px
+        }
+}
+
+@media(max-width:560px) {
+    .content-area {
+            padding-bottom: 28px
+        }
+}
+
+.workspace-sync-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 0 0 20px;
+    padding: 12px 15px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.9375rem;
+}
+
+.workspace-session-expired {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 0 0 20px;
+    padding: 13px 15px;
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--text);
+    font-size: 0.9375rem;
+}
+
+.workspace-sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.workspace-sync-keep {
+    border: 1px solid var(--accent);
+    border-radius: 9px;
+    padding: 9px 14px;
+    background: var(--accent);
+    color: var(--surface);
+    font-size: 0.9375rem;
+    font-weight: 600;
+}
+
+@media (max-width: 640px) {
+    .workspace-sync-notice {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+}
+
+@media (max-width: 640px) {
+    .workspace-session-expired {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+}
+

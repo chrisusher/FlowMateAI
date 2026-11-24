@@ -2,6 +2,7 @@ using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Foundry;
 using DotNetEnv;
 using Microsoft.Extensions.Configuration;
+using System.Text.Json.Nodes;
 
 var repositoryRoot = FindRepositoryRoot();
 
@@ -37,6 +38,8 @@ string? LocalSecret(params string[] names)
 // Parameters
 var environment = builder.AddParameter("environment", false);
 var auth0Authority = builder.AddParameter("auth0-authority");
+var auth0ClientId = builder.AddParameter("auth0-client-id");
+var auth0Audience = builder.AddParameter("auth0-audience");
 
 var cache = builder.AddRedis("cache");
 
@@ -73,15 +76,17 @@ var database = cosmosDb.AddCosmosDatabase("database", "flowmate");
 // Key Vault
 var keyVault = builder.AddAzureKeyVault("flowmate-secrets");
 
-var stripeSecretReferences = new Dictionary<string, string>(StringComparer.Ordinal)
+var apiSecretReferences = new Dictionary<string, string>(StringComparer.Ordinal)
 {
-    ["Stripe__SecretKey"] = AddStripeVaultSecret("stripe-secret-key", LocalSecret("STRIPE_SECRET_KEY", "Stripe:SecretKey")),
-    ["Stripe__WebhookSecret"] = AddStripeVaultSecret("stripe-webhook-secret", LocalSecret("STRIPE_WEBHOOK_SECRET", "Stripe:WebhookSecret")),
-    ["Stripe__MonthlyPriceId"] = AddStripeVaultSecret("stripe-monthly-price-id", LocalSecret("STRIPE_MONTHLY_PRICE_ID", "Stripe:MonthlyPriceId")),
-    ["Stripe__AnnualPriceId"] = AddStripeVaultSecret("stripe-annual-price-id", LocalSecret("STRIPE_ANNUAL_PRICE_ID", "Stripe:AnnualPriceId"))
+    ["Stripe__SecretKey"] = AddVaultSecret("stripe-secret-key", LocalSecret("STRIPE_SECRET_KEY", "Stripe:SecretKey")),
+    ["Stripe__WebhookSecret"] = AddVaultSecret("stripe-webhook-secret", LocalSecret("STRIPE_WEBHOOK_SECRET", "Stripe:WebhookSecret")),
+    ["Stripe__MonthlyPriceId"] = AddVaultSecret("stripe-monthly-price-id", LocalSecret("STRIPE_MONTHLY_PRICE_ID", "Stripe:MonthlyPriceId")),
+    ["Stripe__AnnualPriceId"] = AddVaultSecret("stripe-annual-price-id", LocalSecret("STRIPE_ANNUAL_PRICE_ID", "Stripe:AnnualPriceId")),
+    ["Auth0__ManagementClientId"] = AddVaultSecret("auth0-management-client-id", LocalSecret("Auth0:ManagementClientId")),
+    ["Auth0__ManagementClientSecret"] = AddVaultSecret("auth0-management-client-secret", LocalSecret("Auth0:ManagementClientSecret"))
 };
 
-string AddStripeVaultSecret(string vaultSecretName, string? value)
+string AddVaultSecret(string vaultSecretName, string? value)
 {
     if (string.IsNullOrWhiteSpace(value))
     {
@@ -113,8 +118,8 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WaitFor(database)
     .WithHostStorage(storage)
     .WithEnvironment("ConnectionStrings__Storage", blobs.Resource.ConnectionStringExpression)
+    .WithEnvironment("ConnectionStrings__database", database.Resource.ConnectionStringExpression)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
-    .WithEnvironment("Database__Key", cosmosDb.Resource.AccountKey!)
     .WithEnvironment("Global__Environment", environment)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
     .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
@@ -127,7 +132,7 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithReference(foundryProject)
     .WithExternalHttpEndpoints();
 
-foreach (var (configurationKey, vaultSecretName) in stripeSecretReferences)
+foreach (var (configurationKey, vaultSecretName) in apiSecretReferences)
 {
     if (!string.IsNullOrWhiteSpace(vaultSecretName))
     {
@@ -139,8 +144,8 @@ var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
     .WaitFor(mcpHostStorage)
     .WaitFor(database)
     .WithHostStorage(mcpHostStorage)
+    .WithEnvironment("ConnectionStrings__database", database.Resource.ConnectionStringExpression)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
-    .WithEnvironment("Database__Key", cosmosDb.Resource.AccountKey!)
     .WithEnvironment("Global__Environment", environment)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
     .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
@@ -148,12 +153,7 @@ var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
     .WithHttpHealthCheck("/api/health")
     .WithExternalHttpEndpoints();
 
-if (string.IsNullOrWhiteSpace(cosmosAccountEndpoint))
-{
-    api.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression);
-    mcp.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression);
-}
-else
+if (!string.IsNullOrWhiteSpace(cosmosAccountEndpoint))
 {
     api.WithEnvironment("Database__AccountEndpoint", cosmosAccountEndpoint);
     mcp.WithEnvironment("Database__AccountEndpoint", cosmosAccountEndpoint);
@@ -170,10 +170,10 @@ var cli = builder.AddProject<Projects.CLI>("cli")
 
 var buildConfiguration = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.Name ?? "Debug";
 var cliAssemblyPath = Path.GetFullPath(Path.Combine(
-    AppContext.BaseDirectory, "..", "..", "..", "..", "CLI", "bin", buildConfiguration, "net10.0", "CLI.dll"));
+    AppContext.BaseDirectory, "..", "..", "..", "..", "CLI", "bin", buildConfiguration, "net11.0", "CLI.dll"));
 
 var cliWorkingDirectory = Path.GetDirectoryName(cliAssemblyPath)!;
-var auth0ClientId = builder.Configuration["Auth0:ManagementClientId"];
+var auth0ManagementClientId = builder.Configuration["Auth0:ManagementClientId"];
 var auth0ClientSecret = builder.Configuration["Auth0:ManagementClientSecret"];
 
 #pragma warning disable ASPIREPROCESSCOMMAND001
@@ -212,9 +212,9 @@ IReadOnlyDictionary<string, string> BuildCliEnvironment(
             environmentVariables["Auth0__Authority"] = auth0Issuer;
         }
 
-        if (!string.IsNullOrWhiteSpace(auth0ClientId))
+        if (!string.IsNullOrWhiteSpace(auth0ManagementClientId))
         {
-            environmentVariables["Auth0__ManagementClientId"] = auth0ClientId;
+            environmentVariables["Auth0__ManagementClientId"] = auth0ManagementClientId;
         }
 
         if (!string.IsNullOrWhiteSpace(auth0ClientSecret))
@@ -431,7 +431,7 @@ var frontend = builder.AddBlazorWasmApp("frontend", "../Web/Web.csproj")
     .WithEnvironment("McpEndpoint", mcp.GetEndpoint("http"));
 
 api.WithEnvironment("Auth0__Authority", auth0Authority)
-    .WithEnvironment("Auth0__Audience", builder.Configuration["Auth0:Audience"]);
+    .WithEnvironment("Auth0__Audience", auth0Audience);
 
 var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WaitFor(api)
@@ -440,6 +440,32 @@ var gateway = builder.AddBlazorGateway("frontend-gateway")
     .WithExternalHttpEndpoints()
     .WithHttpHealthCheck("/frontend/")
     .WithBlazorClientApp(frontend);
+
+var marketing = builder.AddBlazorWasmApp("marketing", "../Marketing/Marketing.csproj");
+
+builder.AddBlazorGateway("marketing-gateway")
+    .WithExternalHttpEndpoints()
+    .WithBlazorClientApp(marketing)
+    .WithEnvironment(context =>
+    {
+        // The Blazor gateway only forwards service references automatically. Add the
+        // public app address to its browser configuration without exposing secrets.
+        const string configurationKey = "ClientApps__marketing__ConfigResponse";
+        context.EnvironmentVariables.TryGetValue(configurationKey, out var generated);
+        context.EnvironmentVariables[configurationKey] = new MarketingClientConfiguration(generated, gateway.GetEndpoint("http"));
+    });
+// The Blazor gateway generates its own client configuration and does not forward
+// arbitrary WithEnvironment values from the WASM resource. Add only public SPA
+// settings to its generated response; never include management credentials.
+if (builder.ExecutionContext.IsRunMode)
+{
+    gateway.WithEnvironment(context =>
+    {
+        const string key = "ClientApps__frontend__ConfigResponse";
+        context.EnvironmentVariables[key] = new Auth0ClientConfiguration(
+            context.EnvironmentVariables[key], auth0Authority.Resource, auth0ClientId.Resource, auth0Audience.Resource);
+    });
+}
 
 api.WithEnvironment("Cors__AllowedOrigins__0", gateway.GetEndpoint("http"))
     .WithEnvironment("WebApp__Origin", gateway.GetEndpoint("https"))
@@ -461,5 +487,44 @@ static string? FindRepositoryRoot()
     }
 
     return null;
+}
+
+internal sealed class Auth0ClientConfiguration(object? generated, IValueProvider authority, IValueProvider clientId, IValueProvider audience) : IValueProvider
+{
+    public async ValueTask<string?> GetValueAsync(CancellationToken cancellationToken = default)
+    {
+        var json = generated is IValueProvider provider
+            ? await provider.GetValueAsync(cancellationToken)
+            : generated?.ToString();
+
+        var configuration = JsonNode.Parse(json!)!.AsObject();
+        var clientEnvironment = configuration["webAssembly"]!["environment"]!.AsObject();
+
+        clientEnvironment["Auth0__Domain"] = await authority.GetValueAsync(cancellationToken);
+        clientEnvironment["Auth0__ClientId"] = await clientId.GetValueAsync(cancellationToken);
+        clientEnvironment["Auth0__Audience"] = await audience.GetValueAsync(cancellationToken);
+
+        return configuration.ToJsonString();
+    }
+}
+
+internal sealed class MarketingClientConfiguration(object? generated, IValueProvider appEndpoint) : IValueProvider
+{
+    public async ValueTask<string?> GetValueAsync(CancellationToken cancellationToken = default)
+    {
+        var json = generated is IValueProvider provider
+            ? await provider.GetValueAsync(cancellationToken)
+            : generated?.ToString();
+
+        var configuration = JsonNode.Parse(json ?? "{}")!.AsObject();
+        var webAssembly = configuration["webAssembly"] as JsonObject ?? new();
+        var environment = webAssembly["environment"] as JsonObject ?? new();
+
+        environment["AppUrl"] = $"{await appEndpoint.GetValueAsync(cancellationToken)}/frontend/";
+        webAssembly["environment"] = environment.DeepClone();
+        configuration["webAssembly"] = webAssembly.DeepClone();
+
+        return configuration.ToJsonString();
+    }
 }
 

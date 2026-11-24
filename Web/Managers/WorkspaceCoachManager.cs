@@ -3,9 +3,21 @@ using Web.Clients;
 
 namespace Web.Managers;
 
-public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth, WorkspaceStatistics statistics, WorkspaceBillingManager billing) : WorkspaceManager
+public sealed class WorkspaceCoachManager : WorkspaceManager, IDisposable
 {
-    private WorkspaceStore Store => store;
+    private readonly WorkspaceStore Store;
+    private readonly Auth0Client auth;
+    private readonly WorkspaceStatistics statistics;
+    private readonly WorkspaceBillingManager billing;
+
+    public WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth, WorkspaceStatistics statistics, WorkspaceBillingManager billing)
+    {
+        Store = store;
+        this.auth = auth;
+        this.statistics = statistics;
+        this.billing = billing;
+        Store.Changed += OnWorkspaceChanged;
+    }
 
     public bool Sending { get; private set; }
     public List<ChatMessage> ChatMessages { get; private set; } = [];
@@ -58,6 +70,19 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
         UserId = message.Role == ChatMessageRole.User ? "user" : "coach",
         Timestamp = message.CreatedAt.LocalDateTime
     }).ToList();
+
+    private void OnWorkspaceChanged()
+    {
+        if (!Sending)
+        {
+            LoadChatMessages();
+        }
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= OnWorkspaceChanged;
+    }
 
     public async Task SendMessage(ChatMessage message)
     {
@@ -122,7 +147,12 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
                 LoadChatMessages();
             }
         }
-        finally { Sending = false; NotifyChanged(); }
+        finally
+        {
+            Sending = false;
+            LoadChatMessages();
+            NotifyChanged();
+        }
     }
 
     private string CoachReply(string prompt)
@@ -132,7 +162,7 @@ public sealed class WorkspaceCoachManager(WorkspaceStore store, Auth0Client auth
 
         if (prompt.Contains("week", StringComparison.OrdinalIgnoreCase))
         {
-            return $"You've logged {statistics.CurrentWeekMinutes} focused minutes this week across {statistics.CurrentWeekSessions} sessions. Your work has been spread across {projectText}. What felt easiest to return to?";
+            return $"You've logged {statistics.CurrentWeekMinutes} focused minutes this week across {statistics.CurrentWeekSessions:F1} sessions. Your work has been spread across {projectText}. What felt easiest to return to?";
         }
 
         if (next is null)

@@ -15,14 +15,15 @@ Copy-Item Web/wwwroot/appsettings.example.json Web/wwwroot/appsettings.json
 
 The deployment workflow reads the committed example, writes the actual `appsettings.json` using GitHub Actions variables, and then publishes it. A clean checkout does not need local settings files for CI deployment.
 
-Aspire declares the issuer as the `auth0-authority` parameter and passes it to the API and administrative CLI as `Auth0__Authority`. Set its value in AppHost user secrets or provide it through Aspire parameter configuration:
+Aspire declares the issuer, SPA client ID and API audience as parameters. It passes the issuer and audience to the API, and supplies these public values to the frontend through the gateway. Store them in AppHost user secrets or provide equivalent Aspire parameter configuration:
 
 ```powershell
 dotnet user-secrets set "Parameters:auth0-authority" "https://YOUR_TENANT.us.auth0.com/" --project AppHost/AppHost.csproj
-dotnet user-secrets set "Auth0:Audience" "https://api.example.com" --project AppHost/AppHost.csproj
+dotnet user-secrets set "Parameters:auth0-client-id" "YOUR_SPA_CLIENT_ID" --project AppHost/AppHost.csproj
+dotnet user-secrets set "Parameters:auth0-audience" "https://api.example.com" --project AppHost/AppHost.csproj
 ```
 
-Use the same API audience in the browser and API. The audience is the API identifier, not an Auth0 dashboard resource ID. Management API credentials remain server-side.
+Restart the AppHost after changing these settings. The audience is the API identifier, not an Auth0 dashboard resource ID. The SPA client ID is public; do not provide its client secret. Management API credentials remain server-side. Outside Aspire, use the frontend settings file described above.
 
 The local Aspire gateway uses HTTPS port `7237` and HTTP port `5133`, configured by `Frontend:HttpsPort` and `Frontend:HttpPort` in `AppHost/appsettings.Development.json`. Open `https://localhost:7237/frontend/`. Register the exact callback/logout URLs under `/frontend/` for the routes `/`, `/today`, `/projects`, `/tasks`, `/reports`, `/coach`, `/pricing`, and `/settings`. Use origins without paths in Allowed Web Origins. Additional gateway hostnames need their own allowlist entries. The AppHost dashboard URL is not the frontend URL.
 
@@ -84,11 +85,15 @@ In the Function App's **Settings → Environment variables** (or Configuration),
 | --- | --- |
 | `Auth0__Authority` | Auth0 issuer URL, e.g. `https://your-tenant.eu.auth0.com/` (include `https://` and the trailing slash) |
 | `Auth0__Audience` | The same API identifier used as `AUTH0_AUDIENCE` |
+| `Auth0__ManagementClientId` | Server-side machine-to-machine client ID with Auth0 Management API `delete:users` permission |
+| `Auth0__ManagementClientSecret` | Server-side secret for the management client |
 | `Cors__AllowedOrigins__0` | Exact Static Web App origin, e.g. `https://<your-site>.azurestaticapps.net` (no path or trailing slash) |
 
 The API validates the issuer, audience, expiry, and RS256 signature using the Auth0 JWKS endpoint at `<Authority>.well-known/jwks.json`. It does not use an Auth0 client secret. The custom Functions middleware uses `Cors:AllowedOrigins` to answer preflight requests and return CORS headers; the origin must match the browser's site origin exactly. If you have multiple frontend origins, add indexed settings such as `Cors__AllowedOrigins__1` for each explicitly allowed origin.
 
-Apply and save the app settings, then restart the Function App if Azure prompts you to. These Auth0 settings are separate from the other server-side settings listed in [deployment.md](deployment.md) and `API/appsettings.example.json`.
+Store the management client ID and secret in Key Vault as `auth0-management-client-id` and `auth0-management-client-secret`. Deploy `infra/api-auth0-keyvault.bicep` in the resource group containing the existing API Function App and vault, passing `appName` and `keyVaultName`. The app must have a system-assigned managed identity, and the vault must use Azure RBAC. The deployment grants that identity Key Vault Secrets User and merges Key Vault references into the existing app settings; the deployer needs permission to assign that role. Secret values are not supplied to Bicep. Allow time for role assignment propagation. For local Aspire, configure `Auth0:ManagementClientId` and `Auth0:ManagementClientSecret` in AppHost user secrets; Aspire adds them to its vault and passes references to the API.
+
+Apply and save the other app settings, then restart the Function App if Azure prompts you to. These Auth0 settings are separate from the other server-side settings listed in [deployment.md](deployment.md) and `API/appsettings.example.json`.
 
 ## 6. Deploy and verify
 
@@ -97,4 +102,8 @@ Apply and save the app settings, then restart the Function App if Azure prompts 
 3. Open the Static Web App and sign in with each enabled provider. A callback mismatch usually means the browser's current URL is missing from **Allowed Callback URLs**; logout requires the return URL in **Allowed Logout URLs**.
 4. Confirm the API is reachable at `https://<your-function-app>.azurewebsites.net/api/health`. Then sign in and load/save a workspace. Protected API calls must include a valid bearer token; an incorrect issuer/audience, an unavailable JWKS endpoint, or an unlisted CORS origin prevents successful browser API calls.
 
-The Function API's health endpoint is public and does not test Auth0 token validation. Workspace and account-specific billing operations require a valid token. Auth0 Management API credentials are only needed for the separate administrative CLI workflows documented in [administrative-cli.md](administrative-cli.md).
+The Function API's health endpoint is public and does not test Auth0 token validation. Workspace, billing and account-deletion operations require a valid token. Account deletion disables access, reconciles and cancels the customer's Stripe subscriptions, removes FlowMate application data and then deletes the Auth0 identity. A persistent marker containing a hash of the Auth0 subject is retained in the Users container to reject outstanding access tokens. If any stage fails, the endpoint reports a retryable incomplete deletion; keep the management client enabled in production. The same credentials may be used by the separate administrative CLI workflows documented in [administrative-cli.md](administrative-cli.md).
+
+Checkout and deletion are coordinated through an ETag-protected record in the Users container. If the outcome of a Checkout creation request is unknown, its operation remains locked rather than risking deletion while Stripe may still create a subscription. Support must reconcile the request and any resulting Checkout session or subscription in Stripe, ensure no request remains in flight, and only then clear the record's `CheckoutOperationId` so deletion can be retried. Do not remove a deletion marker when clearing the operation.
+
+Authenticated API and MCP requests also register their operation IDs on that record. Deletion waits for admitted requests to finish and rejects new requests. If a process terminates without releasing an operation, support must confirm that the request has stopped before removing its ID from `ActiveOperationIds`; automatic expiry could otherwise allow an unfinished write to recreate deleted data.

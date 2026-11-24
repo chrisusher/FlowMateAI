@@ -6,9 +6,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Services.Mcp;
 using Services.Reporting;
+using Services.Repositories;
 using Shared.Contracts;
 using Shared.Enums;
-using Shared.Models;
 
 namespace MCP;
 
@@ -17,10 +17,10 @@ public interface IMcpToolInvocation
     Task<IMcpToolResponse> InvokeAsync(ToolInvocationContext context, string? period = null, string? date = null, string? cursor = null, string? projectId = null, bool projectsOnly = false, CancellationToken cancellationToken = default);
 }
 
-public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiterService limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger) : IMcpToolInvocation
+public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorkspaceReportService reports, IFreeUsageLimiterService limiter, CosmosClient cosmos, IConfiguration configuration, ILogger<McpToolInvocation> logger, IAccountDeletionMarkerRepository markers) : IMcpToolInvocation
 {
-    private static readonly Meter Meter = new("FlowMateAI.MCP");
-    private static readonly Histogram<double> ToolDuration = Meter.CreateHistogram<double>("flowmate.mcp.tool.duration", "ms");
+    private static readonly Meter _meter = new("FlowMateAI.MCP");
+    private static readonly Histogram<double> _toolDuration = _meter.CreateHistogram<double>("flowmate.mcp.tool.duration", "ms");
 
     public async Task<IMcpToolResponse> InvokeAsync(ToolInvocationContext context, string? period = null, string? date = null, string? cursor = null, string? projectId = null, bool projectsOnly = false, CancellationToken cancellationToken = default)
     {
@@ -32,7 +32,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         }
         finally
         {
-            ToolDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, new KeyValuePair<string, object?>("tool", context.Name));
+            _toolDuration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, new KeyValuePair<string, object?>("tool", context.Name));
         }
     }
 
@@ -65,6 +65,26 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
 
             return Error("temporarily_unavailable", "Account credentials are temporarily unavailable.");
         }
+
+        var operationId = Guid.NewGuid().ToString("N");
+
+        if (!await markers.TryBeginOperationAsync(validated.UserId, operationId, cancellationToken))
+        {
+            return Error("unauthorized", "The account is unavailable.");
+        }
+
+        try
+        {
+            return await InvokeAuthenticatedAsync(validated, isPro, period, date, cursor, projectId, projectsOnly, cancellationToken);
+        }
+        finally
+        {
+            await markers.EndOperationAsync(validated.UserId, operationId, CancellationToken.None);
+        }
+    }
+
+    private async Task<IMcpToolResponse> InvokeAuthenticatedAsync(ValidatedMcpKey validated, bool isPro, string? period, string? date, string? cursor, string? projectId, bool projectsOnly, CancellationToken cancellationToken)
+    {
         var periodValue = period ?? ReportPeriod.Day.ToWireValue();
 
         if (!ReportPeriodExtensions.TryParseWireValue(periodValue, out var reportPeriod))
@@ -141,7 +161,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
                     chosen.SessionCount,
                     report.DailyTotals.Select(day => new McpDailyTotal(
                         day.Date,
-                        report.Entries.Where(entry => entry.ProjectId == projectId && entry.LocalDate == day.Date).Sum(entry => entry.FocusMinutes))).ToArray());
+                        ReportEntry.TotalMinutes(report.Entries.Where(entry => entry.ProjectId == projectId && entry.LocalDate == day.Date)))).ToArray());
             }
 
             if (cursor is not null)
@@ -207,7 +227,7 @@ public sealed class McpToolInvocation(IMcpCredentialService credentials, IWorksp
         report.TotalMinutes,
         report.DailyTotals.Select(day => new McpDailyTotal(day.Date, day.TotalMinutes)).ToArray(),
         report.ProjectTotals.Select(project => new McpProjectTotal(project.ProjectId, project.Name, project.TotalMinutes, project.SessionCount)).ToArray(),
-        entries.Select(entry => new McpTimesheetEntry(entry.SessionId, entry.ProjectId, entry.ProjectName, entry.TaskId, entry.TaskName, entry.StartedAt, entry.EndedAt, entry.FocusMinutes, entry.LocalDate)).ToArray(),
+        entries.Select(entry => new McpTimesheetEntry(entry.SessionId, entry.ProjectId, entry.ProjectName, entry.TaskId, entry.TaskName, entry.StartedAt, entry.EndedAt, entry.FocusMinutes, entry.LocalDate) { FocusSeconds = entry.FocusSeconds }).ToArray(),
         nextCursor);
 
     private static string CreateFirstCursor(string userId, ReportPeriod period, WorkspaceReport report) =>

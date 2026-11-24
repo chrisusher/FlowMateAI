@@ -1,0 +1,50 @@
+.settings-layout {
+    display: grid;
+    grid-template-columns: 160px minmax(0, 1fr);
+    gap: 22px;
+    align-items: start
+}
+
+.settings-nav {
+    display: grid;
+    gap: 5px
+}
+
+.settings-nav a {
+    padding: 8px 10px;
+    border-radius: 7px;
+    color: #8c9089;
+    font-size: 0.875rem
+}
+
+.settings-nav a.selected {
+    background: var(--accent-soft);
+    color: #6d73d8;
+    font-weight: 600
+}
+
+.settings-content {
+    display: grid;
+    gap: 14px
+}
+
+@media(max-width:560px) {
+    .settings-layout {
+            grid-template-columns: 1fr;
+            gap: 10px
+        }
+}
+
+@media(max-width:560px) {
+    .settings-nav {
+            display: flex;
+            overflow: auto
+        }
+}
+
+@media(max-width:560px) {
+    .settings-nav a {
+            white-space: nowrap
+        }
+}
+

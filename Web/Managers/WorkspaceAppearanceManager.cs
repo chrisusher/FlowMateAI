@@ -17,9 +17,9 @@ public sealed class WorkspaceAppearanceManager(WorkspaceStore store, IJSRuntime 
             return;
         }
 
-        var savedTheme = await js.InvokeAsync<string?>("localStorage.getItem", "flowmate.theme");
-        IsDark = savedTheme == "dark" || (savedTheme is null && await js.InvokeAsync<bool>("eval", "window.matchMedia('(prefers-color-scheme: dark)').matches"));
-        await js.InvokeVoidAsync("eval", $"document.documentElement.dataset.theme='{(IsDark ? "dark" : "light")}'");
+        var savedTheme = await js.InvokeCheckedAsync<string?>("localStorage.getItem", "flowmate.theme");
+        IsDark = savedTheme == "dark" || (savedTheme is null && await js.InvokeCheckedAsync<bool>("eval", "window.matchMedia('(prefers-color-scheme: dark)').matches"));
+        await js.InvokeCheckedVoidAsync("eval", $"document.documentElement.dataset.theme='{(IsDark ? "dark" : "light")}'");
         _initialized = true;
         NotifyChanged();
     }
@@ -33,8 +33,8 @@ public sealed class WorkspaceAppearanceManager(WorkspaceStore store, IJSRuntime 
     public async Task ToggleTheme()
     {
         IsDark = !IsDark;
-        await js.InvokeVoidAsync("eval", $"document.documentElement.dataset.theme='{(IsDark ? "dark" : "light")}'");
-        await js.InvokeVoidAsync("localStorage.setItem", "flowmate.theme", IsDark ? "dark" : "light");
+        await js.InvokeCheckedVoidAsync("eval", $"document.documentElement.dataset.theme='{(IsDark ? "dark" : "light")}'");
+        await js.InvokeCheckedVoidAsync("localStorage.setItem", "flowmate.theme", IsDark ? "dark" : "light");
         NotifyChanged();
     }
 }

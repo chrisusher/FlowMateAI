@@ -21,15 +21,30 @@ public sealed class UserDataResetServiceTests
 
         Assert.That(repository.UserRecordDeleteCalls, Is.EqualTo(1));
         Assert.That(result.UserRecords, Is.EqualTo(2));
+        Assert.That(result.WorkspaceRecords, Is.EqualTo(13));
     }
 
     [Test]
-    public void FailureAfterUserRecordDeletionIncludesItsCountInTheCompletedReport()
+    public async Task CollectionFailureReportsCompletedDeletesAndStopsReset()
+    {
+        var repository = new StubUserDataResetRepository
+        {
+            FailWorkspaceSessionDelete = true
+        };
+        var exception = await Assert.ThrowsAsync<UserDataResetException>(() => CreateService(repository).ResetAsync("auth0|user-1"));
+
+        Assert.That(exception!.Stage, Is.EqualTo(UserDataResetStage.WorkspaceRecord));
+        Assert.That(exception.Completed.WorkspaceRecords, Is.EqualTo(6));
+        Assert.That(repository.UserRecordDeleteCalls, Is.Zero);
+    }
+
+    [Test]
+    public async Task FailureAfterUserRecordDeletionIncludesItsCountInTheCompletedReport()
     {
         var repository = new StubUserDataResetRepository { FailMcpUsageDelete = true };
         var service = CreateService(repository);
 
-        var exception = Assert.ThrowsAsync<UserDataResetException>(() => service.ResetAsync("auth0|user-1"));
+        var exception = await Assert.ThrowsAsync<UserDataResetException>(() => service.ResetAsync("auth0|user-1"));
 
         Assert.That(exception!.Stage, Is.EqualTo(UserDataResetStage.McpUsage));
         Assert.That(exception.Completed.UserRecords, Is.EqualTo(2));
@@ -41,10 +56,16 @@ public sealed class UserDataResetServiceTests
     private sealed class StubUserDataResetRepository : IUserDataResetRepository
     {
         public bool FailMcpUsageDelete { get; init; }
+        public bool FailWorkspaceSessionDelete { get; init; }
         public int UserRecordDeleteCalls { get; private set; }
 
         public Task<int> DeleteWorkspaceDocumentsAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(1);
         public Task<int> DeleteWorkspaceRecordsAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(3);
+        public Task<int> DeleteWorkspaceProjectsAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(1);
+        public Task<int> DeleteWorkspaceTasksAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(2);
+        public Task<int> DeleteWorkspaceSessionsAsync(string userId, CancellationToken cancellationToken = default) =>
+            FailWorkspaceSessionDelete ? Task.FromException<int>(new InvalidOperationException("Storage unavailable.")) : Task.FromResult(3);
+        public Task<int> DeleteWorkspaceConversationsAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(4);
         public Task<int> DeleteBillingEntitlementsAsync(string userId, CancellationToken cancellationToken = default) => Task.FromResult(1);
 
         public Task<int> DeleteUserRecordsAsync(string userId, CancellationToken cancellationToken = default)

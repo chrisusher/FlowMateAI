@@ -1,11 +1,6 @@
 using API.Security;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Middleware;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Services;
@@ -19,6 +14,13 @@ var host = new HostBuilder()
 
             if (httpContext is not null)
             {
+                httpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                httpContext.Response.Headers["X-Frame-Options"] = "DENY";
+                httpContext.Response.Headers["Referrer-Policy"] = "no-referrer";
+                httpContext.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+                httpContext.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+                httpContext.Response.Headers["Cross-Origin-Resource-Policy"] = "same-site";
+
                 var origin = httpContext.Request.Headers.Origin.ToString();
                 var allowedOrigins = context.InstanceServices.GetRequiredService<IConfiguration>()
                     .GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -29,6 +31,7 @@ var host = new HostBuilder()
                 }
 
                 httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, If-Match";
+                httpContext.Response.Headers["Access-Control-Expose-Headers"] = "X-Workspace-Collections";
                 httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
                 httpContext.Response.Headers["Vary"] = "Origin";
 
@@ -40,7 +43,14 @@ var host = new HostBuilder()
                 }
             }
 
-            await next(context);
+            try
+            {
+                await next(context);
+            }
+            finally
+            {
+                await AccountOperation.CompleteAsync(context);
+            }
         }));
     })
     .ConfigureServices((context, services) =>

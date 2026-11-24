@@ -1,0 +1,37 @@
+.upgrade-card {
+    position: relative;
+    padding: 16px 14px 14px;
+    margin: 0 2px 18px;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #f4f4ff, #f8f7ff);
+    border: 1px solid #ececff
+}
+
+.upgrade-spark {
+    position: absolute;
+    right: 14px;
+    top: 13px;
+    color: #7d80ea
+}
+
+.upgrade-card strong {
+    font: 700 12px Manrope
+}
+
+.upgrade-card p {
+    font-size: 0.9375rem;
+    color: #828490;
+    line-height: 1.5;
+    margin: 6px 0 10px
+}
+
+.upgrade-card a {
+    font-size: 0.9375rem;
+    color: #6266db;
+    font-weight: 700
+}
+
+.upgrade-card a span {
+    float: right
+}
+

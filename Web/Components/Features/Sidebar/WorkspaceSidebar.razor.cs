@@ -1,9 +1,22 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 
 namespace Web.Components.Features.Sidebar;
 
 public partial class WorkspaceSidebar
 {
+    private bool _profileMenuOpen;
+
+    private void ToggleProfileMenu() => _profileMenuOpen = !_profileMenuOpen;
+
+    private void HandleProfileKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            _profileMenuOpen = false;
+        }
+    }
+
     protected override void OnInitialized()
     {
         base.OnInitialized();

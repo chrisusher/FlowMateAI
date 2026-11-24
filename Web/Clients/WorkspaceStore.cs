@@ -4,7 +4,7 @@ using Microsoft.JSInterop;
 
 namespace Web.Clients;
 
-public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client auth)
+public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client auth, WorkspaceItemsClient items)
 {
     private const string STORAGE_PREFIX = "flowmate.workspace.v1.";
     private IJSObjectReference? _module;
@@ -15,6 +15,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     private string RevisionStorageKey => StorageKey + ".revision";
     private string? _revision;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
+    private bool _clearedForDeletion;
     private WorkspaceResponse? _remoteConflict;
     private bool _pendingSync;
     private bool _invalidPendingDraft;
@@ -59,10 +60,10 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         BindAccount();
 
         var module = await ModuleAsync();
-        ClientId = await module.InvokeAsync<string>("getClientId");
-        var json = await module.InvokeAsync<string?>("read", StorageKey);
-        var pending = await module.InvokeAsync<string?>("read", PendingStorageKey);
-        var revision = await module.InvokeAsync<string?>("read", RevisionStorageKey);
+        ClientId = await module.InvokeCheckedAsync<string>("getClientId");
+        var json = await module.InvokeCheckedAsync<string?>("read", StorageKey);
+        var pending = await module.InvokeCheckedAsync<string?>("read", PendingStorageKey);
+        var revision = await module.InvokeCheckedAsync<string?>("read", RevisionStorageKey);
         _revision = string.IsNullOrWhiteSpace(revision) ? null : revision;
         var cache = ReadWorkspaceCache(json);
 
@@ -132,15 +133,16 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+                using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.Session.AccessToken);
                 using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
+                var receivedAt = DateTimeOffset.UtcNow;
                 response.EnsureSuccessStatusCode();
-                var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+                var remote = await ReadWorkspaceAsync(response, auth.Session.AccessToken);
 
                 if (IsLoadableWorkspace(remote))
                 {
-                    CalibrateClock(response);
+                    CalibrateClock(response, receivedAt);
                     Data = remote.Workspace;
                     _revision = remote.Revision;
                     await PersistRevisionAsync();
@@ -156,12 +158,12 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     SetSyncState(WorkspaceSyncState.Failed, "The server returned an incomplete workspace. Your local copy is safe; retry loading the server workspace.");
                 }
             }
-            catch (HttpRequestException)
+            catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
             {
                 _remoteLoadFailed = true;
                 SetSyncState(WorkspaceSyncState.Offline, "The latest workspace could not be loaded. Your local copy is safe; reconnect and retry.");
             }
-            catch (JsonException)
+            catch (Exception exception) when (exception is JsonException or InvalidDataException)
             {
                 _remoteLoadFailed = true;
                 SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable workspace. Your local draft is still available; retry loading the server workspace.");
@@ -217,6 +219,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     private async Task SaveAsync(bool reclaimTimer)
     {
+        if (_clearedForDeletion)
+        {
+            return;
+        }
+
         BindAccount();
 
         if (_invalidPendingDraft || !string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
@@ -235,6 +242,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         try
         {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
             if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
             {
                 SetSyncState(WorkspaceSyncState.Pending, "Your account changed. This draft is saved for its original account; switch back to sync it.");
@@ -349,7 +361,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             SetSyncState(WorkspaceSyncState.Offline, "The save was interrupted. Your local draft is safe; reconnect and retry.");
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidDataException)
         {
             SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable save response. Your local draft is safe; retry the save.");
         }
@@ -365,8 +377,67 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         Changed?.Invoke();
     }
 
+    public async Task RefreshForNavigationAsync()
+    {
+        if (_clearedForDeletion || _invalidPendingDraft ||
+            !auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken) ||
+            !string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
+            var before = JsonSerializer.Serialize(Data, SharedCommon.JsonOptions);
+            var accessToken = auth.Session.AccessToken;
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
+
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
+            
+            var receivedAt = DateTimeOffset.UtcNow;
+            response.EnsureSuccessStatusCode();
+            var remote = await ReadWorkspaceAsync(response, accessToken);
+
+            if (!IsLoadableWorkspace(remote) || _clearedForDeletion || _pendingSync || _remoteConflict is not null || _remoteLoadFailed ||
+                !string.Equals(before, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            CalibrateClock(response, receivedAt);
+            Data = remote.Workspace;
+            Data.ClientId = ClientId;
+            _revision = remote.Revision;
+            await PersistRevisionAsync();
+            Changed?.Invoke();
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidDataException or OperationCanceledException or JSException)
+        {
+            // Keep the last complete local snapshot when a background refresh fails.
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
     public async Task RetrySaveAsync()
     {
+        if (_clearedForDeletion)
+        {
+            return;
+        }
+
         BindAccount();
 
         if (!_remoteLoadFailed)
@@ -388,6 +459,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
         try
         {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
             if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken))
             {
                 SetSyncState(WorkspaceSyncState.Pending, "Saved on this device. Sign in to load and sync the latest workspace.");
@@ -405,9 +481,10 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var response = await auth.SendAsync(http, request, requiresAuthentication: true);
+            var receivedAt = DateTimeOffset.UtcNow;
 
             if (response.StatusCode == HttpStatusCode.Unauthorized || auth.IsSessionExpired)
             {
@@ -423,7 +500,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
-            var remote = await response.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+            var remote = await ReadWorkspaceAsync(response, accessToken);
 
             if (!IsLoadableWorkspace(remote))
             {
@@ -432,7 +509,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
-            CalibrateClock(response);
+            CalibrateClock(response, receivedAt);
 
             _remoteLoadFailed = false;
 
@@ -459,7 +536,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         {
             SetSyncState(WorkspaceSyncState.Offline, "Loading the latest workspace was interrupted. Your local copy is safe; reconnect and retry.");
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidDataException)
         {
             SetSyncState(WorkspaceSyncState.Failed, "The server returned an unreadable workspace. Your local draft is still available; retry loading.");
         }
@@ -474,12 +551,41 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         }
     }
 
+    public async Task ClearLocalDataAsync()
+    {
+        _clearedForDeletion = true;
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            var module = await ModuleAsync();
+            await module.InvokeCheckedVoidAsync("remove", StorageKey);
+            await module.InvokeCheckedVoidAsync("remove", PendingStorageKey);
+            await module.InvokeCheckedVoidAsync("remove", RevisionStorageKey);
+            Data = new();
+            _revision = null;
+            _pendingSync = false;
+            _remoteConflict = null;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+
+        Changed?.Invoke();
+    }
+
     public async Task PreserveForReauthenticationAsync()
     {
         await _saveGate.WaitAsync();
 
         try
         {
+            if (_clearedForDeletion)
+            {
+                return;
+            }
+
             Data.ClientId = ClientId;
             await SetPendingSyncAsync(true);
             SetSyncState(WorkspaceSyncState.AuthenticationExpired, "Your session expired. Your local draft and timer are saved on this device; sign in again to sync.");
@@ -498,34 +604,53 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     public async Task UseServerVersionAsync()
     {
-        if (_remoteConflict is null)
-        {
-            return;
-        }
+        await _saveGate.WaitAsync();
 
-        Data = _remoteConflict.Workspace;
-        Data.ClientId = ClientId;
-        _revision = _remoteConflict.Revision;
-        _remoteConflict = null;
-        SetSyncState(WorkspaceSyncState.Saved, "Using the latest server version.");
-        await PersistLocalAsync();
-        await PersistRevisionAsync();
-        await SetPendingSyncAsync(false);
-        Changed?.Invoke();
+        try
+        {
+            if (_clearedForDeletion || _remoteConflict is null)
+            {
+                return;
+            }
+
+            Data = _remoteConflict.Workspace;
+            Data.ClientId = ClientId;
+            _revision = _remoteConflict.Revision;
+            _remoteConflict = null;
+            SetSyncState(WorkspaceSyncState.Saved, "Using the latest server version.");
+            await PersistLocalAsync();
+            await PersistRevisionAsync();
+            await SetPendingSyncAsync(false);
+            Changed?.Invoke();
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     public async Task KeepLocalVersionAsync()
     {
-        if (_remoteConflict is null)
+        await _saveGate.WaitAsync();
+
+        try
         {
-            return;
+            if (_clearedForDeletion || _remoteConflict is null)
+            {
+                return;
+            }
+
+            _revision = _remoteConflict.Revision;
+            _remoteConflict = null;
+            await PersistRevisionAsync();
+            await SetPendingSyncAsync(true);
+            SetSyncState(WorkspaceSyncState.Saving, "Retrying your local draft against the latest revision.");
+        }
+        finally
+        {
+            _saveGate.Release();
         }
 
-        _revision = _remoteConflict.Revision;
-        _remoteConflict = null;
-        await PersistRevisionAsync();
-        await SetPendingSyncAsync(true);
-        SetSyncState(WorkspaceSyncState.Saving, "Retrying your local draft against the latest revision.");
         await SaveAsync();
     }
 
@@ -538,7 +663,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
             return;
         }
 
-        using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace");
+        using var refresh = new HttpRequestMessage(HttpMethod.Get, "api/v1/workspace/metadata");
         refresh.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         using var latest = await auth.SendAsync(http, refresh, requiresAuthentication: true);
 
@@ -552,7 +677,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         if (latest.IsSuccessStatusCode)
         {
             CalibrateClock(latest);
-            _remoteConflict = await latest.Content.ReadFromJsonAsync<WorkspaceResponse>(SharedCommon.JsonOptions);
+            _remoteConflict = await ReadWorkspaceAsync(latest, accessToken);
 
             if (string.Equals(errorCode, "timer_conflict", StringComparison.Ordinal) && _remoteConflict?.Workspace is { } remoteWorkspace)
             {
@@ -572,13 +697,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     {
         var json = JsonSerializer.Serialize(new WorkspaceCacheRecord(_storageAccountId, _revision, _pendingSync, Data, DateTimeOffset.UtcNow, _serverClockOffset), SharedCommon.JsonOptions);
 
-        await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, json);
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", StorageKey, json);
     }
 
     private async Task PersistRevisionAsync()
     {
         await PersistLocalAsync();
-        await (await ModuleAsync()).InvokeVoidAsync("write", RevisionStorageKey, _revision ?? "");
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", RevisionStorageKey, _revision ?? "");
     }
 
     private async Task SetPendingSyncAsync(bool pending)
@@ -586,8 +711,8 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         _pendingSync = pending;
         await PersistLocalAsync();
         var value = pending ? "true" : "false";
-        await (await ModuleAsync()).InvokeVoidAsync("write", PendingStorageKey, value);
-        await (await ModuleAsync()).InvokeVoidAsync("write", RevisionStorageKey, _revision ?? "");
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", PendingStorageKey, value);
+        await (await ModuleAsync()).InvokeCheckedVoidAsync("write", RevisionStorageKey, _revision ?? "");
     }
 
     private void SetSyncState(WorkspaceSyncState state, string message)
@@ -708,19 +833,33 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
             if (result is not null)
             {
-                if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+                await _saveGate.WaitAsync(cancellationToken);
+
+                try
                 {
-                    SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Your account changed while the coach was replying. Sign in again before continuing.");
+                    if (_clearedForDeletion)
+                    {
+                        return null;
+                    }
 
-                    return null;
+                    if (!string.Equals(_storageAccountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+                    {
+                        SetCoachFailure(CoachFailureCode.AuthenticationExpired, "Your account changed while the coach was replying. Sign in again before continuing.");
+
+                        return null;
+                    }
+
+                    _revision = result.Revision;
+                    Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
+                    Data.Conversations.Insert(0, result.Conversation);
+
+                    await (await ModuleAsync()).InvokeCheckedVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
+                    Changed?.Invoke();
                 }
-
-                _revision = result.Revision;
-                Data.Conversations.RemoveAll(c => c.Id == result.Conversation.Id);
-                Data.Conversations.Insert(0, result.Conversation);
-
-                await (await ModuleAsync()).InvokeVoidAsync("write", StorageKey, JsonSerializer.Serialize(Data, SharedCommon.JsonOptions));
-                Changed?.Invoke();
+                finally
+                {
+                    _saveGate.Release();
+                }
             }
 
             return result;
@@ -783,8 +922,6 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public void RecordFocusIntervals(IReadOnlyCollection<FocusIntervalRecord> intervals, string? taskId, string projectId, int plannedSeconds, string? focusSessionId = null)
     {
         var remainingSeconds = (double)Math.Max(0, plannedSeconds);
-        var elapsed = 0d;
-        var assignedMinutes = 0;
         var sessionRecords = new Dictionary<string, FocusSessionRecord>(StringComparer.Ordinal);
         TimeZoneInfo zone;
 
@@ -830,34 +967,30 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 {
                     segmentEnd = finish;
                 }
-                elapsed += (segmentEnd - cursor).TotalSeconds;
-                var cumulativeMinutes = (int)Math.Floor(elapsed / 60d);
-                var segmentMinutes = cumulativeMinutes - assignedMinutes;
+                var seconds = (segmentEnd - cursor).TotalSeconds;
+                var sessionDay = TimeZoneInfo.ConvertTime(cursor, zone).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+                var sessionId = focusSessionId is null ? Guid.NewGuid().ToString("N") : $"{focusSessionId}-{sessionDay}";
 
-                if (segmentMinutes > 0)
+                if (sessionRecords.TryGetValue(sessionId, out var session))
                 {
-                    var sessionDay = TimeZoneInfo.ConvertTime(cursor, zone).ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
-                    var sessionId = focusSessionId is null ? Guid.NewGuid().ToString("N") : $"{focusSessionId}-{sessionDay}";
-
-                    if (sessionRecords.TryGetValue(sessionId, out var session))
-                    {
-                        session.EndedAt = segmentEnd;
-                        session.FocusMinutes += segmentMinutes;
-                    }
-                    else
-                    {
-                        sessionRecords.Add(sessionId, new()
-                        {
-                            Id = sessionId,
-                            StartedAt = cursor,
-                            EndedAt = segmentEnd,
-                            FocusMinutes = segmentMinutes,
-                            TaskId = taskId,
-                            ProjectId = projectId
-                        });
-                    }
+                    session.EndedAt = segmentEnd;
+                    session.FocusSeconds = session.ElapsedSeconds + seconds;
+                    session.FocusMinutes = (int)(session.ElapsedSeconds / 60);
                 }
-                assignedMinutes = cumulativeMinutes;
+                else
+                {
+                    sessionRecords.Add(sessionId, new()
+                    {
+                        Id = sessionId,
+                        StartedAt = cursor,
+                        EndedAt = segmentEnd,
+                        FocusSeconds = seconds,
+                        PlannedSeconds = plannedSeconds,
+                        FocusMinutes = (int)(seconds / 60),
+                        TaskId = taskId,
+                        ProjectId = projectId
+                    });
+                }
                 cursor = segmentEnd;
             }
 
@@ -886,16 +1019,82 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
         return intervals;
     }
 
+    private async Task<WorkspaceResponse?> ReadWorkspaceAsync(HttpResponseMessage response, string? accessToken)
+    {
+        var accountId = auth.Session.Sub;
+
+        if (!string.Equals(accountId ?? "local", _storageAccountId, StringComparison.Ordinal) ||
+            !string.Equals(accessToken, auth.Session.AccessToken, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var manifest = await response.Content.ReadFromJsonAsync<WorkspaceMetadataResponse>(SharedCommon.JsonOptions);
+
+        if (manifest is null || manifest.Revision is null ||
+            (manifest.Revision.Length != 0 && string.IsNullOrWhiteSpace(manifest.Revision)) ||
+            string.IsNullOrWhiteSpace(manifest.ProjectsHash) || string.IsNullOrWhiteSpace(manifest.TasksHash) ||
+            string.IsNullOrWhiteSpace(manifest.SessionsHash) || string.IsNullOrWhiteSpace(manifest.ConversationsHash) ||
+            string.IsNullOrWhiteSpace(manifest.TimerHash))
+        {
+            return null;
+        }
+
+        var projectsRequest = items.ListProjectsAsync();
+        var tasksRequest = items.ListTasksAsync();
+        var sessionsRequest = items.ListSessionsAsync();
+        var conversationsRequest = items.ListConversationsAsync();
+        var timerRequest = items.GetTimerAsync();
+        await System.Threading.Tasks.Task.WhenAll(projectsRequest, tasksRequest, sessionsRequest, conversationsRequest, timerRequest);
+        var projects = await projectsRequest;
+        var tasks = await tasksRequest;
+        var sessions = await sessionsRequest;
+        var conversations = await conversationsRequest;
+        var timer = await timerRequest;
+
+        if (!string.Equals(accountId, auth.Session.Sub, StringComparison.Ordinal) ||
+            !string.Equals(accessToken, auth.Session.AccessToken, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (WorkspaceCollectionManifest.Hash(projects) != manifest.ProjectsHash ||
+            WorkspaceCollectionManifest.Hash(tasks) != manifest.TasksHash ||
+            WorkspaceCollectionManifest.Hash(sessions) != manifest.SessionsHash ||
+            WorkspaceCollectionManifest.Hash(conversations) != manifest.ConversationsHash ||
+            timer is null || WorkspaceCollectionManifest.Hash(new[] { timer }) != manifest.TimerHash)
+        {
+            return null;
+        }
+
+        var workspace = new WorkspaceSnapshot
+        {
+            DisplayName = manifest.DisplayName,
+            TimeZone = manifest.TimeZone,
+            Plan = manifest.Plan,
+            ClientId = manifest.ClientId,
+            Muted = manifest.Muted,
+            FirstRunState = manifest.FirstRunState,
+            Projects = projects,
+            Tasks = tasks,
+            Sessions = sessions,
+            Conversations = conversations,
+            Timer = timer
+        };
+
+        return new WorkspaceResponse(workspace, manifest.Revision);
+    }
+
     // GET returns an empty revision when this account has not saved a workspace yet.
     // Missing revisions and whitespace are still invalid; PUT must return a saved revision.
     private static bool IsLoadableWorkspace([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] WorkspaceResponse? response) =>
         response?.Workspace is not null && (response.Revision == "" || !string.IsNullOrWhiteSpace(response.Revision));
 
-    private void CalibrateClock(HttpResponseMessage response)
+    private void CalibrateClock(HttpResponseMessage response, DateTimeOffset? receivedAt = null)
     {
         if (response.Headers.Date is { } serverDate)
         {
-            _serverClockOffset = serverDate - DateTimeOffset.UtcNow;
+            _serverClockOffset = serverDate - (receivedAt ?? DateTimeOffset.UtcNow);
         }
     }
 
@@ -911,5 +1110,5 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     }
 
     private async Task<IJSObjectReference> ModuleAsync() =>
-        _module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/workspace.js");
+        _module ??= await js.InvokeCheckedAsync<IJSObjectReference>("import", "./js/workspace.js");
 }

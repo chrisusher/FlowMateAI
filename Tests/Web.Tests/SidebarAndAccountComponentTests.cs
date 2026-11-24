@@ -9,6 +9,23 @@ namespace Web.Tests;
 public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
 {
     [Test]
+    public async Task SidebarAccountMenuSignsOut()
+    {
+        await SignInAsync();
+        var cut = Render<WorkspaceSidebar>();
+
+        var toggle = cut.Find(".profile-menu-toggle");
+        Assert.That(toggle.GetAttribute("aria-expanded"), Is.EqualTo("false"));
+        toggle.Click();
+        Assert.That(cut.Find(".profile-menu-toggle").GetAttribute("aria-expanded"), Is.EqualTo("true"));
+        Assert.That(cut.Find(".profile-menu a").GetAttribute("href"), Is.EqualTo("settings"));
+        cut.Find(".profile-menu button").Click();
+
+        Assert.That(AuthModule.Invocations.Any(call => call.Identifier == "logout"), Is.True);
+        Assert.That(Auth.Session.SignedIn, Is.False);
+    }
+
+    [Test]
     public async Task UpgradeCardLinksToPricing()
     {
         await SignInAsync();
@@ -59,6 +76,8 @@ public sealed class SidebarAndAccountComponentTests : WorkspaceComponentTest
         var cut = Render<WorkspaceSidebar>(p => p.Add(c => c.View, "projects"));
         Assert.That(cut.Find(".side-link.active").GetAttribute("aria-label"), Is.EqualTo("Projects"));
         Assert.That(cut.Find(".side-link.active").GetAttribute("aria-current"), Is.EqualTo("page"));
+        Assert.That(cut.Find(".assistant-link").GetAttribute("href"), Is.EqualTo("settings#integrations"));
+        Assert.That(cut.Find(".assistant-link").GetAttribute("aria-label"), Is.EqualTo("Connect your AI assistant"));
         Assert.That(Content(cut.Find(".nav-count")), Is.EqualTo("1"));
         PlannedTask.PlannedToday = false;
         await cut.InvokeAsync(Store.SaveAsync);

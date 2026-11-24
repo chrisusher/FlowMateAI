@@ -1,36 +1,44 @@
-using ChrisUsher.Core.Shared;
 using Microsoft.EntityFrameworkCore;
 using Services.Database;
 using Shared.Models;
 
 namespace Services.Repositories;
 
-public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRepository
+public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceCollectionSynchronizer synchronizer) : IWorkspaceRepository
 {
     public async Task<WorkspaceDocument?> GetAsync(string ownerId, CancellationToken cancellationToken = default)
     {
-        return await database.Workspaces.FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
+        var document = await database.Workspaces.AsNoTracking().FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
+
+        if (document is not null)
+        {
+            document.Workspace = WorkspaceStorageFormat.Read(document);
+        }
+
+        return document;
     }
 
     public async Task<WorkspaceDocument?> SaveAsync(string ownerId, WorkspaceSnapshot workspace, string? expectedRevision, CancellationToken cancellationToken = default)
     {
-        var document = await database.Workspaces.FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
+        var existing = await database.Workspaces.FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
 
-        if (document is not null && (string.IsNullOrEmpty(expectedRevision) || !string.Equals(document.ETag, expectedRevision, StringComparison.Ordinal)))
+        if ((existing is not null && (string.IsNullOrEmpty(expectedRevision) || existing.ETag != expectedRevision)) ||
+            (existing is null && !string.IsNullOrEmpty(expectedRevision)))
         {
             return null;
         }
 
-        if (document is null)
+        var document = existing ?? new WorkspaceDocument
         {
-            document = new WorkspaceDocument
-            {
-                Id = "workspace",
-                UserId = ownerId
-            };
+            UserId = ownerId
+        };
+
+        if (existing is null)
+        {
             database.Workspaces.Add(document);
         }
-        document.Payload = JsonSerializer.Serialize(workspace, SharedCommon.JsonOptions);
+        document.Workspace = workspace;
+        document.Payload = null;
         document.UpdatedAt = DateTimeOffset.UtcNow;
 
         try
@@ -42,6 +50,8 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
         {
             throw new WorkspaceSaveConflictException(exception);
         }
+
+        await synchronizer.SynchroniseAsync(ownerId, cancellationToken);
 
         return document;
     }
@@ -74,7 +84,12 @@ public sealed class WorkspaceRepository(DatabaseContext database) : IWorkspaceRe
             stored.StartedAt = record.StartedAt;
             stored.EndedAt = record.EndedAt;
             stored.FocusMinutes = record.FocusMinutes;
-            stored.Payload = record.Payload;
+            stored.Payload = null;
+            stored.Project = record.Project;
+            stored.Task = record.Task;
+            stored.Focus = record.Focus;
+            stored.Conversation = record.Conversation;
+            stored.Timer = record.Timer;
         }
         await database.SaveChangesAsync(cancellationToken);
     }

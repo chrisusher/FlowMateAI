@@ -9,6 +9,117 @@ namespace Web.Tests;
 public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
 {
     [Test]
+    public void ProjectTaskStartsFocusAndOpensToday()
+    {
+        var task = Store.Data.Tasks[1];
+        Navigation.NavigateTo("projects/project-one");
+        var cut = Render<AllTasksCard>(p => p.Add(c => c.ProjectId, Project.Id));
+
+        cut.Find($"button[aria-label='Start focus on {task.Title}']").Click();
+
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Focus));
+        Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(task.Id));
+        Assert.That(Store.Data.Timer.ProjectId, Is.EqualTo(Project.Id));
+        Assert.That(Store.Data.Timer.DurationSeconds, Is.EqualTo(1500));
+        Assert.That(Navigation.Uri, Does.EndWith("/"));
+    }
+
+    [TestCase(TimerPhase.ShortBreak)]
+    [TestCase(TimerPhase.LongBreak)]
+    public async Task ExistingTimerCannotBeReassignedByTaskActions(TimerPhase phase)
+    {
+        Store.Data.Timer.Phase = phase;
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.ProjectId = Project.Id;
+        var otherTask = Store.Data.Tasks[1];
+        var cut = Render<AllTasksCard>(p => p.Add(c => c.ProjectId, Project.Id));
+
+        Assert.That(cut.Find($"button[aria-label='Start focus on {otherTask.Title}']").HasAttribute("disabled"), Is.True);
+        Assert.That(cut.Find(".task-focus-notice").TextContent, Does.Contain("already in progress"));
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.False);
+        await Tasks.SelectTask(otherTask);
+        Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(PlannedTask.Id));
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(phase));
+    }
+
+    [TestCase(TimerPhase.Focus)]
+    [TestCase(TimerPhase.Paused)]
+    public async Task StartingAnotherTaskPreservesRemainingTimeAndRecordsPreviousWork(TimerPhase phase)
+    {
+        var timer = Store.Data.Timer;
+        var now = Store.UtcNow;
+        timer.Phase = phase;
+        timer.TaskId = PlannedTask.Id;
+        timer.ProjectId = Project.Id;
+        timer.DurationSeconds = 1500;
+        timer.RemainingSeconds = 900;
+        timer.FocusSessionId = "first-session";
+        timer.CompletedIntervals.Add(new() { StartedAt = now.AddMinutes(-12), EndedAt = now.AddMinutes(-10) });
+        timer.StartedAt = phase == TimerPhase.Focus ? now.AddMinutes(-8) : null;
+        timer.EndsAt = phase == TimerPhase.Focus ? now.AddMinutes(15) : null;
+        var deadline = timer.EndsAt;
+        var otherTask = Store.Data.Tasks[1];
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.Find($"button[aria-label='Start focus on {otherTask.Title}']").HasAttribute("disabled"), Is.False);
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.True);
+        Assert.That(timer.Phase, Is.EqualTo(TimerPhase.Focus));
+        Assert.That(timer.TaskId, Is.EqualTo(otherTask.Id));
+        Assert.That(timer.EndsAt, phase == TimerPhase.Focus ? Is.EqualTo(deadline) : Is.InRange(now.AddSeconds(900), Store.UtcNow.AddSeconds(900)));
+        Assert.That(timer.CompletedIntervals, Is.Empty);
+        Assert.That(Store.Data.Sessions.Single().TaskId, Is.EqualTo(PlannedTask.Id));
+        Assert.That(Store.Data.Sessions.Single().FocusMinutes, Is.EqualTo(phase == TimerPhase.Focus ? 10 : 2));
+        Assert.That(FocusSessionRecord.TotalSessions(Store.Data.Sessions), Is.EqualTo(phase == TimerPhase.Focus ? 0.4 : 0.08).Within(0.001));
+        Assert.That(timer.FocusSessionId, Is.Not.EqualTo("first-session"));
+    }
+
+    [Test]
+    public async Task AnotherClientCannotSwitchAnActiveTimer()
+    {
+        Store.Data.Timer.Phase = TimerPhase.Focus;
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        Store.Data.Timer.OwnerClientId = "another-client";
+        var otherTask = Store.Data.Tasks[1];
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.Find($"button[aria-label='Start focus on {otherTask.Title}']").HasAttribute("disabled"), Is.True);
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.False);
+        Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(PlannedTask.Id));
+    }
+
+    [Test]
+    public async Task SwitchingTasksPreservesFractionalMinutesInFocusTotals()
+    {
+        Store.Data.TimeZone = Store.UtcNow.TimeOfDay < TimeSpan.FromMinutes(15) ? "Pacific/Honolulu" : "UTC";
+        await Timer.StartFocusForTaskAsync(PlannedTask.Id);
+        var timer = Store.Data.Timer;
+        timer.StartedAt = Store.UtcNow.AddSeconds(-750);
+        timer.EndsAt = Store.UtcNow.AddSeconds(750);
+        var otherTask = Store.Data.Tasks[1];
+
+        Assert.That(await Timer.StartFocusForTaskAsync(otherTask.Id), Is.True);
+        timer.StartedAt = Store.UtcNow.AddSeconds(-750);
+        await Timer.EndFocus();
+
+        Assert.That(Store.Data.Sessions.Select(s => s.TaskId), Is.EquivalentTo(new[] { PlannedTask.Id, otherTask.Id }));
+        Assert.That(Stats.TodayMinutes, Is.EqualTo(25));
+        Assert.That(Stats.PeriodMinutes, Is.EqualTo(25));
+        Assert.That(Stats.TodaySessions, Is.EqualTo(1).Within(0.001));
+        Assert.That(Stats.PeriodSessions, Is.EqualTo(1).Within(0.001));
+    }
+
+    [Test]
+    public async Task FocusCannotStartForCompletedOrArchivedTasks()
+    {
+        PlannedTask.IsComplete = true;
+        Assert.That(await Timer.StartFocusForTaskAsync(PlannedTask.Id), Is.False);
+        PlannedTask.IsComplete = false;
+        Project.IsArchived = true;
+        Assert.That(await Timer.StartFocusForTaskAsync(PlannedTask.Id), Is.False);
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Idle));
+    }
+
+    [Test]
     public void AllTasksCardSortsAndHandlesTaskActions()
     {
         var cut = Render<AllTasksCard>();
@@ -23,8 +134,25 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(Tasks.DialogOpen, Is.True);
         Assert.That(Tasks.Draft.Title, Is.EqualTo("Take a reset"));
         Tasks.CloseTaskDialog();
+        cut.Find(".filter-chip").Click();
         cut.FindAll(".check-circle")[1].Click();
         Assert.That(PlannedTask.IsComplete, Is.False);
+    }
+
+    [Test]
+    public void AllTasksFilterTogglesCompletedTasksAndUpdatesWhenReopened()
+    {
+        PlannedTask.IsComplete = true;
+        var cut = Render<AllTasksCard>();
+
+        Assert.That(cut.FindAll(".task-title").Select(Content), Does.Not.Contain(PlannedTask.Title));
+        Assert.That(cut.Find(".filter-chip").GetAttribute("aria-pressed"), Is.EqualTo("false"));
+        cut.Find(".filter-chip").Click();
+        Assert.That(cut.Find(".filter-chip").GetAttribute("aria-pressed"), Is.EqualTo("true"));
+        Assert.That(cut.FindAll(".task-title").Select(Content), Does.Contain(PlannedTask.Title));
+        cut.FindAll(".check-circle")[1].Click();
+        cut.Find(".filter-chip").Click();
+        Assert.That(cut.FindAll(".task-title").Select(Content), Does.Contain(PlannedTask.Title));
     }
 
     [Test]
@@ -137,7 +265,11 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Store.Data.Timer.TaskId = PlannedTask.Id;
         Store.Data.Timer.ProjectId = Project.Id;
         Store.Data.Timer.Phase = TimerPhase.Focus;
-        Store.Data.Projects.Add(new() { Id = "project-two", Name = "Client work" });
+        Store.Data.Projects.Add(new()
+        {
+            Id = "project-two",
+            Name = "Client work"
+        });
         var editor = Render<TaskEditorDialog>();
 
         Tasks.OpenTaskEditor(PlannedTask);
@@ -229,6 +361,72 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         var cut = Render<ProjectCard>(p => p.Add(c => c.Project, new ProjectRecord { Name = "Empty" }));
         Assert.That(Content(cut.Find(".project-progress small")), Is.EqualTo("0/0"));
         Assert.That(cut.Find(".project-progress i").GetAttribute("style"), Does.Contain("0%"));
+    }
+
+    [Test]
+    public void ProjectCardCreatesATaskForTheSelectedProject()
+    {
+        var other = new ProjectRecord
+        {
+            Id = "project-two",
+            Name = "Client work"
+        };
+        Store.Data.Projects.Add(other);
+        var card = Render<ProjectCard>(p => p.Add(c => c.Project, other));
+        var editor = Render<TaskEditorDialog>();
+
+        Assert.That(card.Find(".project-card-link").GetAttribute("href"), Is.EqualTo("projects/project-two"));
+        card.Find(".project-add-task").Click();
+        editor.WaitForElement("[role=dialog]");
+        Assert.That(Tasks.Draft.ProjectId, Is.EqualTo(other.Id));
+        editor.Find("input.field-input").Change("Client task");
+        editor.Find("form").Submit();
+
+        Assert.That(Store.Data.Tasks.Single(task => task.Title == "Client task").ProjectId, Is.EqualTo(other.Id));
+    }
+
+    [Test]
+    public void ProjectDetailShowsOnlyItsTasksAndAllowsAddingAnother()
+    {
+        var other = new ProjectRecord
+        {
+            Id = "project-two",
+            Name = "Client work"
+        };
+        Store.Data.Projects.Add(other);
+        Store.Data.Tasks.Add(new()
+        {
+            ProjectId = other.Id,
+            Title = "Client task",
+            IsComplete = true
+        });
+
+        var cut = Render<ProjectDetailPage>(p => p.Add(c => c.ProjectId, other.Id));
+
+        Assert.That(Content(cut.Find("h1")), Is.EqualTo("Client work"));
+        Assert.That(cut.FindAll(".task-title"), Is.Empty);
+        Assert.That(cut.Find(".empty-state").TextContent, Does.Contain("No open tasks"));
+        cut.Find(".filter-chip").Click();
+        Assert.That(cut.FindAll(".task-title").Select(Content), Is.EqualTo(new[] { "Client task" }));
+        cut.Find(".filter-chip").Click();
+        Assert.That(cut.FindAll(".task-title"), Is.Empty);
+        Assert.That(cut.FindAll(".filter-chip"), Has.Exactly(1).Items);
+        cut.Find(".page-heading button").Click();
+        Assert.That(Tasks.Draft.ProjectId, Is.EqualTo(other.Id));
+        Assert.That(Tasks.DialogOpen, Is.True);
+    }
+
+    [Test]
+    public void ProjectDetailHandlesMissingAndArchivedProjects()
+    {
+        var missing = Render<ProjectDetailPage>(p => p.Add(c => c.ProjectId, "missing"));
+        Assert.That(Content(missing.Find("h1")), Is.EqualTo("Project not found"));
+
+        Project.IsArchived = true;
+        var archived = Render<ProjectDetailPage>(p => p.Add(c => c.ProjectId, Project.Id));
+        Assert.That(archived.FindAll(".page-heading button"), Is.Empty);
+        Assert.That(archived.FindAll(".task-title"), Has.Exactly(2).Items);
+        Assert.That(Content(archived.Find(".subheading")), Does.Contain("archived"));
     }
 
     [Test]

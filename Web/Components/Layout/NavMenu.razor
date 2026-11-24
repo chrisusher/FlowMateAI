@@ -38,7 +38,7 @@
     {
         if (firstRender)
         {
-            module = await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Layout/NavMenu.razor.js");
+            module = await JS.InvokeCheckedAsync<IJSObjectReference>("import", "./Components/Layout/NavMenu.razor.js");
         }
     }
 

@@ -43,7 +43,7 @@
             {
                 <li @key="project.Id">
                     <span class="project-color-dot" style="background:@project.Color"></span>
-                    <span class="archived-project-name">@project.Name</span>
+                    <a class="archived-project-name" href="@($"projects/{Uri.EscapeDataString(project.Id)}")">@project.Name</a>
                     <span class="archived-project-history">@Store.Data.Tasks.Count(task => task.ProjectId == project.Id) tasks · @Stats.ProjectMinutes(project.Id) min focused</span>
                     <button type="button" class="text-button" @onclick="() => Projects.RestoreProjectAsync(project)">Restore</button>
                 </li>

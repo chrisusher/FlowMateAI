@@ -1,0 +1,132 @@
+@inject McpKeysClient Keys
+@inject Auth0Client Auth
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+
+<article class="panel settings-panel" id="integrations" aria-labelledby="integrations-title">
+    <div class="settings-heading"><div><h3 id="integrations-title">Connect your AI assistant</h3>
+        <p>Use recorded focus time to prepare timesheets and client updates.</p></div></div>
+    <p>MCP reads completed focus sessions and project totals. It cannot change entries, submit timesheets or send invoices.</p>
+    <p>Free and Pro can both connect. Free includes today and the previous 29 calendar days, with 10 calls per rolling minute and 100 per UTC day across keys and clients. Pro includes one year of history and is exempt from MCP rate limits.</p>
+    @if (Endpoint is null)
+    {
+        <p role="status">The assistant connection endpoint is not configured.
+            @if (SupportUrl is not null)
+            {
+                <a href="@SupportUrl">Contact FlowMate support</a><span> for help.</span>
+            }
+            else
+            {
+                <span>Support contact details are not available yet. Please try again later.</span>
+            }
+        </p>
+    }
+    else
+    {
+        <ol>
+            <li>Create a named key below and copy it now; it will not be shown again.</li>
+            <li>In your assistant, add a Streamable HTTP server at <code>@Endpoint</code>.</li>
+            <li>Enter the key securely as the <code>X-Api-Key</code> header. Do not put it in a prompt or share it.</li>
+            <li>Ask your assistant to retrieve your recorded time. Adding a server alone does not verify the connection.</li>
+        </ol>
+        <p><a href="https://github.com/chrisusher/FlowMateAI/blob/main/docs/mcp-server.md" target="_blank" rel="noopener noreferrer">Read the assistant setup guide</a></p>
+    }
+    @if (!Auth.Session.SignedIn)
+    {
+        <p>Sign in to manage assistant keys.</p>
+    }
+    else
+    {
+        <label class="field-label">Key name
+            <input class="field-input" @bind="_name" maxlength="80" placeholder="For example, my assistant" />
+        </label>
+        <label class="field-label">Expires after
+            <select class="field-input" @bind="_expiryDays"><option value="30">30 days</option><option value="90">90 days</option><option value="365">365 days</option></select>
+        </label>
+        <button type="button" class="quiet-button" disabled="@(_busy || _secret is not null || string.IsNullOrWhiteSpace(_name))" @onclick="CreateAsync">Create key</button>
+        @if (_secret is not null)
+        {
+            <div role="status"><p>Copy this key now. It will not be shown again.</p><code>@_secret</code>
+                <button type="button" class="quiet-button" @onclick="CopyAsync">Copy key</button>
+                <button type="button" class="text-button" @onclick="ForgetSecret">Done</button></div>
+        }
+        @if (_message is not null) { <p role="alert">@_message</p> }
+        @if (_loading) { <p role="status">Loading keys…</p> }
+        else if (_loadFailed) { <button type="button" class="quiet-button" @onclick="LoadAsync">Retry loading keys</button> }
+        else if (_keys.Count == 0) { <p>No assistant keys yet.</p> }
+        else
+        {
+            <ul>
+                @foreach (var key in _keys)
+                {
+                    <li @key="key.Id"><strong>@key.Name</strong> (@key.Prefix…) — @(key.Revoked ? "Revoked" : key.ExpiresAt <= DateTimeOffset.UtcNow ? "Expired" : "Active"); created @key.CreatedAt.ToString("d MMM yyyy"), expires @key.ExpiresAt.ToString("d MMM yyyy")
+                    @if (!key.Revoked) { <button type="button" class="text-button" disabled="@_busy" @onclick="() => RevokeAsync(key.Id)">Revoke <span class="visually-hidden">@key.Name</span></button> }</li>
+                }
+            </ul>
+        }
+    }
+</article>
+
+@code {
+    private IReadOnlyList<McpKeySummary> _keys = [];
+    private string _name = "";
+    private int _expiryDays = 90;
+    private string? _secret, _message;
+    private bool _loading, _loadFailed, _busy;
+    private string? Endpoint => Uri.TryCreate(Configuration["McpEndpoint"], UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttps || (uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback)) && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment)
+        ? (uri.AbsolutePath == "/" ? new Uri(uri, "runtime/webhooks/mcp").ToString() : uri.ToString()) : null;
+    private string? SupportUrl => Uri.TryCreate(Configuration["SupportUrl"], UriKind.Absolute, out var uri) &&
+        (uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo) ||
+         uri.Scheme == Uri.UriSchemeMailto && string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) &&
+         System.Net.Mail.MailAddress.TryCreate(uri.OriginalString[7..], out var address) && address.Address == uri.OriginalString[7..])
+        ? uri.ToString() : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Auth.Session.SignedIn) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true; _loadFailed = false; _message = null;
+        try { _keys = await Keys.ListAsync(); }
+        catch (Exception) { _loadFailed = true; _message = "Could not load assistant keys. Please try again."; }
+        finally { _loading = false; }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy || _secret is not null || string.IsNullOrWhiteSpace(_name)) return;
+        _busy = true; _message = null; _secret = null;
+        try
+        {
+            var created = await Keys.CreateAsync(_name.Trim(), _expiryDays);
+            if (created is null) { _message = "Could not create the key. Please try again."; return; }
+            _secret = created.Key; _name = "";
+            await LoadAsync();
+        }
+        catch (Exception) { _message = "Could not create the key. Please try again."; }
+        finally { _busy = false; }
+    }
+
+    private async Task RevokeAsync(string id)
+    {
+        if (_busy) return;
+        _busy = true; _message = null;
+        try
+        {
+            if (!await Keys.RevokeAsync(id)) { _message = "Could not revoke the key. Please try again."; return; }
+            await LoadAsync();
+        }
+        catch (Exception) { _message = "Could not revoke the key. Please try again."; }
+        finally { _busy = false; }
+    }
+
+    private async Task CopyAsync()
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _secret); _message = "Key copied."; }
+        catch (Exception) { _message = "Could not copy the key. Please select and copy it manually."; }
+    }
+    private void ForgetSecret() => _secret = null;
+}

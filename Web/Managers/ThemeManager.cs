@@ -1,4 +1,5 @@
 using Microsoft.JSInterop;
+using Web.Clients;
 
 namespace Web.Managers;
 
@@ -122,7 +123,7 @@ public sealed class ThemeManager : IAsyncDisposable
 
     private async Task<IJSObjectReference> GetModuleAsync()
     {
-        _module ??= await _jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/theme.js");
+        _module ??= await _jsRuntime.InvokeCheckedAsync<IJSObjectReference>("import", "./js/theme.js");
 
         return _module;
     }

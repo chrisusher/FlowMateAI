@@ -23,8 +23,20 @@ public sealed class ReportComponentTests : WorkspaceComponentTest
         AddSession(25);
         AddSession(15);
         var cut = Render<SessionCountCard>();
-        Assert.That(Content(cut.Find("strong")), Is.EqualTo("2"));
+        Assert.That(Content(cut.Find("strong")), Is.EqualTo("2.0"));
         Assert.That(cut.Find("p").TextContent, Does.Contain("Pomodoros completed"));
+    }
+
+    [Test]
+    public void SessionCountCardDisplaysFractionsAfterSummingSegments()
+    {
+        var start = DateTimeOffset.UtcNow.AddMinutes(-10);
+        Store.RecordFocus(start, start.AddMinutes(5), PlannedTask.Id, Project.Id, 1500);
+        Store.RecordFocus(start.AddMinutes(5), start.AddMinutes(10), Store.Data.Tasks[1].Id, Project.Id, 1500);
+
+        var cut = Render<SessionCountCard>();
+
+        Assert.That(Content(cut.Find("strong")), Is.EqualTo("0.4"));
     }
 
     [Test]
@@ -199,9 +211,10 @@ public sealed class ReportComponentTests : WorkspaceComponentTest
         Store.RecordFocusIntervals([new() { StartedAt = start, EndedAt = afterMidnight }], PlannedTask.Id, Project.Id, 60, "midnight-report");
         Stats.SelectedDate = DateOnly.FromDateTime(localMidnight);
 
-        Assert.That(Stats.PeriodMinutes, Is.EqualTo(1));
-        Assert.That(Stats.ChartDays.Single().Minutes, Is.EqualTo(1));
-        Assert.That(Store.Data.Sessions.Single().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localMidnight, zone), TimeSpan.Zero)));
+        Assert.That(Stats.PeriodMinutes, Is.Zero);
+        Assert.That(Stats.ChartDays.Single().Minutes, Is.Zero);
+        Assert.That(Store.Data.Sessions.Select(session => session.ElapsedSeconds), Is.EqualTo(new[] { 30d, 30d }));
+        Assert.That(Store.Data.Sessions.Last().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localMidnight, zone), TimeSpan.Zero)));
     }
 
     [Test]

@@ -31,7 +31,7 @@ public sealed record McpListProjectsResponse(
 
 public sealed record McpDailyTotal(DateOnly Date, int TotalMinutes);
 
-public sealed record McpProjectTotal(string ProjectId, string Name, int TotalMinutes, int SessionCount);
+public sealed record McpProjectTotal(string ProjectId, string Name, int TotalMinutes, double SessionCount);
 
 public sealed record McpTimesheetEntry(
     string SessionId,
@@ -42,7 +42,10 @@ public sealed record McpTimesheetEntry(
     DateTimeOffset StartedAt,
     DateTimeOffset EndedAt,
     int FocusMinutes,
-    DateOnly LocalDate);
+    DateOnly LocalDate)
+{
+    public double? FocusSeconds { get; init; }
+}
 
 public sealed record McpTimesheetResponse(
     string TimeZone,
@@ -59,5 +62,5 @@ public sealed record McpProjectTimeResponse(
     string ProjectId,
     string ProjectName,
     int TotalMinutes,
-    int SessionCount,
+    double SessionCount,
     IReadOnlyList<McpDailyTotal> DailyBreakdown) : IMcpToolResponse;

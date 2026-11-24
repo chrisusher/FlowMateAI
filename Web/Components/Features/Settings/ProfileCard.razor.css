@@ -1,0 +1,21 @@
+.danger-panel {
+    border-color: #e4c5c5
+}
+
+.settings-help {
+    color: #72766f;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    max-width: 650px
+}
+
+.danger-button {
+    color: #b65353
+}
+
+.profile-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px
+}
+

@@ -6,7 +6,7 @@ set -euo pipefail
 : "${COSMOS_DATABASE:?Set COSMOS_DATABASE}"
 
 ensure_container() {
-  local name="$1" ttl="$2"
+  local name="$1" ttl="$2" partition_key="$3"
   if az cosmosdb sql container show \
       --resource-group "$AZURE_RESOURCE_GROUP" \
       --account-name "$COSMOS_ACCOUNT" \
@@ -25,9 +25,9 @@ ensure_container() {
     --account-name "$COSMOS_ACCOUNT" \
     --database-name "$COSMOS_DATABASE" \
     --name "$name" \
-    --partition-key-path /userId \
+    --partition-key-path "$partition_key" \
     --ttl "$ttl" >/dev/null
 }
 
-ensure_container McpKeys -1
-ensure_container McpUsage 172800
+ensure_container McpKeys -1 /UserId
+ensure_container McpUsage 172800 /userId

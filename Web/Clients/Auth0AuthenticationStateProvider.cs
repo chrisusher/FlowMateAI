@@ -14,7 +14,9 @@ public sealed class Auth0AuthenticationStateProvider : AuthenticationStateProvid
         _auth.SessionChanged += OnSessionChanged;
     }
 
-    public override async Task<AuthenticationState> GetAuthenticationStateAsync()
+    public override Task<AuthenticationState> GetAuthenticationStateAsync() => CreateAuthenticationStateAsync();
+
+    private async Task<AuthenticationState> CreateAuthenticationStateAsync()
     {
         try
         {
@@ -49,7 +51,7 @@ public sealed class Auth0AuthenticationStateProvider : AuthenticationStateProvid
         return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity(claims, "Auth0")));
     }
 
-    private void OnSessionChanged() => NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
+    private void OnSessionChanged() => NotifyAuthenticationStateChanged(CreateAuthenticationStateAsync());
 
     public void Dispose()
     {

@@ -6,10 +6,10 @@ using ChrisUsher.Core.Services.Storage;
 using Microsoft.Azure.Cosmos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Azure;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Services.Billing;
+using Services.ApiRequests;
 using Services.Coach;
 using Services.Database;
 using Services.Mcp;
@@ -89,12 +89,13 @@ public static class Services
             .Get<GlobalConfig>() ?? new GlobalConfig();
 
         services.AddDatabase(configuration);
+        services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton(sp =>
         {
-            var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+            var settings = ResolveDatabaseSettings(configuration);
 
             return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
-        });        
+        });
 
         if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))
         {
@@ -116,12 +117,16 @@ public static class Services
 
         #region Repositories
         services.AddScoped<IBillingRepository, BillingRepository>();
+        services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
         services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IUserDataResetRepository, UserDataResetRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IAccountDeletionMarkerRepository, AccountDeletionMarkerRepository>();
         services.
         AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
+        services.AddScoped<WorkspaceCollectionSynchronizer>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+        services.AddScoped<IWorkspaceItemsRepository, WorkspaceItemsRepository>();
         #endregion
 
         #region Services
@@ -131,10 +136,13 @@ public static class Services
 
         #region EF Core Services
         services.AddScoped<IBillingService, StripeBillingService>();
+        services.AddScoped<IAccountDeletionService, AccountDeletionService>();
+        services.AddScoped<IAuth0IdentityDeletionService, Auth0IdentityDeletionService>();
         services.AddScoped<IUserDataResetService, UserDataResetService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<IAuthenticatedApiRateLimiter, AuthenticatedApiRateLimiterService>();
         #endregion
 
         #endregion
@@ -150,13 +158,14 @@ public static class Services
     {
         var global = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
 
-        var settings = ResolveDatabaseSettings(configuration, global.Environment);
+        var settings = ResolveDatabaseSettings(configuration);
 
         services.AddDatabase(configuration);
         services.TryAddSingleton(TimeProvider.System);
-        
+
         services.AddScoped<IMcpUsageRepository, McpUsageRepository>();
-        services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();        
+        services.AddScoped<IFreeUsageLimiterService, FreeUsageLimiterService>();
+        services.AddScoped<IAccountDeletionMarkerRepository, AccountDeletionMarkerRepository>();
 
         var client = string.IsNullOrWhiteSpace(settings.AccountKey)
             ? new CosmosClient(settings.AccountEndpoint, new DefaultAzureCredential())
@@ -190,7 +199,7 @@ public static class Services
 
         var globalConfig = configuration.GetSection("Global").Get<GlobalConfig>() ?? new GlobalConfig();
 
-        var settings = ResolveDatabaseSettings(configuration, globalConfig.Environment);
+        var settings = ResolveDatabaseSettings(configuration);
 
         services.AddDbContext<DatabaseContext>(options =>
         {
