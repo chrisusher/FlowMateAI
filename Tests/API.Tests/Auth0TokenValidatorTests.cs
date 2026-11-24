@@ -12,6 +12,14 @@ using Microsoft.Extensions.DependencyInjection;
 using API.Functions.V1;
 using Services.Users;
 using Services.Repositories;
+using API.Functions.V1.Projects;
+using Azure.Core.Serialization;
+using ChrisUsher.Core.Shared;
+using Services.ApiRequests;
+using Services.Workspaces;
+using Shared.Contracts;
+using Shared.Enums;
+using Shared.Models;
 
 namespace API.Tests;
 
@@ -228,6 +236,43 @@ public sealed class Auth0TokenValidatorTests
         Assert.That(await markers.MarkAsync(result.UserId!), Is.False);
     }
 
+    [Test]
+    public async Task ProjectCreateFunctionAuthenticatesAndReturnsAReadableProjectResponse()
+    {
+        using var key = RSA.Create(2048);
+        var projects = new TestProjects();
+        var function = new CreateProject(CreateValidator(key), new TestUserService("person@example.test"), new AllowRequests(), projects);
+        var input = new ProjectCreateRequest("project", "Project", "#112233", DateTimeOffset.UtcNow);
+        var request = new WritableRequest($"Bearer {CreateToken(key)}", JsonSerializer.Serialize(input, SharedCommon.JsonOptions));
+
+        var response = await function.Run(request, CancellationToken.None);
+        response.Body.Position = 0;
+        var result = await JsonSerializer.DeserializeAsync<ProjectWriteResponse>(response.Body, SharedCommon.JsonOptions);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        Assert.That(projects.Owner, Is.EqualTo("auth0|customer-1"));
+        Assert.That(result!.Project.Id, Is.EqualTo("project"));
+        Assert.That(result.Revision, Is.EqualTo("revision"));
+        await AccountOperation.CompleteAsync(request.FunctionContext);
+    }
+
+    [Test]
+    public async Task ProjectCreateFunctionRejectsMissingAuthenticationBeforeWriting()
+    {
+        using var key = RSA.Create(2048);
+        var projects = new TestProjects();
+        var function = new CreateProject(CreateValidator(key), new TestUserService("person@example.test"), new AllowRequests(), projects);
+        var request = new WritableRequest("", "{}");
+
+        var response = await function.Run(request, CancellationToken.None);
+        response.Body.Position = 0;
+        var error = await JsonSerializer.DeserializeAsync<ApiError>(response.Body, SharedCommon.JsonOptions);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        Assert.That(error!.Code, Is.EqualTo("unauthorized"));
+        Assert.That(projects.Owner, Is.Null);
+    }
+
     private static Auth0TokenValidator CreateValidator(
         RSA key,
         HttpStatusCode status = HttpStatusCode.OK,
@@ -428,6 +473,56 @@ public sealed class Auth0TokenValidatorTests
         public override HttpResponseData CreateResponse() => throw new NotSupportedException();
     }
 
+    private sealed class WritableRequest : HttpRequestData
+    {
+        public WritableRequest(string authorization, string body) : base(new TestFunctionContext(new UnmarkedAccounts()))
+        {
+            if (!string.IsNullOrEmpty(authorization))
+            {
+                Headers.Add("Authorization", authorization);
+            }
+            Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+        }
+
+        public override Stream Body { get; }
+        public override HttpHeadersCollection Headers { get; } = new();
+        public override IReadOnlyCollection<IHttpCookie> Cookies => Array.Empty<IHttpCookie>();
+        public override Uri Url => new("https://api.flowmate.test/v1/projects");
+        public override IEnumerable<ClaimsIdentity> Identities => Array.Empty<ClaimsIdentity>();
+        public override string Method => "POST";
+        public override HttpResponseData CreateResponse() => new WritableResponse(FunctionContext);
+    }
+
+    private sealed class WritableResponse(FunctionContext context) : HttpResponseData(context)
+    {
+        public override HttpStatusCode StatusCode { get; set; }
+        public override HttpHeadersCollection Headers { get; set; } = new();
+        public override Stream Body { get; set; } = new MemoryStream();
+        public override HttpCookies Cookies => null!;
+    }
+
+    private sealed class AllowRequests : IAuthenticatedApiRateLimiter
+    {
+        public Task<ApiRateLimitAdmission> AdmitAsync(string userId, AuthenticatedApiRateLimitScope scope, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ApiRateLimitAdmission(true, 0));
+    }
+
+    private sealed class TestProjects : IProjectWriteService
+    {
+        public string? Owner { get; private set; }
+
+        public Task<ProjectWriteResult> CreateAsync(string userId, ProjectRecord project, CancellationToken cancellationToken = default)
+        {
+            Owner = userId;
+
+            return Task.FromResult(new ProjectWriteResult(project, "revision", ProjectChangeRejection.None));
+        }
+
+        public Task<ProjectWriteResult> RenameAsync(string userId, string id, string? name, string revision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ProjectWriteResult> RestoreAsync(string userId, string id, string revision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ProjectWriteResult> ArchiveAsync(string userId, string id, string revision, string workspaceRevision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
     private sealed class TestFunctionContext(IAccountDeletionMarkerRepository markers) : FunctionContext
     {
         public override string InvocationId => "test-invocation";
@@ -440,6 +535,7 @@ public sealed class Auth0TokenValidatorTests
             get; set;
         } = new ServiceCollection()
             .AddSingleton(markers)
+            .Configure<WorkerOptions>(options => options.Serializer = new JsonObjectSerializer())
             .BuildServiceProvider();
         public override FunctionDefinition FunctionDefinition => null!;
         public override IDictionary<object, object> Items { get; set; } = new Dictionary<object, object>();

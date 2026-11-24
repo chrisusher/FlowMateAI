@@ -57,6 +57,9 @@ public sealed class ProjectCosmosIntegrationTests
             await using var verify = new DatabaseContext(options);
             Assert.That(await verify.Projects.CountAsync(project => project.UserId == "user"), Is.EqualTo(3));
             Assert.That((await verify.ProjectIndexes.SingleAsync(index => index.UserId == "user")).ActiveCount, Is.EqualTo(3));
+            var reloaded = await new WorkspaceRepository(verify, new WorkspaceCollectionSynchronizer(verify)).GetAsync("user");
+            Assert.That(reloaded!.Workspace!.Projects.Select(project => project.Id).Take(2), Is.EqualTo(new[] { "seed-0", "seed-1" }));
+            Assert.That(reloaded.Workspace.Projects.Count, Is.EqualTo(3));
 
             var original = await new ProjectWriteRepository(verify).GetAsync("user", "seed-0");
 
@@ -70,6 +73,20 @@ public sealed class ProjectCosmosIntegrationTests
             var renames = await Task.WhenAll(RenameAsync("First"), RenameAsync("Second"));
             Assert.That(renames.Count(result => result.Rejection == ProjectChangeRejection.None), Is.EqualTo(1));
             Assert.That(renames.Count(result => result.Rejection == ProjectChangeRejection.Conflict), Is.EqualTo(1));
+
+            await using var revisions = new DatabaseContext(options);
+            var firstCurrent = await new ProjectWriteRepository(revisions).GetAsync("user", "seed-0");
+            var secondCurrent = await new ProjectWriteRepository(revisions).GetAsync("user", "seed-1");
+
+            async Task<ProjectWriteResult> RenameDifferentAsync(string id, string revision)
+            {
+                await using var database = new DatabaseContext(options);
+
+                return await new ProjectWriteRepository(database).RenameAsync("user", id, $"Renamed {id}", revision);
+            }
+
+            var independent = await Task.WhenAll(RenameDifferentAsync("seed-0", firstCurrent.Revision!), RenameDifferentAsync("seed-1", secondCurrent.Revision!));
+            Assert.That(independent.All(result => result.Rejection == ProjectChangeRejection.None), Is.True);
 
             await using var interrupted = new DatabaseContext(options);
             var project = await new ProjectWriteRepository(interrupted).GetAsync("user", "seed-0");
@@ -100,6 +117,19 @@ public sealed class ProjectCosmosIntegrationTests
             Assert.That(archived.Rejection, Is.EqualTo(ProjectChangeRejection.None));
             Assert.That(archived.Project!.IsArchived, Is.True);
             Assert.That((await archive.ProjectIndexes.AsNoTracking().SingleAsync(index => index.UserId == "user")).ActiveCount, Is.EqualTo(2));
+
+            async Task<ProjectWriteResult> RestoreCandidateAsync()
+            {
+                await using var database = new DatabaseContext(options);
+
+                return await new ProjectWriteRepository(database).RestoreAsync("user", "seed-1", archived.Revision!, BillingPlan.Free);
+            }
+
+            var slotRace = await Task.WhenAll(RestoreCandidateAsync(), CreateAsync("candidate-restore-race"));
+            Assert.That(slotRace.Count(result => result.Rejection == ProjectChangeRejection.None), Is.EqualTo(1));
+            Assert.That(slotRace.Count(result => result.Rejection is ProjectChangeRejection.Conflict or ProjectChangeRejection.ProjectLimit), Is.EqualTo(1));
+            await using var final = new DatabaseContext(options);
+            Assert.That((await final.ProjectIndexes.AsNoTracking().SingleAsync(index => index.UserId == "user")).ActiveCount, Is.EqualTo(3));
 
             await using var legacy = new DatabaseContext(options);
             var legacyWorkspace = new WorkspaceSnapshot
