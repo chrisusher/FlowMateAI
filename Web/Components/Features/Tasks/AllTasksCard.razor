@@ -18,9 +18,9 @@
         <p class="task-action-message" role="status">@_focusMessage</p>
     }
     <div class="task-filters">
-        <button class="filter-chip active">
+        <button type="button" class="filter-chip @(_showAll ? "active" : "")" aria-pressed="@(_showAll ? "true" : "false")" @onclick="() => _showAll = !_showAll">
             All
-            <span>@VisibleTasks.Count()</span>
+            <span>@ProjectTasks.Count()</span>
         </button>
         @if (ProjectId is null)
         {
@@ -34,7 +34,7 @@
     </div>
     @if (!VisibleTasks.Any())
     {
-        <p class="empty-state">@(ProjectId is null ? "No tasks yet. Add a task to plan your next step." : "No tasks in this project yet.")</p>
+        <p class="empty-state">@(ProjectTasks.Any() ? "No open tasks. Select All to see completed tasks." : ProjectId is null ? "No tasks yet. Add a task to plan your next step." : "No tasks in this project yet.")</p>
     }
     @foreach (var task in VisibleTasks.OrderBy(t => t.IsComplete).ThenByDescending(t => t.Priority))
     {

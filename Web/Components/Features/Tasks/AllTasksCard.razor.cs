@@ -5,13 +5,26 @@ namespace Web.Components.Features.Tasks;
 public partial class AllTasksCard
 {
     private bool _startingFocus;
+    private bool _showAll;
+    private string? _previousProjectId;
     private string? _focusMessage;
 
     [Parameter] public string? ProjectId { get; set; }
 
-    private IEnumerable<TaskRecord> VisibleTasks => ProjectId is null
+    private IEnumerable<TaskRecord> ProjectTasks => ProjectId is null
         ? Store.Data.Tasks
         : Store.Data.Tasks.Where(task => task.ProjectId == ProjectId);
+
+    private IEnumerable<TaskRecord> VisibleTasks => _showAll ? ProjectTasks : ProjectTasks.Where(task => !task.IsComplete);
+
+    protected override void OnParametersSet()
+    {
+        if (_previousProjectId != ProjectId)
+        {
+            _showAll = false;
+            _previousProjectId = ProjectId;
+        }
+    }
 
     protected override void OnInitialized()
     {
