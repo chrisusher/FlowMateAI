@@ -13,7 +13,7 @@ public sealed class ProjectCutoverRepository(DatabaseContext database)
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         var workspace = await ReadWorkspaceAsync(userId, cancellationToken);
 
-        if (workspace.ProjectsAuthoritative)
+        if (workspace.ProjectsAuthoritative || workspace.PendingProjectArchive is not null)
         {
             throw new InvalidOperationException("Projects have already been cut over for this account.");
         }
@@ -26,10 +26,17 @@ public sealed class ProjectCutoverRepository(DatabaseContext database)
         var projects = WorkspaceStorageFormat.Read(workspace).Projects;
         ValidateProjects(projects);
         await CheckDestinationAsync(userId, projects, cancellationToken);
-        var index = await database.ProjectIndexes.AsNoTracking().SingleOrDefaultAsync(item => item.UserId == userId && item.Id == "project-index", cancellationToken);
+        var indexes = await database.ProjectIndexes.AsNoTracking().Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+
+        if (indexes.Count > 1)
+        {
+            throw new InvalidOperationException("Multiple project indexes exist for this account; no records were written.");
+        }
+
+        var index = indexes.SingleOrDefault();
 
         if (index is not null && (index.ActiveCount != projects.Count(project => !project.IsArchived) ||
-            index.TotalCount != projects.Count || index.NextPosition != projects.Count))
+            index.TotalCount != projects.Count || index.NextPosition != projects.Count || projects.Any(project => project.Id == index.Id)))
         {
             throw new InvalidOperationException("The existing project index differs from the workspace; no records were written.");
         }
@@ -84,17 +91,30 @@ public sealed class ProjectCutoverRepository(DatabaseContext database)
         }
 
         await CheckDestinationAsync(userId, projects, cancellationToken, requireComplete: true);
-        var index = await database.ProjectIndexes.SingleOrDefaultAsync(item => item.UserId == userId && item.Id == "project-index", cancellationToken);
+        var indexes = await database.ProjectIndexes.Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+        var index = indexes.SingleOrDefault();
 
         if (index is null)
         {
-            database.ProjectIndexes.Add(new ProjectIndexDocument
+            string indexId;
+            var salt = 0;
+
+            do
             {
+                var identity = System.Text.Encoding.UTF8.GetBytes($"{userId}\0{expectedRevision}\0{salt++}");
+                indexId = $"project-index-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(identity))}";
+            }
+            while (projects.Any(project => project.Id == indexId));
+
+            index = new ProjectIndexDocument
+            {
+                Id = indexId,
                 UserId = userId,
                 ActiveCount = preview.ActiveCount,
                 TotalCount = preview.ProjectCount,
                 NextPosition = preview.ProjectCount
-            });
+            };
+            database.ProjectIndexes.Add(index);
             await database.SaveChangesAsync(cancellationToken);
         }
         else if (index.ActiveCount != preview.ActiveCount || index.TotalCount != preview.ProjectCount || index.NextPosition != preview.ProjectCount)
@@ -111,6 +131,7 @@ public sealed class ProjectCutoverRepository(DatabaseContext database)
             throw new InvalidOperationException("The workspace changed during project cutover; no cutover was made.");
         }
 
+        current.ProjectIndexId = index.Id;
         current.ProjectsAuthoritative = true;
         await database.SaveChangesAsync(cancellationToken);
     }
@@ -133,7 +154,7 @@ public sealed class ProjectCutoverRepository(DatabaseContext database)
 
     private static void ValidateProjects(List<ProjectRecord> projects)
     {
-        if (projects is null || projects.Any(project => project is null || string.IsNullOrWhiteSpace(project.Id) || project.Id == "project-index") ||
+        if (projects is null || projects.Any(project => project is null || string.IsNullOrWhiteSpace(project.Id)) ||
             projects.Select(project => project.Id).Distinct(StringComparer.Ordinal).Count() != projects.Count || projects.Count > 1000)
         {
             throw new InvalidOperationException("The workspace contains invalid project IDs or too many projects.");

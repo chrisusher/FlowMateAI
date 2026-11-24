@@ -101,6 +101,7 @@ public class DatabaseContext : DbContext
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.UserId);
             entity.Property(x => x.ETag).IsETagConcurrency();
+            entity.OwnsOne(x => x.PendingProjectArchive);
             entity.OwnsOne(x => x.Workspace, workspace =>
             {
                 workspace.Property(x => x.Plan).HasConversion<string>();

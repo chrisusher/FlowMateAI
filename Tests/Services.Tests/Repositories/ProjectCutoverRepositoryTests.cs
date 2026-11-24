@@ -19,7 +19,7 @@ public sealed class ProjectCutoverRepositoryTests
                 Projects = [
                     new ProjectRecord
                     {
-                        Id = "first",
+                        Id = "project-index",
                         Name = "First"
                     },
                     new ProjectRecord
@@ -44,10 +44,12 @@ public sealed class ProjectCutoverRepositoryTests
         var stored = await database.Workspaces.AsNoTracking().SingleAsync();
         var index = await database.ProjectIndexes.AsNoTracking().SingleAsync();
         Assert.That(stored.ProjectsAuthoritative, Is.True);
-        Assert.That(stored.Workspace!.Projects.Select(project => project.Id), Is.EqualTo(new[] { "first", "second" }));
+        Assert.That(stored.Workspace!.Projects.Select(project => project.Id), Is.EqualTo(new[] { "project-index", "second" }));
         Assert.That(index.ActiveCount, Is.EqualTo(1));
         Assert.That(index.TotalCount, Is.EqualTo(2));
-        Assert.That((await database.Projects.AsNoTracking().OrderBy(project => project.Position).ToListAsync()).Select(project => project.Id), Is.EqualTo(new[] { "first", "second" }));
+        Assert.That(index.Id, Is.EqualTo(stored.ProjectIndexId));
+        Assert.That(index.Id, Is.Not.EqualTo("project-index"));
+        Assert.That((await database.Projects.AsNoTracking().OrderBy(project => project.Position).ToListAsync()).Select(project => project.Id), Is.EqualTo(new[] { "project-index", "second" }));
     }
 
     [Test]

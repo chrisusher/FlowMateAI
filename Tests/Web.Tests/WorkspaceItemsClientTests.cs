@@ -354,7 +354,8 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
             await Store.InitialiseAsync();
         }
 
-        Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(3)));
+        // Allow for timer resolution while still verifying a multi-second collection delay.
+        Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(2.9)));
         Assert.That((Store.UtcNow - serverTime - elapsed.Elapsed).Duration(), Is.LessThan(TimeSpan.FromSeconds(1)));
         Assert.That(Store.Data.Timer.RemainingSeconds, Is.EqualTo(Math.Ceiling(300 - elapsed.Elapsed.TotalSeconds)).Within(2));
     }

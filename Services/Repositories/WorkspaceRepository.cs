@@ -38,15 +38,30 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
     {
         var existing = await database.Workspaces.FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
 
-        if ((existing is not null && (string.IsNullOrEmpty(expectedRevision) || existing.ETag != expectedRevision)) ||
+        if ((existing is not null && (existing.PendingProjectArchive is not null || string.IsNullOrEmpty(expectedRevision) || existing.ETag != expectedRevision)) ||
             (existing is null && !string.IsNullOrEmpty(expectedRevision)))
         {
             return null;
         }
 
+        var initialiseProjects = existing is null && workspace.Projects.Count == 0;
+        string? projectIndexId = null;
+
+        if (initialiseProjects)
+        {
+            projectIndexId = await InitialiseEmptyProjectsAsync(ownerId, cancellationToken);
+
+            if (projectIndexId is null)
+            {
+                return null;
+            }
+        }
+
         var document = existing ?? new WorkspaceDocument
         {
-            UserId = ownerId
+            UserId = ownerId,
+            ProjectsAuthoritative = initialiseProjects,
+            ProjectIndexId = projectIndexId ?? "project-index"
         };
 
         if (existing is null)
@@ -70,6 +85,49 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
         await synchronizer.SynchroniseAsync(ownerId, cancellationToken);
 
         return document;
+    }
+
+    private async Task<string?> InitialiseEmptyProjectsAsync(string ownerId, CancellationToken cancellationToken)
+    {
+        if (await database.Projects.AsNoTracking().AnyAsync(item => item.UserId == ownerId, cancellationToken))
+        {
+            return null;
+        }
+
+        var indexes = await database.ProjectIndexes.AsNoTracking().Where(item => item.UserId == ownerId).ToListAsync(cancellationToken);
+
+        if (indexes.Count > 0)
+        {
+            return indexes.Count == 1 && indexes[0].ActiveCount == 0 && indexes[0].TotalCount == 0 && indexes[0].NextPosition == 0
+                ? indexes[0].Id
+                : null;
+        }
+
+        var index = new ProjectIndexDocument
+        {
+            Id = $"project-index-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ownerId)))}",
+            UserId = ownerId
+        };
+        database.ProjectIndexes.Add(index);
+
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+
+            return index.Id;
+        }
+        catch (DbUpdateException)
+        {
+            // A competing initialisation may have inserted the same index. Re-read it
+            // and fail closed if it contains any existing project state.
+            database.ChangeTracker.Clear();
+            indexes = await database.ProjectIndexes.AsNoTracking().Where(item => item.UserId == ownerId).ToListAsync(cancellationToken);
+
+            return indexes.Count == 1 && indexes[0].ActiveCount == 0 && indexes[0].TotalCount == 0 && indexes[0].NextPosition == 0 &&
+                !await database.Projects.AsNoTracking().AnyAsync(item => item.UserId == ownerId, cancellationToken)
+                ? indexes[0].Id
+                : null;
+        }
     }
 
     private async Task SynchronizeRecordsAsync(string ownerId, WorkspaceSnapshot workspace, CancellationToken cancellationToken)

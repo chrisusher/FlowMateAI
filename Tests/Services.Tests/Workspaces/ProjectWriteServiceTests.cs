@@ -63,6 +63,9 @@ public sealed class ProjectWriteServiceTests
         public Task<ProjectWriteResult> GetAsync(string userId, string id, CancellationToken cancellationToken = default) =>
             Task.FromResult(new ProjectWriteResult(null, null, ProjectChangeRejection.NotFound));
 
+        public Task<ProjectWriteResult> RestoreAsync(string userId, string id, string revision, BillingPlan plan, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ProjectWriteResult(null, null, ProjectChangeRejection.NotFound));
+
         public Task<ProjectWriteResult> CreateAsync(string userId, ProjectRecord project, BillingPlan plan, CancellationToken cancellationToken = default)
         {
             Calls++;

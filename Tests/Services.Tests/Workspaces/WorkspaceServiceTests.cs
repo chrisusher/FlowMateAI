@@ -38,6 +38,29 @@ public sealed class WorkspaceServiceTests
     }
 
     [Test]
+    public async Task WorkspaceSaveCannotStartATimerForAnArchivedProject()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        var workspace = new WorkspaceSnapshot
+        {
+            Projects = [new ProjectRecord
+            {
+                Id = "project",
+                Name = "Archived",
+                IsArchived = true
+            }]
+        };
+        repository.Seed("user", workspace, "revision-1", projectsAuthoritative: true);
+        workspace.Timer.ProjectId = "project";
+        workspace.Timer.Phase = TimerPhase.Focus;
+
+        var result = await CreateService(repository).SaveAsync("user", new(workspace, "revision-1"));
+
+        Assert.That(result.ErrorCode, Is.EqualTo(WorkspaceSaveErrorCode.TimerConflict));
+        Assert.That(repository.SaveCount, Is.Zero);
+    }
+
+    [Test]
     public async Task ConcurrentClientsCannotOverwriteAnAcceptedWorkspaceRevision()
     {
         var repository = new InMemoryWorkspaceRepository();

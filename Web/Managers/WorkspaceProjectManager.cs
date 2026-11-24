@@ -3,9 +3,12 @@ using Web.Clients;
 
 namespace Web.Managers;
 
-public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationManager navigation) : WorkspaceManager
+public sealed class WorkspaceProjectManager(WorkspaceStore store, WorkspaceItemsClient items, NavigationManager navigation) : WorkspaceManager
 {
     private WorkspaceStore Store => store;
+    private ProjectRecord? _newProject;
+    private string? _editingBaseline;
+    private string? _archiveBaseline;
 
     public string DraftName { get; set; } = "";
     public bool DialogOpen { get; private set; }
@@ -13,6 +16,7 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
     public string? ValidationMessage { get; private set; }
     public string? ActionMessage { get; private set; }
     public string? ArchiveProjectId { get; private set; }
+    public bool Saving { get; private set; }
     public int ActiveProjectCount => Store.Data.Projects.Count(project => !project.IsArchived);
     public int ProjectLimit => Store.Data.Plan == BillingPlan.Pro ? 25 : 3;
 
@@ -27,6 +31,11 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             return Task.CompletedTask;
         }
         DraftName = "";
+        _newProject = new ProjectRecord
+        {
+            Color = new[] { "#5b68e8", "#2c9b82", "#df9b39", "#cb6a78" }[ActiveProjectCount % 4]
+        };
+        _editingBaseline = null;
         EditingProjectId = null;
         ValidationMessage = null;
         DialogOpen = true;
@@ -38,6 +47,8 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
     public void EditProject(ProjectRecord project)
     {
         DraftName = project.Name;
+        _newProject = null;
+        _editingBaseline = WorkspaceCollectionManifest.Hash(new[] { project });
         EditingProjectId = project.Id;
         ValidationMessage = null;
         DialogOpen = true;
@@ -46,13 +57,25 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
 
     public void CloseProjectDialog()
     {
+        if (Saving)
+        {
+            return;
+        }
+
         DialogOpen = false;
+        _newProject = null;
+        _editingBaseline = null;
         ValidationMessage = null;
         NotifyChanged();
     }
 
     public async Task SaveProject()
     {
+        if (Saving)
+        {
+            return;
+        }
+
         var validation = ProjectName.Validate(DraftName, out var name);
 
         if (validation != ProjectNameValidation.Valid)
@@ -77,40 +100,63 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             return;
         }
 
-        if (EditingProjectId is { } projectId)
-        {
-            var project = Store.Project(projectId);
-
-            if (project is null || project.IsArchived)
-            {
-                ValidationMessage = "This project is no longer available. Reload your workspace and try again.";
-                NotifyChanged();
-
-                return;
-            }
-
-            project.Name = name;
-        }
-        else
-        {
-            Store.Data.Projects.Add(new()
-            {
-                Name = name,
-                Color = new[] { "#5b68e8", "#2c9b82", "#df9b39", "#cb6a78" }[ActiveProjectCount % 4]
-            });
-        }
-
-        DialogOpen = false;
-        EditingProjectId = null;
+        Saving = true;
+        ValidationMessage = null;
         ActionMessage = "Saving project…";
         NotifyChanged();
-        await Store.SaveAsync();
-        ActionMessage = Store.SyncMessage ?? "Project saved.";
-        NotifyChanged();
+
+        try
+        {
+            if (EditingProjectId is { } projectId)
+            {
+                var baseline = _editingBaseline;
+                await Store.WriteProjectAsync(projectId, async () =>
+                {
+                    var local = Store.Project(projectId);
+                    var remote = await items.GetProjectVersionedAsync(projectId);
+
+                    if (local is null || remote is null || local.IsArchived || remote.Project.IsArchived || baseline is null ||
+                        WorkspaceCollectionManifest.Hash(new[] { local }) != baseline ||
+                        WorkspaceCollectionManifest.Hash(new[] { remote.Project }) != baseline)
+                    {
+                        throw new InvalidOperationException("This project changed on another device. Reload it before editing.");
+                    }
+
+                    return await items.RenameProjectAsync(projectId, new ProjectRenameRequest(name, remote.Revision));
+                });
+            }
+            else
+            {
+                var candidate = _newProject ?? throw new InvalidOperationException("Open the project editor and try again.");
+                var request = new ProjectCreateRequest(candidate.Id, name, candidate.Color, candidate.CreatedAt);
+                await Store.WriteProjectAsync(candidate.Id, () => items.CreateProjectAsync(request));
+            }
+
+            DialogOpen = false;
+            EditingProjectId = null;
+            _newProject = null;
+            _editingBaseline = null;
+            ActionMessage = "Project saved.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or InvalidDataException or JsonException or TaskCanceledException)
+        {
+            ValidationMessage = exception is TaskCanceledException ? "The project request timed out. Try again." : exception.Message;
+            ActionMessage = null;
+        }
+        finally
+        {
+            Saving = false;
+            NotifyChanged();
+        }
     }
 
     public void RequestArchive(ProjectRecord project)
     {
+        if (Saving)
+        {
+            return;
+        }
+
         ActionMessage = null;
 
         if (TimerReferencesProject(project) && Store.Data.Timer.Phase is (TimerPhase.Focus or TimerPhase.ShortBreak or TimerPhase.LongBreak or TimerPhase.Paused))
@@ -122,17 +168,29 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
         }
 
         ArchiveProjectId = project.Id;
+        _archiveBaseline = WorkspaceCollectionManifest.Hash(new[] { project });
         NotifyChanged();
     }
 
     public void CloseArchiveDialog()
     {
+        if (Saving)
+        {
+            return;
+        }
+
         ArchiveProjectId = null;
+        _archiveBaseline = null;
         NotifyChanged();
     }
 
     public async Task ConfirmArchiveAsync()
     {
+        if (Saving)
+        {
+            return;
+        }
+
         var project = Store.Project(ArchiveProjectId ?? "");
 
         if (project is null || project.IsArchived)
@@ -151,18 +209,56 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             return;
         }
 
-        ClearIdleTimerSelection(project);
-        project.IsArchived = true;
-        ArchiveProjectId = null;
+        var baseline = _archiveBaseline;
+        Saving = true;
         ActionMessage = "Saving project…";
         NotifyChanged();
-        await Store.SaveAsync();
-        ActionMessage = Store.SyncMessage ?? "Project archived. Its tasks and focus history are preserved.";
-        NotifyChanged();
+
+        try
+        {
+            await Store.WriteProjectAsync(project.Id, async () =>
+            {
+                var local = Store.Project(project.Id);
+                var remote = await items.GetProjectVersionedAsync(project.Id);
+
+                if (local is null || remote is null || local.IsArchived || remote.Project.IsArchived || baseline is null ||
+                    WorkspaceCollectionManifest.Hash(new[] { local }) != baseline ||
+                    WorkspaceCollectionManifest.Hash(new[] { remote.Project }) != baseline)
+                {
+                    throw new InvalidOperationException("This project changed on another device. Reload it before archiving.");
+                }
+
+                var result = await items.ArchiveProjectAsync(project.Id, new ProjectArchiveRequest(remote.Revision, Store.WorkspaceRevision));
+
+                if (string.IsNullOrWhiteSpace(result.WorkspaceRevision) || result.Timer is null)
+                {
+                    throw new InvalidDataException("The server returned an incomplete archive response. Reload and try again.");
+                }
+
+                return result;
+            });
+            ArchiveProjectId = null;
+            _archiveBaseline = null;
+            ActionMessage = "Project archived. Its tasks and focus history are preserved.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or InvalidDataException or JsonException or TaskCanceledException)
+        {
+            ActionMessage = exception is TaskCanceledException ? "The project request timed out. Try again." : exception.Message;
+        }
+        finally
+        {
+            Saving = false;
+            NotifyChanged();
+        }
     }
 
     public async Task RestoreProjectAsync(ProjectRecord project)
     {
+        if (Saving)
+        {
+            return;
+        }
+
         ActionMessage = null;
 
         if (!project.IsArchived)
@@ -179,12 +275,38 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             return;
         }
 
-        project.IsArchived = false;
+        var baseline = WorkspaceCollectionManifest.Hash(new[] { project });
+        Saving = true;
         ActionMessage = "Saving project…";
         NotifyChanged();
-        await Store.SaveAsync();
-        ActionMessage = Store.SyncMessage ?? "Project restored.";
-        NotifyChanged();
+
+        try
+        {
+            await Store.WriteProjectAsync(project.Id, async () =>
+            {
+                var local = Store.Project(project.Id);
+                var remote = await items.GetProjectVersionedAsync(project.Id);
+
+                if (local is null || remote is null || !local.IsArchived || !remote.Project.IsArchived ||
+                    WorkspaceCollectionManifest.Hash(new[] { local }) != baseline ||
+                    WorkspaceCollectionManifest.Hash(new[] { remote.Project }) != baseline)
+                {
+                    throw new InvalidOperationException("This project changed on another device. Reload it before restoring.");
+                }
+
+                return await items.RestoreProjectAsync(project.Id, new ProjectStateRequest(remote.Revision));
+            });
+            ActionMessage = "Project restored.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or InvalidDataException or JsonException or TaskCanceledException)
+        {
+            ActionMessage = exception is TaskCanceledException ? "The project request timed out. Try again." : exception.Message;
+        }
+        finally
+        {
+            Saving = false;
+            NotifyChanged();
+        }
     }
 
     private bool TimerReferencesProject(ProjectRecord project)
@@ -196,14 +318,4 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
             string.Equals(selectedTask?.ProjectId, project.Id, StringComparison.Ordinal);
     }
 
-    private void ClearIdleTimerSelection(ProjectRecord project)
-    {
-        var timer = Store.Data.Timer;
-
-        if (timer.Phase == TimerPhase.Idle && TimerReferencesProject(project))
-        {
-            timer.TaskId = null;
-            timer.ProjectId = "";
-        }
-    }
 }

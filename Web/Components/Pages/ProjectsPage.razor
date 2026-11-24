@@ -45,7 +45,7 @@
                     <span class="project-color-dot" style="background:@project.Color"></span>
                     <a class="archived-project-name" href="@($"projects/{Uri.EscapeDataString(project.Id)}")">@project.Name</a>
                     <span class="archived-project-history">@Store.Data.Tasks.Count(task => task.ProjectId == project.Id) tasks · @Stats.ProjectMinutes(project.Id) min focused</span>
-                    <button type="button" class="text-button" @onclick="() => Projects.RestoreProjectAsync(project)">Restore</button>
+                    <button type="button" class="text-button" disabled="@Projects.Saving" @onclick="() => Projects.RestoreProjectAsync(project)">Restore</button>
                 </li>
             }
         </ul>
@@ -63,9 +63,13 @@
                 <button type="button" class="dialog-close" aria-label="Close archive confirmation" @onclick="Projects.CloseArchiveDialog">&#215;</button>
             </div>
             <p>The project will leave your active list. Its tasks and focus history stay in your workspace, and you can restore it later.</p>
+            @if (!string.IsNullOrWhiteSpace(Projects.ActionMessage))
+            {
+                <p role="status" aria-live="polite">@Projects.ActionMessage</p>
+            }
             <div class="dialog-actions">
-                <button type="button" class="text-button" @onclick="Projects.CloseArchiveDialog">Cancel</button>
-                <button type="button" class="timer-primary" @onclick="Projects.ConfirmArchiveAsync">Archive project</button>
+                <button type="button" class="text-button" disabled="@Projects.Saving" @onclick="Projects.CloseArchiveDialog">Cancel</button>
+                <button type="button" class="timer-primary" disabled="@Projects.Saving" @onclick="Projects.ConfirmArchiveAsync">@(Projects.Saving ? "Saving…" : "Archive project")</button>
             </div>
         </section>
     </div>

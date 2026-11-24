@@ -128,6 +128,8 @@ public static class Services
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         services.AddScoped<IWorkspaceItemsRepository, WorkspaceItemsRepository>();
         services.AddScoped<IProjectWriteRepository, ProjectWriteRepository>();
+        services.AddScoped<IProjectArchiveRepository, ProjectArchiveRepository>();
+        services.AddScoped<ProjectCutoverRepository>();
         #endregion
 
         #region Services

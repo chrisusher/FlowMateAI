@@ -43,6 +43,12 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
     public Task<ProjectWriteResponse> RenameProjectAsync(string id, ProjectRenameRequest change, CancellationToken cancellationToken = default) =>
         WriteProjectAsync(HttpMethod.Put, $"api/v1/projects/{Uri.EscapeDataString(id)}", change, cancellationToken);
 
+    public Task<ProjectWriteResponse> RestoreProjectAsync(string id, ProjectStateRequest change, CancellationToken cancellationToken = default) =>
+        WriteProjectAsync(HttpMethod.Post, $"api/v1/projects/{Uri.EscapeDataString(id)}/restore", change, cancellationToken);
+
+    public Task<ProjectWriteResponse> ArchiveProjectAsync(string id, ProjectArchiveRequest change, CancellationToken cancellationToken = default) =>
+        WriteProjectAsync(HttpMethod.Post, $"api/v1/projects/{Uri.EscapeDataString(id)}/archive", change, cancellationToken);
+
     private async Task<ProjectWriteResponse> WriteProjectAsync<T>(HttpMethod method, string path, T payload, CancellationToken cancellationToken)
     {
         using var request = CreateRequest(path, method);

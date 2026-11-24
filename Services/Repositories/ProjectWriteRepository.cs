@@ -11,7 +11,9 @@ public sealed class ProjectWriteRepository(DatabaseContext database) : IProjectW
 {
     public async Task<ProjectWriteResult> GetAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        if (!await IsReadyAsync(userId, cancellationToken))
+        var indexId = await GetIndexIdAsync(userId, cancellationToken);
+
+        if (indexId is null)
         {
             return new(null, null, ProjectChangeRejection.StorageNotReady);
         }
@@ -25,15 +27,22 @@ public sealed class ProjectWriteRepository(DatabaseContext database) : IProjectW
 
     public async Task<ProjectWriteResult> CreateAsync(string userId, ProjectRecord project, BillingPlan plan, CancellationToken cancellationToken = default)
     {
-        if (!await IsReadyAsync(userId, cancellationToken))
+        var indexId = await GetIndexIdAsync(userId, cancellationToken);
+
+        if (indexId is null)
         {
             return new(null, null, ProjectChangeRejection.StorageNotReady);
+        }
+
+        if (project.Id == indexId)
+        {
+            return new(null, null, ProjectChangeRejection.IdConflict);
         }
 
         // The index and project share a container and partition, so EF's Cosmos batch
         // atomically reserves a slot and creates the record. A conflicting index ETag
         // rejects competing creates/restores, including those from other processes.
-        var index = await database.ProjectIndexes.SingleOrDefaultAsync(item => item.UserId == userId && item.Id == "project-index", cancellationToken);
+        var index = await database.ProjectIndexes.SingleOrDefaultAsync(item => item.UserId == userId && item.Id == indexId, cancellationToken);
 
         if (index is null)
         {
@@ -76,30 +85,13 @@ public sealed class ProjectWriteRepository(DatabaseContext database) : IProjectW
         index.ActiveCount++;
         index.TotalCount++;
         index.NextPosition++;
-        var previousTransactionBehaviour = database.Database.AutoTransactionBehavior;
-        database.Database.AutoTransactionBehavior = AutoTransactionBehavior.Always;
 
-        try
-        {
-            await database.SaveChangesAsync(cancellationToken);
-
-            return new(document.Project, document.ETag, ProjectChangeRejection.None);
-        }
-        catch (DbUpdateException)
-        {
-            database.ChangeTracker.Clear();
-
-            return new(null, null, ProjectChangeRejection.Conflict);
-        }
-        finally
-        {
-            database.Database.AutoTransactionBehavior = previousTransactionBehaviour;
-        }
+        return await SaveAtomicallyAsync(document, cancellationToken);
     }
 
     public async Task<ProjectWriteResult> RenameAsync(string userId, string id, string name, string revision, CancellationToken cancellationToken = default)
     {
-        if (!await IsReadyAsync(userId, cancellationToken))
+        if (await GetIndexIdAsync(userId, cancellationToken) is null)
         {
             return new(null, null, ProjectChangeRejection.StorageNotReady);
         }
@@ -137,6 +129,80 @@ public sealed class ProjectWriteRepository(DatabaseContext database) : IProjectW
         }
     }
 
-    private Task<bool> IsReadyAsync(string userId, CancellationToken cancellationToken) => database.Workspaces.AsNoTracking()
-        .AnyAsync(item => item.UserId == userId && item.Id == "workspace" && item.ProjectsAuthoritative, cancellationToken);
+    public async Task<ProjectWriteResult> RestoreAsync(string userId, string id, string revision, BillingPlan plan, CancellationToken cancellationToken = default)
+    {
+        var indexId = await GetIndexIdAsync(userId, cancellationToken);
+
+        if (indexId is null)
+        {
+            return new(null, null, ProjectChangeRejection.StorageNotReady);
+        }
+
+        var index = await database.ProjectIndexes.SingleOrDefaultAsync(item => item.UserId == userId && item.Id == indexId, cancellationToken);
+        var document = await database.Projects.SingleOrDefaultAsync(item => item.UserId == userId && item.Id == id, cancellationToken);
+
+        if (index is null)
+        {
+            return new(null, null, ProjectChangeRejection.StorageNotReady);
+        }
+
+        if (document?.Project is null)
+        {
+            return new(null, null, ProjectChangeRejection.NotFound);
+        }
+
+        if (string.IsNullOrEmpty(revision) || !string.Equals(document.ETag, revision, StringComparison.Ordinal))
+        {
+            return new(null, null, ProjectChangeRejection.Conflict);
+        }
+
+        if (!document.Project.IsArchived)
+        {
+            return new(null, null, ProjectChangeRejection.AlreadyActive);
+        }
+
+        var limit = plan == BillingPlan.Pro ? 25 : 3;
+
+        if (index.ActiveCount >= limit)
+        {
+            return new(null, null, ProjectChangeRejection.ProjectLimit);
+        }
+
+        document.Project.IsArchived = false;
+        document.ArchiveOriginRevision = null;
+        index.ActiveCount++;
+
+        return await SaveAtomicallyAsync(document, cancellationToken);
+    }
+
+    private async Task<ProjectWriteResult> SaveAtomicallyAsync(WorkspaceProjectDocument document, CancellationToken cancellationToken)
+    {
+        var previousTransactionBehaviour = database.Database.AutoTransactionBehavior;
+        database.Database.AutoTransactionBehavior = AutoTransactionBehavior.Always;
+
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+
+            return new(document.Project, document.ETag, ProjectChangeRejection.None);
+        }
+        catch (DbUpdateException)
+        {
+            database.ChangeTracker.Clear();
+
+            return new(null, null, ProjectChangeRejection.Conflict);
+        }
+        finally
+        {
+            database.Database.AutoTransactionBehavior = previousTransactionBehaviour;
+        }
+    }
+
+    private async Task<string?> GetIndexIdAsync(string userId, CancellationToken cancellationToken)
+    {
+        var workspace = await database.Workspaces.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.UserId == userId && item.Id == "workspace" && item.ProjectsAuthoritative, cancellationToken);
+
+        return string.IsNullOrWhiteSpace(workspace?.ProjectIndexId) ? null : workspace.ProjectIndexId;
+    }
 }

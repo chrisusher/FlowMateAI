@@ -94,6 +94,46 @@ public sealed class ProjectWriteRepositoryTests
         Assert.That((await database.Projects.SingleAsync()).Project!.Name, Is.EqualTo("After"));
     }
 
+    [Test]
+    public async Task RestoreUsesAnActiveSlotAndRejectsStaleOrOverLimitRequests()
+    {
+        await using var database = CreateDatabase();
+        database.Workspaces.Add(new WorkspaceDocument
+        {
+            UserId = "user",
+            ProjectsAuthoritative = true,
+            Workspace = new WorkspaceSnapshot()
+        });
+        database.ProjectIndexes.Add(new ProjectIndexDocument
+        {
+            UserId = "user",
+            ActiveCount = 3,
+            TotalCount = 4,
+            NextPosition = 4
+        });
+        database.Projects.Add(new WorkspaceProjectDocument
+        {
+            UserId = "user",
+            Id = "archived",
+            ETag = "revision",
+            Project = new ProjectRecord
+            {
+                Id = "archived",
+                IsArchived = true
+            }
+        });
+        await database.SaveChangesAsync();
+        var repository = new ProjectWriteRepository(database);
+
+        Assert.That((await repository.RestoreAsync("user", "archived", "stale", BillingPlan.Free)).Rejection, Is.EqualTo(ProjectChangeRejection.Conflict));
+        Assert.That((await repository.RestoreAsync("user", "archived", "revision", BillingPlan.Free)).Rejection, Is.EqualTo(ProjectChangeRejection.ProjectLimit));
+        Assert.That((await database.Projects.SingleAsync()).Project!.IsArchived, Is.True);
+        var restored = await repository.RestoreAsync("user", "archived", "revision", BillingPlan.Pro);
+        Assert.That(restored.Rejection, Is.EqualTo(ProjectChangeRejection.None));
+        Assert.That(restored.Project!.IsArchived, Is.False);
+        Assert.That((await database.ProjectIndexes.SingleAsync()).ActiveCount, Is.EqualTo(4));
+    }
+
     private static DatabaseContext CreateDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()
         .UseInMemoryDatabase(Guid.NewGuid().ToString("N")).Options);
 }

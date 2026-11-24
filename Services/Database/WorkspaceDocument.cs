@@ -23,6 +23,8 @@ public sealed class WorkspaceDocument
     }
     // Set only after project documents have been copied and verified during cutover.
     public bool ProjectsAuthoritative { get; set; }
+    public string ProjectIndexId { get; set; } = "project-index";
+    public ProjectArchiveOperation? PendingProjectArchive { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public string? ETag
     {

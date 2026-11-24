@@ -58,6 +58,7 @@ internal static class ProjectWriteHttp
                 ProjectChangeRejection.InvalidInput => (HttpStatusCode.BadRequest, "invalid_request", "Project data is invalid."),
                 ProjectChangeRejection.NotFound => (HttpStatusCode.NotFound, "not_found", "The project was not found."),
                 ProjectChangeRejection.ProjectLimit => (HttpStatusCode.PaymentRequired, "project_limit", "Your plan's active project limit has been reached."),
+                ProjectChangeRejection.TimerActive => (HttpStatusCode.Conflict, "timer_active", "Finish this project's timer before archiving it."),
                 ProjectChangeRejection.Capacity => (HttpStatusCode.BadRequest, "project_capacity", "The workspace has reached its project capacity."),
                 ProjectChangeRejection.StorageNotReady => (HttpStatusCode.ServiceUnavailable, "projects_unavailable", "Project storage is not ready. Try again later."),
                 _ => (HttpStatusCode.Conflict, "project_conflict", "The project changed or is no longer available. Reload and try again.")
@@ -67,7 +68,7 @@ internal static class ProjectWriteHttp
         }
 
         var response = request.CreateResponse(successStatus);
-        await response.WriteAsJsonAsync(new ProjectWriteResponse(result.Project, result.Revision), cancellationToken);
+        await response.WriteAsJsonAsync(new ProjectWriteResponse(result.Project, result.Revision, result.WorkspaceRevision, result.Timer), cancellationToken);
 
         return response;
     }

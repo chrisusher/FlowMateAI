@@ -17,6 +17,7 @@ public sealed class WorkspaceProjectDocument : IWorkspaceItemDocument
     public string Id { get; set; } = "";
     public string UserId { get; set; } = "";
     public ProjectRecord? Project { get; set; }
+    public string? ArchiveOriginRevision { get; set; }
     object? IWorkspaceItemDocument.Value => Project;
     public int Position { get; set; }
     public string? ETag { get; set; }

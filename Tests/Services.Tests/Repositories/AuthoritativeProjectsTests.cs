@@ -7,6 +7,27 @@ namespace Services.Tests.Repositories;
 public sealed class AuthoritativeProjectsTests
 {
     [Test]
+    public async Task NewEmptyWorkspaceIsReadyForProjectWritesWithoutManualCutover()
+    {
+        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var database = new DatabaseContext(options);
+        var workspace = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
+
+        var saved = await workspace.SaveAsync("user", new WorkspaceSnapshot(), null);
+
+        Assert.That(saved!.ProjectsAuthoritative, Is.True);
+        Assert.That((await database.ProjectIndexes.AsNoTracking().SingleAsync()).ActiveCount, Is.Zero);
+        var project = new ProjectRecord
+        {
+            Id = "project",
+            Name = "New project"
+        };
+        var created = await new ProjectWriteRepository(database).CreateAsync("user", project, BillingPlan.Free);
+        Assert.That(created.Rejection, Is.EqualTo(ProjectChangeRejection.None));
+        Assert.That((await workspace.GetAsync("user"))!.Workspace!.Projects.Single().Id, Is.EqualTo("project"));
+    }
+
+    [Test]
     public async Task ReadsAndSynchronisationUseProjectDocumentsAfterCutover()
     {
         var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
