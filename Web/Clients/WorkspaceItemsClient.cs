@@ -15,6 +15,68 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
     public Task<FocusSessionRecord?> GetSessionAsync(string id, CancellationToken cancellationToken = default) => GetAsync<FocusSessionRecord>("sessions", id, cancellationToken);
     public Task<ConversationRecord?> GetConversationAsync(string id, CancellationToken cancellationToken = default) => GetAsync<ConversationRecord>("conversations", id, cancellationToken);
 
+    public async Task<ProjectWriteResponse?> GetProjectVersionedAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest($"api/v1/projects/{Uri.EscapeDataString(id)}");
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken);
+        var project = await response.Content.ReadFromJsonAsync<ProjectRecord>(SharedCommon.JsonOptions, cancellationToken);
+        var revision = response.Headers.TryGetValues("ETag", out var values) ? values.SingleOrDefault() : null;
+
+        if (project is null || string.IsNullOrWhiteSpace(revision))
+        {
+            throw new InvalidDataException("The server did not return a project revision.");
+        }
+
+        return new(project, revision);
+    }
+
+    public Task<ProjectWriteResponse> CreateProjectAsync(ProjectCreateRequest project, CancellationToken cancellationToken = default) =>
+        WriteProjectAsync(HttpMethod.Post, "api/v1/projects", project, cancellationToken);
+
+    public Task<ProjectWriteResponse> RenameProjectAsync(string id, ProjectRenameRequest change, CancellationToken cancellationToken = default) =>
+        WriteProjectAsync(HttpMethod.Put, $"api/v1/projects/{Uri.EscapeDataString(id)}", change, cancellationToken);
+
+    private async Task<ProjectWriteResponse> WriteProjectAsync<T>(HttpMethod method, string path, T payload, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(path, method);
+        request.Content = JsonContent.Create(payload, options: SharedCommon.JsonOptions);
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<ProjectWriteResponse>(SharedCommon.JsonOptions, cancellationToken);
+
+        if (result?.Project is null || string.IsNullOrWhiteSpace(result.Revision))
+        {
+            throw new InvalidDataException("The server returned an incomplete project response.");
+        }
+
+        return result;
+    }
+
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        ApiError? error = null;
+
+        try
+        {
+            error = await response.Content.ReadFromJsonAsync<ApiError>(SharedCommon.JsonOptions, cancellationToken);
+        }
+        catch (JsonException) { }
+
+        throw new HttpRequestException(error?.Message ?? "The project request could not be completed.", null, response.StatusCode);
+    }
+
     private async Task<List<T>> ListAsync<T>(string collection, CancellationToken cancellationToken)
     {
         using var request = CreateRequest($"api/v1/{collection}");
@@ -41,9 +103,9 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
             ?? throw new InvalidDataException("The server returned an empty record response.");
     }
 
-    private HttpRequestMessage CreateRequest(string path)
+    private HttpRequestMessage CreateRequest(string path, HttpMethod? method = null)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        var request = new HttpRequestMessage(method ?? HttpMethod.Get, path);
 
         if (!string.IsNullOrWhiteSpace(auth.Session.AccessToken))
         {
