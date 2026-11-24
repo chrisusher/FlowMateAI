@@ -14,6 +14,8 @@ public class DatabaseContext : DbContext
 
     public DbSet<WorkspaceProjectDocument> Projects => Set<WorkspaceProjectDocument>();
 
+    public DbSet<ProjectIndexDocument> ProjectIndexes => Set<ProjectIndexDocument>();
+
     public DbSet<WorkspaceSessionDocument> Sessions => Set<WorkspaceSessionDocument>();
 
     public DbSet<StripeEventDocument> StripeEvents => Set<StripeEventDocument>();
@@ -135,6 +137,13 @@ public class DatabaseContext : DbContext
         ConfigureWorkspaceItem<WorkspaceTaskDocument>(modelBuilder, "Tasks");
         ConfigureWorkspaceItem<WorkspaceSessionDocument>(modelBuilder, "Sessions");
         ConfigureWorkspaceItem<WorkspaceConversationDocument>(modelBuilder, "Conversations");
+        modelBuilder.Entity<ProjectIndexDocument>(entity =>
+        {
+            entity.ToContainer("Projects");
+            entity.HasKey(x => x.Id);
+            entity.HasPartitionKey(x => x.UserId);
+            entity.Property(x => x.ETag).IsETagConcurrency();
+        });
         modelBuilder.Entity<WorkspaceProjectDocument>().OwnsOne(x => x.Project);
         modelBuilder.Entity<WorkspaceTaskDocument>().OwnsOne(x => x.Task, task => task.Property(x => x.Priority).HasConversion<string>());
         modelBuilder.Entity<WorkspaceSessionDocument>().OwnsOne(x => x.Session);

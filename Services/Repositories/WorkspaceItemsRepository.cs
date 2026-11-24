@@ -6,15 +6,28 @@ namespace Services.Repositories;
 
 public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorkspaceItemsRepository
 {
-    public Task<IReadOnlyList<ProjectRecord>> ListProjectsAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ProjectRecord>> ListProjectsAsync(string userId, CancellationToken cancellationToken = default)
     {
-        return ListAsync<WorkspaceProjectDocument, ProjectRecord>(database.Projects, userId, workspace => workspace.Projects, cancellationToken);
+        var source = await database.Workspaces.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.UserId == userId && item.Id == "workspace", cancellationToken);
+
+        if (source?.ProjectsAuthoritative == true)
+        {
+            var projects = await database.Projects.AsNoTracking().Where(item => item.UserId == userId)
+                .OrderBy(item => item.Position).ThenBy(item => item.Id).ToListAsync(cancellationToken);
+
+            return projects.Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToArray();
+        }
+
+        return await ListAsync<WorkspaceProjectDocument, ProjectRecord>(database.Projects, userId, workspace => workspace.Projects, cancellationToken);
     }
 
 
-    public Task<ProjectRecord?> GetProjectAsync(string userId, string id, CancellationToken cancellationToken = default)
+    public async Task<ProjectRecord?> GetProjectAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        return GetAsync<WorkspaceProjectDocument, ProjectRecord>(database.Projects, userId, id, workspace => workspace.Projects, item => item.Id, cancellationToken);
+        var projects = await ListProjectsAsync(userId, cancellationToken);
+
+        return projects.SingleOrDefault(item => item.Id == id);
     }
 
 

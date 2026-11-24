@@ -13,9 +13,25 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
         if (document is not null)
         {
             document.Workspace = WorkspaceStorageFormat.Read(document);
+
+            if (document.ProjectsAuthoritative)
+            {
+                document.Workspace.Projects = await ReadProjectsAsync(ownerId, cancellationToken);
+            }
         }
 
         return document;
+    }
+
+    private async Task<List<ProjectRecord>> ReadProjectsAsync(string userId, CancellationToken cancellationToken)
+    {
+        var documents = await database.Projects.AsNoTracking()
+            .Where(item => item.UserId == userId)
+            .OrderBy(item => item.Position)
+            .ThenBy(item => item.Id)
+            .ToListAsync(cancellationToken);
+
+        return documents.Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToList();
     }
 
     public async Task<WorkspaceDocument?> SaveAsync(string ownerId, WorkspaceSnapshot workspace, string? expectedRevision, CancellationToken cancellationToken = default)

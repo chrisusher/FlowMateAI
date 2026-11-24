@@ -29,6 +29,13 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         }
 
         var current = existing is null ? new WorkspaceSnapshot() : existing.Workspace!;
+
+        if (existing?.ProjectsAuthoritative == true &&
+            WorkspaceCollectionManifest.Hash(request.Workspace.Projects) != WorkspaceCollectionManifest.Hash(current.Projects))
+        {
+            return new(null, WorkspaceSaveErrorCode.RevisionConflict, "Projects changed on another device. Reload before saving this workspace.");
+        }
+
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
         var plan = BillingPlanExtensions.ParseOrFree(entitlement.Plan);
         var projectLimit = plan == BillingPlan.Pro ? 25 : 3;

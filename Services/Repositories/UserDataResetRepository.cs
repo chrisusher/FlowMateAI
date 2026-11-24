@@ -28,8 +28,15 @@ public sealed class UserDataResetRepository(DatabaseContext database, IConfigura
         return matches.Count;
     }
 
-    public Task<int> DeleteWorkspaceProjectsAsync(string userId, CancellationToken cancellationToken = default) =>
-        DeleteWorkspaceItemsAsync(database.Projects, userId, cancellationToken);
+    public async Task<int> DeleteWorkspaceProjectsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var projects = await DeleteWorkspaceItemsAsync(database.Projects, userId, cancellationToken);
+        var indexes = await ReadOrEmptyAsync(() => database.ProjectIndexes.Where(item => item.UserId == userId).ToListAsync(cancellationToken));
+        database.ProjectIndexes.RemoveRange(indexes);
+        await database.SaveChangesAsync(cancellationToken);
+
+        return projects + indexes.Count;
+    }
 
     public Task<int> DeleteWorkspaceTasksAsync(string userId, CancellationToken cancellationToken = default) =>
         DeleteWorkspaceItemsAsync(database.Tasks, userId, cancellationToken);

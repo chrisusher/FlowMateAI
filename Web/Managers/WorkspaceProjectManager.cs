@@ -53,15 +53,16 @@ public sealed class WorkspaceProjectManager(WorkspaceStore store, NavigationMana
 
     public async Task SaveProject()
     {
-        var name = DraftName.Trim();
+        var validation = ProjectName.Validate(DraftName, out var name);
 
-        if (name.Length == 0 || name.Length > 80 || name.Any(char.IsControl))
+        if (validation != ProjectNameValidation.Valid)
         {
-            ValidationMessage = name.Length == 0
-                ? "Enter a project name."
-                : name.Length > 80
-                    ? "Project names can be up to 80 characters."
-                    : "Project names cannot contain control characters.";
+            ValidationMessage = validation switch
+            {
+                ProjectNameValidation.Required => "Enter a project name.",
+                ProjectNameValidation.TooLong => "Project names can be up to 80 characters.",
+                _ => "Project names cannot contain control characters."
+            };
             NotifyChanged();
 
             return;

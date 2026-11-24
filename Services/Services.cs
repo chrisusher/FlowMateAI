@@ -127,6 +127,7 @@ public static class Services
         services.AddScoped<WorkspaceCollectionSynchronizer>();
         services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
         services.AddScoped<IWorkspaceItemsRepository, WorkspaceItemsRepository>();
+        services.AddScoped<IProjectWriteRepository, ProjectWriteRepository>();
         #endregion
 
         #region Services
@@ -142,6 +143,7 @@ public static class Services
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
+        services.AddScoped<IProjectWriteService, ProjectWriteService>();
         services.AddScoped<IAuthenticatedApiRateLimiter, AuthenticatedApiRateLimiterService>();
         #endregion
 
