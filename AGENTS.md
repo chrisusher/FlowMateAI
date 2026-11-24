@@ -48,3 +48,7 @@
 - Store application data as typed, queryable Cosmos properties and native objects or arrays. Do not serialise application objects into JSON string properties.
 - Exceptions require a documented technical necessity; retain backwards-compatible reads and provide a reviewed migration or repair path for existing documents when changing storage format.
 - Administrative data repairs must provide a preview, explicit write opt-in, account scope, concurrency protection and a recoverable backup.
+
+## Test naming
+
+- Name all tests `MethodName_InputData_ExpectedResult`, using descriptive PascalCase for each part.
