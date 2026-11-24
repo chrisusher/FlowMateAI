@@ -9,7 +9,6 @@ internal static class DatabaseCommand
         var command = new Command("database", "Database administration");
         command.Subcommands.Add(EnsureCreatedCommand.Create());
         command.Subcommands.Add(MigrateCosmosContainersCommand.Create());
-        command.Subcommands.Add(CutoverProjectsCommand.Create());
 
         return command;
     }

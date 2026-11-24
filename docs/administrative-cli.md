@@ -81,8 +81,8 @@ New empty workspaces initialise the project container automatically. Before movi
 Configure the intended Cosmos endpoint and `Database:DatabaseName` explicitly. Preview the exact account, check the printed endpoint, database, account and counts, then opt in to the write with a new backup path and confirmation that writers are stopped:
 
 ```powershell
-dotnet run --project CLI -- database cutover-projects --user-id "auth0|abc123"
-dotnet run --project CLI -- database cutover-projects --user-id "auth0|abc123" --apply --writers-stopped --backup ./project-cutover-backup.json
+dotnet run --project CLI -- migrations project-cutovers --user-id "auth0|abc123"
+dotnet run --project CLI -- migrations project-cutovers --user-id "auth0|abc123" --apply --writers-stopped --backup ./project-cutover-backup.json
 ```
 
 The command refuses to overwrite different destination records or an existing backup, preserves the source workspace, and checks its ETag again before switching authority. The backup contains the full workspace and account identifier; store it privately and retain it separately. Partial copies can be retried with a new backup only if the source and destination still match. After applying, verify project order, names, archives, tasks, timer behaviour, reports and MCP access before resuming writers.

@@ -4,13 +4,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Services.Repositories;
 
-namespace CLI.Commands.Database;
+namespace CLI.Commands.Migrations;
 
-internal static class CutoverProjectsCommand
+internal static class ProjectCutoversCommand
 {
     public static Command Create()
     {
-        var command = new Command("cutover-projects", "Preview or cut over one account's project records. Stop every workspace writer first.");
+        var command = new Command("project-cutovers", "Preview or cut over one account's project records. Stop every workspace writer first.");
         var user = new Option<string>("--user-id")
         {
             Required = true,
