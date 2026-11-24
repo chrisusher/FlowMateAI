@@ -641,11 +641,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
+            Data.Projects = _remoteConflict.Workspace.Projects;
             _revision = _remoteConflict.Revision;
             _remoteConflict = null;
             await PersistRevisionAsync();
             await SetPendingSyncAsync(true);
             SetSyncState(WorkspaceSyncState.Saving, "Retrying your local draft against the latest revision.");
+            Changed?.Invoke();
         }
         finally
         {

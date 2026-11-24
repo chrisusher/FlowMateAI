@@ -445,6 +445,106 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
+    public async Task KeepLocalVersionAsync_RemoteProjectRename_PreservesDraftAndSaves()
+    {
+        await SignInAsync();
+        Store.Data.Tasks[0].Title = "Unsaved task edit";
+        var remote = new WorkspaceSnapshot
+        {
+            Projects = [
+                new ProjectRecord
+                {
+                    Id = Project.Id,
+                    Name = "Renamed on another device",
+                    Color = Project.Color
+                },
+                new ProjectRecord
+                {
+                    Id = "new-project",
+                    Name = "Created on another device"
+                }
+            ]
+        };
+        var attempts = new List<WorkspaceSaveRequest>();
+        Api.Respond = async (request, _) =>
+        {
+            if (request.Method != HttpMethod.Put)
+            {
+                return WorkspaceRead(request, new WorkspaceResponse(remote, "latest-revision"));
+            }
+
+            var save = (await request.Content!.ReadFromJsonAsync<WorkspaceSaveRequest>(SharedCommon.JsonOptions))!;
+            attempts.Add(save);
+
+            if (save.Workspace.Projects.Count != 2 || save.Workspace.Projects[0].Name != remote.Projects[0].Name)
+            {
+                return new HttpResponseMessage(HttpStatusCode.Conflict)
+                {
+                    Content = JsonContent.Create(new ApiError("revision_conflict", "Projects changed on another device."), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new WorkspaceResponse(save.Workspace, "accepted-revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+
+        await Store.SaveAsync();
+        Assert.That(Store.HasConflict, Is.True);
+
+        await Store.KeepLocalVersionAsync();
+
+        Assert.That(attempts, Has.Count.EqualTo(2));
+        Assert.That(attempts[1].Revision, Is.EqualTo("latest-revision"));
+        Assert.That(attempts[1].Workspace.Tasks[0].Title, Is.EqualTo("Unsaved task edit"));
+        Assert.That(attempts[1].Workspace.Projects.Select(project => project.Name), Is.EqualTo(new[] { "Renamed on another device", "Created on another device" }));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Saved));
+    }
+
+    [Test]
+    public async Task KeepLocalVersionAsync_RemoteArchivedTimerProject_PreservesDraftAndReportsConflict()
+    {
+        await SignInAsync();
+        Store.Data.Tasks[0].Title = "Unsaved task edit";
+        Store.Data.Timer.ProjectId = Project.Id;
+        var remote = new WorkspaceSnapshot
+        {
+            Projects = [new ProjectRecord
+            {
+                Id = Project.Id,
+                Name = Project.Name,
+                IsArchived = true
+            }]
+        };
+        var puts = 0;
+        Api.Respond = (request, _) =>
+        {
+            if (request.Method != HttpMethod.Put)
+            {
+                return Task.FromResult(WorkspaceRead(request, new WorkspaceResponse(remote, "latest-revision")));
+            }
+
+            puts++;
+            var code = puts == 1 ? "revision_conflict" : "timer_conflict";
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = JsonContent.Create(new ApiError(code, "The workspace changed."), options: SharedCommon.JsonOptions)
+            });
+        };
+
+        await Store.SaveAsync();
+        await Store.KeepLocalVersionAsync();
+
+        Assert.That(puts, Is.EqualTo(2));
+        Assert.That(Store.HasConflict, Is.True);
+        Assert.That(Store.Data.Tasks[0].Title, Is.EqualTo("Unsaved task edit"));
+        Assert.That(Store.Data.Projects.Single().IsArchived, Is.True);
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Conflict));
+    }
+
+    [Test]
     public async Task UnauthorizedWorkspaceSaveExpiresTheSessionAndKeepsTheLocalDraft()
     {
         await SignInAsync();
