@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Configuration;
 using Services.Database;
 using Services.Repositories;
 
@@ -10,10 +10,27 @@ namespace Services.Tests.Repositories;
 [TestFixture]
 public sealed class UserRepositoryTests
 {
-    [Test]
-    public async Task DeletionMarkerSurvivesUserDataResetWithoutStoringTheSubject()
+    private CosmosTestDatabase _testDatabase = null!;
+
+    [SetUp]
+    public async Task SetUpAsync()
     {
-        await using var database = CreateDatabase();
+        _testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+    }
+
+    [TearDown]
+    public async Task TearDownAsync()
+    {
+        if (_testDatabase is not null)
+        {
+            await _testDatabase.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task DeleteUserRecordsAsync_MarkedUser_MarkerSurvivesWithoutSubject()
+    {
+        await using var database = _testDatabase.CreateContext();
         var markers = new AccountDeletionMarkerRepository(database);
         await markers.MarkAsync("auth0|user-1");
         await markers.MarkAsync("auth0|user-1");
@@ -29,9 +46,9 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public async Task CheckoutAndDeletionAreCoordinatedByTheSameMarker()
+    public async Task TryBeginCheckoutAsync_DeletionMarked_RejectsCheckoutUntilOperationsFinish()
     {
-        await using var database = CreateDatabase();
+        await using var database = _testDatabase.CreateContext();
         var markers = new AccountDeletionMarkerRepository(database);
 
         Assert.That(await markers.TryBeginCheckoutAsync("auth0|user-1", "operation-1"), Is.True);
@@ -44,9 +61,9 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public async Task DeletionWaitsForAdmittedOperationsAndRejectsNewOnes()
+    public async Task MarkAsync_ActiveOperations_WaitsAndRejectsNewOperations()
     {
-        await using var database = CreateDatabase();
+        await using var database = _testDatabase.CreateContext();
         var markers = new AccountDeletionMarkerRepository(database);
 
         Assert.That(await markers.TryBeginOperationAsync("auth0|user-1", "write-1"), Is.True);
@@ -60,9 +77,9 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public async Task RegistrationStoresTrimmedAndNormalisedEmailAndSupportsBothLookups()
+    public async Task EnsureRegisteredAsync_UntrimmedEmail_StoresNormalisedEmailAndSupportsLookups()
     {
-        await using var database = CreateDatabase();
+        await using var database = _testDatabase.CreateContext();
         var repository = new UserRepository(database);
 
         await repository.EnsureRegisteredAsync("auth0|user-1", "  Person@Example.Test  ");
@@ -76,9 +93,9 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public async Task RegistrationSkipsSaveWhenEmailIsUnchanged()
+    public async Task EnsureRegisteredAsync_UnchangedEmail_DoesNotSave()
     {
-        await using var database = CreateCountingDatabase();
+        await using var database = new CountingContext(_testDatabase.CreateOptions());
         var repository = new UserRepository(database);
         await repository.EnsureRegisteredAsync("auth0|user-1", "person@example.test");
         var originalUpdatedAt = (await database.Users.SingleAsync()).UpdatedAt;
@@ -91,9 +108,9 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public async Task RegistrationUpdatesChangedEmail()
+    public async Task EnsureRegisteredAsync_ChangedEmail_UpdatesUser()
     {
-        await using var database = CreateCountingDatabase();
+        await using var database = new CountingContext(_testDatabase.CreateOptions());
         var repository = new UserRepository(database);
         await repository.EnsureRegisteredAsync("auth0|user-1", "old@example.test");
         var originalUpdatedAt = (await database.Users.SingleAsync()).UpdatedAt;
@@ -109,11 +126,9 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public async Task RegistrationReloadsAndUpdatesWhenAnotherRequestCreatesTheUserFirst()
+    public async Task EnsureRegisteredAsync_ConcurrentRegistration_ReloadsAndUpdatesUser()
     {
-        var databaseName = Guid.NewGuid().ToString("N");
-        var root = new InMemoryDatabaseRoot();
-        await using var database = new ConflictInjectingContext(databaseName, root);
+        await using var database = new ConflictInjectingContext(_testDatabase.CreateOptions(), _testDatabase);
 
         await new UserRepository(database).EnsureRegisteredAsync("auth0|user-1", "requested@example.test");
 
@@ -124,9 +139,9 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public async Task UserDataResetDeletesOnlyTheRequestedUsersRecord()
+    public async Task DeleteUserRecordsAsync_RequestedUser_DeletesOnlyTheirRecord()
     {
-        await using var database = CreateDatabase();
+        await using var database = _testDatabase.CreateContext();
         database.Users.AddRange(
             new UserDocument
             {
@@ -154,7 +169,7 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
-    public void UserDocumentUsesItsOwnContainerAndUserIdPartitionKey()
+    public void UserDocument_Model_UsesUsersContainerAndUserIdPartitionKey()
     {
         using var database = new CosmosModelContext();
         var entity = database.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(UserDocument))!;
@@ -172,14 +187,6 @@ public sealed class UserRepositoryTests
         Assert.That(entity.FindProperty(nameof(UserDocument.ETag))!.IsConcurrencyToken, Is.True);
     }
 
-    private static DatabaseContext CreateDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
-        .Options);
-
-    private static CountingContext CreateCountingDatabase() => new(new DbContextOptionsBuilder<DatabaseContext>()
-        .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
-        .Options);
-
     private sealed class CountingContext(DbContextOptions<DatabaseContext> options) : DatabaseContext(options)
     {
         public int SaveChangesCalls
@@ -195,8 +202,8 @@ public sealed class UserRepositoryTests
         }
     }
 
-    private sealed class ConflictInjectingContext(string databaseName, InMemoryDatabaseRoot root)
-        : DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(databaseName, root).Options)
+    private sealed class ConflictInjectingContext(DbContextOptions<DatabaseContext> options, CosmosTestDatabase testDatabase)
+        : DatabaseContext(options)
     {
         public bool ConflictWasInjected
         {
@@ -209,9 +216,7 @@ public sealed class UserRepositoryTests
             {
                 ConflictWasInjected = true;
 
-                await using var competingRequest = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
-                    .UseInMemoryDatabase(databaseName, root)
-                    .Options);
+                await using var competingRequest = testDatabase.CreateContext();
 
                 competingRequest.Users.Add(new UserDocument
                 {
