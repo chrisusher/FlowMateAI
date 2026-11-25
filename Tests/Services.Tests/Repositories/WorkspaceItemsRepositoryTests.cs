@@ -18,6 +18,7 @@ public sealed class WorkspaceItemsRepositoryTests
             ProjectsAuthoritative = true,
             Workspace = new WorkspaceSnapshot()
         });
+
         foreach (var (user, id, position) in new[] { ("user-1", "b", 1), ("user-1", "a", 1), ("user-1", "c", 0), ("other", "x", 0) })
         {
             database.Projects.Add(new WorkspaceProjectDocument
