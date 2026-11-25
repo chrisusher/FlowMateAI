@@ -13,6 +13,7 @@ public sealed class ProjectCosmosIntegrationTests
         await using var database = testDatabase.CreateContext();
         var workspaces = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
         await workspaces.SaveAsync("user", new WorkspaceSnapshot(), null);
+
         foreach (var (user, id, position) in new[] { ("user", "b", 1), ("user", "a", 1), ("user", "c", 0), ("other", "x", 0) })
         {
             database.Projects.Add(new WorkspaceProjectDocument
