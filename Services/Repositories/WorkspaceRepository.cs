@@ -27,11 +27,9 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
     {
         var documents = await database.Projects.AsNoTracking()
             .Where(item => item.UserId == userId)
-            .OrderBy(item => item.Position)
-            .ThenBy(item => item.Id)
             .ToListAsync(cancellationToken);
 
-        return documents.Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToList();
+        return documents.OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal).Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToList();
     }
 
     public async Task<WorkspaceDocument?> SaveAsync(string ownerId, WorkspaceSnapshot workspace, string? expectedRevision, CancellationToken cancellationToken = default)

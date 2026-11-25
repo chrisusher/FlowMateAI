@@ -8,10 +8,46 @@ namespace Services.Tests.Repositories;
 public sealed class WorkspaceItemsRepositoryTests
 {
     [Test]
-    public void CollectionListQueriesTranslateForCosmos()
+    public async Task AuthoritativeProjectReads_UnorderedProjects_ReturnOwnerProjectsInDeterministicOrder()
     {
-        using var database = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
-            .UseCosmos("https://localhost:8081", Convert.ToBase64String(new byte[64]), "tests").Options);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
+        database.Workspaces.Add(new WorkspaceDocument
+        {
+            UserId = "user-1",
+            ProjectsAuthoritative = true,
+            Workspace = new WorkspaceSnapshot()
+        });
+
+        foreach (var (user, id, position) in new[] { ("user-1", "b", 1), ("user-1", "a", 1), ("user-1", "c", 0), ("other", "x", 0) })
+        {
+            database.Projects.Add(new WorkspaceProjectDocument
+            {
+                UserId = user,
+                Id = id,
+                Position = position,
+                Project = new ProjectRecord
+                {
+                    Id = id
+                }
+            });
+        }
+        await database.SaveChangesAsync();
+
+        var workspace = await new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database)).GetAsync("user-1");
+        var projects = await new WorkspaceItemsRepository(database).ListProjectsAsync("user-1");
+        var report = await new WorkspaceReportRepository(database).GetWorkspaceAsync("user-1");
+        var expected = new[] { "c", "a", "b" };
+        Assert.That(workspace!.Workspace!.Projects.Select(project => project.Id), Is.EqualTo(expected));
+        Assert.That(projects.Select(project => project.Id), Is.EqualTo(expected));
+        Assert.That(report.Workspace.Projects.Select(project => project.Id), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public async Task CollectionListQueries_WorkspaceCollections_TranslateForCosmos()
+    {
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
 
         Assert.DoesNotThrow(() => ListQuery(database.Projects));
         Assert.DoesNotThrow(() => ListQuery(database.Tasks));
@@ -23,10 +59,10 @@ public sealed class WorkspaceItemsRepositoryTests
         set.AsNoTracking().Where(item => item.UserId == "user-1").OrderBy(item => item.Position).ToQueryString();
 
     [Test]
-    public async Task ListReadsLegacyAndStaleCollectionsFromTheAuthoritativeWorkspace()
+    public async Task ListProjectsAsync_LegacyAndStaleCollections_ReadsAuthoritativeWorkspace()
     {
-        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-        await using var database = new DatabaseContext(options);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
 
         database.Workspaces.Add(new WorkspaceDocument
         {
@@ -65,10 +101,10 @@ public sealed class WorkspaceItemsRepositoryTests
     }
 
     [Test]
-    public async Task IndividualReadsUseAuthoritativeRecordsForLegacyAndStaleProjections()
+    public async Task GetAsync_LegacyAndStaleProjections_ReadsAuthoritativeRecords()
     {
-        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-        await using var database = new DatabaseContext(options);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         database.Workspaces.Add(new WorkspaceDocument
         {
             UserId = "user-1",
@@ -203,10 +239,10 @@ public sealed class WorkspaceItemsRepositoryTests
     }
 
     [Test]
-    public async Task SaveSynchronisesCollectionsAndReadsOnlyTheOwnersRecords()
+    public async Task SaveAsync_UpdatedWorkspace_SynchronisesOwnerCollections()
     {
-        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
-        await using var database = new DatabaseContext(options);
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
         var workspace = new WorkspaceSnapshot
         {
             Projects =
@@ -262,8 +298,8 @@ public sealed class WorkspaceItemsRepositoryTests
         Assert.That(await reader.GetProjectAsync("user-1", "missing"), Is.Null);
 
         var source = await database.Workspaces.SingleAsync();
-        source.ETag = "revision";
-        await database.SaveChangesAsync();
+        var revision = source.ETag;
+        Assert.That(revision, Is.Not.Null.And.Not.Empty);
         database.ChangeTracker.Clear();
 
         workspace.Projects.RemoveAt(0);
@@ -271,7 +307,7 @@ public sealed class WorkspaceItemsRepositoryTests
         workspace.Tasks.Clear();
         workspace.Sessions[0].FocusMinutes = 20;
         workspace.Conversations[0].Title = "Updated chat";
-        Assert.That(await writer.SaveAsync("user-1", workspace, "revision"), Is.Not.Null);
+        Assert.That(await writer.SaveAsync("user-1", workspace, revision), Is.Not.Null);
 
         Assert.That((await reader.ListProjectsAsync("user-1")).Select(item => item.Name), Is.EqualTo(new[] { "Updated" }));
         Assert.That(await reader.GetProjectAsync("user-1", "p1"), Is.Null);

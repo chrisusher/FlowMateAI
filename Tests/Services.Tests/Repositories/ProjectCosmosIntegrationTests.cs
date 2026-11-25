@@ -7,6 +7,39 @@ namespace Services.Tests.Repositories;
 public sealed class ProjectCosmosIntegrationTests
 {
     [Test]
+    public async Task AuthoritativeProjectReads_DefaultCosmosIndex_ReturnOrderedOwnerProjects()
+    {
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
+        var workspaces = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
+        await workspaces.SaveAsync("user", new WorkspaceSnapshot(), null);
+
+        foreach (var (user, id, position) in new[] { ("user", "b", 1), ("user", "a", 1), ("user", "c", 0), ("other", "x", 0) })
+        {
+            database.Projects.Add(new WorkspaceProjectDocument
+            {
+                UserId = user,
+                Id = id,
+                Position = position,
+                Project = new ProjectRecord
+                {
+                    Id = id
+                }
+            });
+        }
+        await database.SaveChangesAsync();
+        database.ChangeTracker.Clear();
+
+        var workspace = await workspaces.GetAsync("user");
+        var projects = await new WorkspaceItemsRepository(database).ListProjectsAsync("user");
+        var report = await new WorkspaceReportRepository(database).GetWorkspaceAsync("user");
+        var expected = new[] { "c", "a", "b" };
+        Assert.That(workspace!.Workspace!.Projects.Select(project => project.Id), Is.EqualTo(expected));
+        Assert.That(projects.Select(project => project.Id), Is.EqualTo(expected));
+        Assert.That(report.Workspace.Projects.Select(project => project.Id), Is.EqualTo(expected));
+    }
+
+    [Test]
     public async Task CreateAsync_ConcurrentProjectChanges_EnforcesLimitsAndPreservesRecords()
     {
         await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
