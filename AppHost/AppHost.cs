@@ -1,8 +1,8 @@
-using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Foundry;
 using DotNetEnv;
 using Microsoft.Extensions.Configuration;
 using System.Text.Json.Nodes;
+using Shared.Enums;
 
 var repositoryRoot = FindRepositoryRoot();
 
@@ -36,7 +36,17 @@ string? LocalSecret(params string[] names)
 }
 
 // Parameters
-var environment = builder.AddParameter("environment", false);
+var environmentName = builder.Configuration["Parameters:environment"] ?? "Local";
+
+if (!Enum.TryParse<AppHostEnvironment>(environmentName, true, out var selectedEnvironment) ||
+    !Enum.IsDefined(selectedEnvironment) ||
+    !string.Equals(environmentName, selectedEnvironment.ToString(), StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException("The environment parameter must be Local or Test.");
+}
+
+builder.Configuration["Parameters:environment"] = selectedEnvironment.ToString();
+
 var auth0Authority = builder.AddParameter("auth0-authority");
 var auth0ClientId = builder.AddParameter("auth0-client-id");
 var auth0Audience = builder.AddParameter("auth0-audience");
@@ -66,12 +76,41 @@ storage.AddQueues("queues");
 storage.AddTables("tables");
 
 // Cosmos DB
-var cosmosDb = builder.AddAzureCosmosDB("cosmosDb")
-.WithAccessKeyAuthentication();
+var cosmosDb = builder.AddAzureCosmosDB("cosmosDb");
+IResourceBuilder<ParameterResource>? testCosmosKey = null;
 
-var cosmosAccountEndpoint = builder.Configuration["Database:AccountEndpoint"];
+if (selectedEnvironment == AppHostEnvironment.Test)
+{
+    var cosmosName = LocalSecret("COSMOS_NAME");
+    var cosmosResourceGroup = LocalSecret("COSMOS_RESOURCE_GROUP");
 
-var database = cosmosDb.AddCosmosDatabase("database", "flowmate");
+    if (string.IsNullOrWhiteSpace(cosmosName) || string.IsNullOrWhiteSpace(cosmosResourceGroup))
+    {
+        throw new InvalidOperationException("Set COSMOS_NAME and COSMOS_RESOURCE_GROUP in .env for the Test environment.");
+    }
+
+    var cosmosKey = LocalSecret("Database:Key", "Database__Key");
+
+    if (string.IsNullOrWhiteSpace(cosmosKey))
+    {
+        throw new InvalidOperationException("Set Database__Key in .env for the Test environment.");
+    }
+
+    builder.Configuration["Parameters:test-cosmos-key"] = cosmosKey;
+    testCosmosKey = builder.AddParameter("test-cosmos-key", secret: true);
+    cosmosDb.RunAsExisting(cosmosName, cosmosResourceGroup);
+}
+else
+{
+    cosmosDb.WithAccessKeyAuthentication();
+}
+
+var cosmosAccountEndpoint = selectedEnvironment == AppHostEnvironment.Local
+    ? builder.Configuration["Database:AccountEndpoint"]
+    : null;
+
+var databaseName = selectedEnvironment == AppHostEnvironment.Test ? "flowmate-Test" : "flowmate";
+var database = cosmosDb.AddCosmosDatabase("database", databaseName);
 
 // Key Vault
 var keyVault = builder.AddAzureKeyVault("flowmate-secrets");
@@ -120,7 +159,7 @@ var api = builder.AddAzureFunctionsProject("API", "../API/API.csproj")
     .WithEnvironment("ConnectionStrings__Storage", blobs.Resource.ConnectionStringExpression)
     .WithEnvironment("ConnectionStrings__database", database.Resource.ConnectionStringExpression)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
-    .WithEnvironment("Global__Environment", environment)
+    .WithEnvironment("Global__Environment", environmentName)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
     .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
     .WithHttpHealthCheck("/api/health")
@@ -146,7 +185,7 @@ var mcp = builder.AddAzureFunctionsProject("MCP", "../MCP/MCP.csproj")
     .WithHostStorage(mcpHostStorage)
     .WithEnvironment("ConnectionStrings__database", database.Resource.ConnectionStringExpression)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
-    .WithEnvironment("Global__Environment", environment)
+    .WithEnvironment("Global__Environment", environmentName)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", dashboardOtlpEndpoint)
     .WithEnvironment("OTEL_EXPORTER_OTLP_PROTOCOL", otlpProtocol)
     .WithReference(database)
@@ -159,14 +198,28 @@ if (!string.IsNullOrWhiteSpace(cosmosAccountEndpoint))
     mcp.WithEnvironment("Database__AccountEndpoint", cosmosAccountEndpoint);
 }
 
+if (selectedEnvironment == AppHostEnvironment.Test)
+{
+    api.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression)
+        .WithEnvironment("Database__Key", testCosmosKey!);
+    mcp.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression)
+        .WithEnvironment("Database__Key", testCosmosKey!);
+}
+
 var cli = builder.AddProject<Projects.CLI>("cli")
     .WithArgs("--help")
     .WithReference(database)
     .WithReference(blobs)
     .WithEnvironment("Database__DatabaseName", database.Resource.DatabaseName)
-    .WithEnvironment("Global__Environment", environment)
+    .WithEnvironment("Global__Environment", environmentName)
     .WithExplicitStart()
     .ExcludeFromManifest();
+
+if (selectedEnvironment == AppHostEnvironment.Test)
+{
+    cli.WithEnvironment("Database__AccountEndpoint", cosmosDb.Resource.UriExpression)
+        .WithEnvironment("Database__Key", testCosmosKey!);
+}
 
 var buildConfiguration = Directory.GetParent(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))?.Name ?? "Debug";
 var cliAssemblyPath = Path.GetFullPath(Path.Combine(
@@ -242,12 +295,19 @@ async ValueTask<IReadOnlyDictionary<string, string>> BuildCliEnvironmentAsync(
         ? await keyVault.Resource.UriExpression.GetValueAsync(cancellationToken)
         : null;
 
-    var configuredEnvironment = await environment.Resource.GetValueAsync(cancellationToken);
     var auth0Issuer = includeAuth0Settings
         ? await auth0Authority.Resource.GetValueAsync(cancellationToken)
         : null;
 
-    return BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, configuredEnvironment, auth0Issuer, includeStorageSettings, includeAuth0Settings, includeKeyVaultSettings);
+    var variables = new Dictionary<string, string>(BuildCliEnvironment(cosmosConnection, storageConnection, keyVaultUri, environmentName, auth0Issuer, includeStorageSettings, includeAuth0Settings, includeKeyVaultSettings), StringComparer.OrdinalIgnoreCase);
+
+    if (selectedEnvironment == AppHostEnvironment.Test)
+    {
+        variables["Database__AccountEndpoint"] = await cosmosDb.Resource.UriExpression.GetValueAsync(cancellationToken) ?? throw new InvalidOperationException("The Cosmos account endpoint is unavailable.");
+        variables["Database__Key"] = await testCosmosKey!.Resource.GetValueAsync(cancellationToken) ?? throw new InvalidOperationException("The Cosmos account key is unavailable.");
+    }
+
+    return variables;
 }
 
 cli.WithProcessCommand(
