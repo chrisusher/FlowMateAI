@@ -31,7 +31,7 @@ var host = new HostBuilder()
                 }
 
                 httpContext.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, If-Match";
-                httpContext.Response.Headers["Access-Control-Expose-Headers"] = "X-Workspace-Collections";
+                httpContext.Response.Headers["Access-Control-Expose-Headers"] = "ETag, X-Workspace-Collections";
                 httpContext.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
                 httpContext.Response.Headers["Vary"] = "Origin";
 

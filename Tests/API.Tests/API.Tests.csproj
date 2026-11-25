@@ -12,10 +12,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageReference Include="NUnit" Version="5.0.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" PrivateAssets="all" />
+    <PackageReference Include="Testcontainers.CosmosDb" Version="4.16.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../API/API.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="../Services.Tests/CosmosTestEnvironment.cs" Link="CosmosTestEnvironment.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="../../API/openapi.yml" Link="openapi.yml" CopyToOutputDirectory="PreserveNewest" />

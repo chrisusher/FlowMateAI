@@ -60,10 +60,14 @@ public sealed class WorkspaceCollectionResetTests
                 }
             });
         }
+        database.ProjectIndexes.Add(new ProjectIndexDocument
+        {
+            UserId = "first"
+        });
         await database.SaveChangesAsync();
         var repository = new UserDataResetRepository(database, new ConfigurationBuilder().Build());
 
-        Assert.That(await repository.DeleteWorkspaceProjectsAsync("first"), Is.EqualTo(1));
+        Assert.That(await repository.DeleteWorkspaceProjectsAsync("first"), Is.EqualTo(2));
         Assert.That(await repository.DeleteWorkspaceTasksAsync("first"), Is.EqualTo(1));
         Assert.That(await repository.DeleteWorkspaceSessionsAsync("first"), Is.EqualTo(1));
         Assert.That(await repository.DeleteWorkspaceConversationsAsync("first"), Is.EqualTo(1));
@@ -73,6 +77,7 @@ public sealed class WorkspaceCollectionResetTests
         Assert.That(await repository.DeleteWorkspaceConversationsAsync("first"), Is.Zero);
 
         Assert.That((await database.Projects.SingleAsync()).UserId, Is.EqualTo("second"));
+        Assert.That(await database.ProjectIndexes.CountAsync(), Is.Zero);
         Assert.That((await database.Tasks.SingleAsync()).UserId, Is.EqualTo("second"));
         Assert.That((await database.Sessions.SingleAsync()).UserId, Is.EqualTo("second"));
         var conversation = await database.Conversations.SingleAsync();

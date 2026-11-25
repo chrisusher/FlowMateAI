@@ -9,6 +9,58 @@ namespace Services.Tests.Workspaces;
 public sealed class WorkspaceServiceTests
 {
     [Test]
+    public async Task SaveAsync_ChangedAuthoritativeProjects_RejectsWorkspaceWrite()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        var current = new WorkspaceSnapshot
+        {
+            Projects = [new ProjectRecord
+            {
+                Id = "project",
+                Name = "Current"
+            }]
+        };
+        repository.Seed("user", current, "revision-1", projectsAuthoritative: true);
+        var stale = new WorkspaceSnapshot
+        {
+            Projects = [new ProjectRecord
+            {
+                Id = "project",
+                Name = "Stale"
+            }]
+        };
+
+        var result = await CreateService(repository).SaveAsync("user", new(stale, "revision-1"));
+
+        Assert.That(result.ErrorCode, Is.EqualTo(WorkspaceSaveErrorCode.RevisionConflict));
+        Assert.That(repository.SaveCount, Is.Zero);
+        Assert.That(repository.Read("user").Projects.Single().Name, Is.EqualTo("Current"));
+    }
+
+    [Test]
+    public async Task SaveAsync_ArchivedTimerProject_RejectsWorkspaceWrite()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        var workspace = new WorkspaceSnapshot
+        {
+            Projects = [new ProjectRecord
+            {
+                Id = "project",
+                Name = "Archived",
+                IsArchived = true
+            }]
+        };
+        repository.Seed("user", workspace, "revision-1", projectsAuthoritative: true);
+        workspace.Timer.ProjectId = "project";
+        workspace.Timer.Phase = TimerPhase.Focus;
+
+        var result = await CreateService(repository).SaveAsync("user", new(workspace, "revision-1"));
+
+        Assert.That(result.ErrorCode, Is.EqualTo(WorkspaceSaveErrorCode.TimerConflict));
+        Assert.That(repository.SaveCount, Is.Zero);
+    }
+
+    [Test]
     public async Task ConcurrentClientsCannotOverwriteAnAcceptedWorkspaceRevision()
     {
         var repository = new InMemoryWorkspaceRepository();
@@ -266,11 +318,12 @@ public sealed class WorkspaceServiceTests
         private static WorkspaceSnapshot Clone(WorkspaceSnapshot snapshot) =>
             JsonSerializer.Deserialize<WorkspaceSnapshot>(JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions), SharedCommon.JsonOptions)!;
 
-        public void Seed(string ownerId, WorkspaceSnapshot snapshot, string revision) =>
+        public void Seed(string ownerId, WorkspaceSnapshot snapshot, string revision, bool projectsAuthoritative = false) =>
             _documents[ownerId] = new WorkspaceDocument
             {
                 UserId = ownerId,
                 Workspace = Clone(snapshot),
+                ProjectsAuthoritative = projectsAuthoritative,
                 ETag = revision
             };
 

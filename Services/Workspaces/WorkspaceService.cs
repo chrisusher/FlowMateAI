@@ -1,4 +1,5 @@
 using ChrisUsher.Core.Shared;
+using Services.Database;
 using Services.Repositories;
 using Shared.Contracts;
 using Shared.Enums;
@@ -6,11 +7,12 @@ using Shared.Models;
 
 namespace Services.Workspaces;
 
-public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityArchiveRepository activityArchive, IBillingRepository billingRepository) : IWorkspaceService
+public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityArchiveRepository activityArchive, IBillingRepository billingRepository,
+    IProjectArchiveRepository? projectArchives = null) : IWorkspaceService
 {
     public async Task<WorkspaceResponse> GetAsync(string ownerId, CancellationToken cancellationToken = default)
     {
-        var document = await repository.GetAsync(ownerId, cancellationToken);
+        var document = await GetRecoveredAsync(ownerId, cancellationToken);
 
         var snapshot = document is null ? new WorkspaceSnapshot() : document.Workspace!;
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
@@ -21,7 +23,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
 
     public async Task<WorkspaceSaveResult> SaveAsync(string ownerId, WorkspaceSaveRequest request, CancellationToken cancellationToken = default)
     {
-        var existing = await repository.GetAsync(ownerId, cancellationToken);
+        var existing = await GetRecoveredAsync(ownerId, cancellationToken);
 
         if (existing is not null && (string.IsNullOrEmpty(request.Revision) || !string.Equals(existing.ETag, request.Revision, StringComparison.Ordinal)))
         {
@@ -29,6 +31,19 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         }
 
         var current = existing is null ? new WorkspaceSnapshot() : existing.Workspace!;
+
+        if (existing?.ProjectsAuthoritative == true &&
+            WorkspaceCollectionManifest.Hash(request.Workspace.Projects) != WorkspaceCollectionManifest.Hash(current.Projects))
+        {
+            return new(null, WorkspaceSaveErrorCode.RevisionConflict, "Projects changed on another device. Reload before saving this workspace.");
+        }
+
+        if (existing?.ProjectsAuthoritative == true && !string.IsNullOrEmpty(request.Workspace.Timer.ProjectId) &&
+            current.Projects.Any(project => project.Id == request.Workspace.Timer.ProjectId && project.IsArchived))
+        {
+            return new(null, WorkspaceSaveErrorCode.TimerConflict, "The selected project has been archived. Reload before changing the timer.");
+        }
+
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
         var plan = BillingPlanExtensions.ParseOrFree(entitlement.Plan);
         var projectLimit = plan == BillingPlan.Pro ? 25 : 3;
@@ -80,6 +95,24 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         {
             return new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.");
         }
+    }
+
+    private async Task<WorkspaceDocument?> GetRecoveredAsync(string ownerId, CancellationToken cancellationToken)
+    {
+        var document = await repository.GetAsync(ownerId, cancellationToken);
+
+        if (document?.PendingProjectArchive is not null && projectArchives is not null)
+        {
+            await projectArchives.RecoverAsync(ownerId, cancellationToken);
+            document = await repository.GetAsync(ownerId, cancellationToken);
+        }
+
+        if (document?.PendingProjectArchive is not null)
+        {
+            throw new InvalidOperationException("A project archive is still being completed. Try again shortly.");
+        }
+
+        return document;
     }
 
     private static void PreserveSessionLabels(WorkspaceSnapshot current, WorkspaceSnapshot requested)

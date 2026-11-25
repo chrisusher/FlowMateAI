@@ -9,6 +9,56 @@ namespace Web.Tests;
 public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
 {
     [Test]
+    public async Task ProjectWrites_AuthenticatedRequests_UseResourceRoutesAndRevisions()
+    {
+        await SignInAsync();
+        var project = new ProjectRecord
+        {
+            Id = "project-one",
+            Name = "Project"
+        };
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            Assert.That(request.Headers.Authorization?.ToString(), Is.EqualTo("Bearer test-token"));
+
+            if (request.Method == HttpMethod.Get)
+            {
+                var read = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(project, options: SharedCommon.JsonOptions)
+                };
+                read.Headers.TryAddWithoutValidation("ETag", "\"revision-1\"");
+
+                return read;
+            }
+
+            if (request.Method == HttpMethod.Post)
+            {
+                var create = await request.Content!.ReadFromJsonAsync<ProjectCreateRequest>(SharedCommon.JsonOptions, cancellationToken);
+                Assert.That(create!.Id, Is.EqualTo(project.Id));
+            }
+            else
+            {
+                var rename = await request.Content!.ReadFromJsonAsync<ProjectRenameRequest>(SharedCommon.JsonOptions, cancellationToken);
+                Assert.That(rename!.Revision, Is.EqualTo("\"revision-1\""));
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new ProjectWriteResponse(project, "\"revision-2\""), options: SharedCommon.JsonOptions)
+            };
+        };
+        var client = new WorkspaceItemsClient(Services.GetRequiredService<HttpClient>(), Auth);
+
+        var current = await client.GetProjectVersionedAsync(project.Id);
+        await client.CreateProjectAsync(new ProjectCreateRequest(project.Id, project.Name, project.Color, project.CreatedAt));
+        var renamed = await client.RenameProjectAsync(project.Id, new ProjectRenameRequest("New name", current!.Revision));
+
+        Assert.That(renamed.Revision, Is.EqualTo("\"revision-2\""));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/projects/project-one", "/api/v1/projects", "/api/v1/projects/project-one" }));
+    }
+
+    [Test]
     public async Task ListsUseAuthenticatedCollectionRoutes()
     {
         await SignInAsync();
@@ -304,7 +354,8 @@ public sealed class WorkspaceItemsClientTests : WorkspaceComponentTest
             await Store.InitialiseAsync();
         }
 
-        Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(3)));
+        // Allow for timer resolution while still verifying a multi-second collection delay.
+        Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(2.9)));
         Assert.That((Store.UtcNow - serverTime - elapsed.Elapsed).Duration(), Is.LessThan(TimeSpan.FromSeconds(1)));
         Assert.That(Store.Data.Timer.RemainingSeconds, Is.EqualTo(Math.Ceiling(300 - elapsed.Elapsed.TotalSeconds)).Within(2));
     }

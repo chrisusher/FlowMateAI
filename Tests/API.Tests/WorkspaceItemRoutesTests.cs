@@ -7,6 +7,21 @@ namespace API.Tests;
 [TestFixture]
 public sealed class WorkspaceItemRoutesTests
 {
+    [TestCase("CreateProject", "v1/projects", "post")]
+    [TestCase("RenameProject", "v1/projects/{id}", "put")]
+    [TestCase("RestoreProject", "v1/projects/{id}/restore", "post")]
+    [TestCase("ArchiveProject", "v1/projects/{id}/archive", "post")]
+    public void Run_ProjectWriteFunctions_ExposeExpectedRoutes(string functionName, string route, string verb)
+    {
+        var method = typeof(ListProjects).Assembly.GetTypes().Single(type => type.Name == functionName).GetMethod("Run")!;
+        var function = method.GetCustomAttribute<FunctionAttribute>();
+        var trigger = method.GetParameters().Select(parameter => parameter.GetCustomAttribute<HttpTriggerAttribute>()).Single(attribute => attribute is not null)!;
+
+        Assert.That(function!.Name, Is.EqualTo(functionName));
+        Assert.That(trigger.Route, Is.EqualTo(route));
+        Assert.That(trigger.Methods, Is.EquivalentTo(new[] { verb }));
+    }
+
     [TestCase("GetFocusTimeline", "v1/reports/focus-timeline")]
     [TestCase("ListProjects", "v1/projects")]
     [TestCase("GetProject", "v1/projects/{id}")]

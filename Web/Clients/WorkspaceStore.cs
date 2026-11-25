@@ -52,6 +52,7 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     }
 
     public bool RequiresRemoteReload => _remoteLoadFailed;
+    public string? WorkspaceRevision => _revision;
     public event Action? Changed;
     private TimeSpan _serverClockOffset;
 
@@ -640,11 +641,13 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                 return;
             }
 
+            Data.Projects = _remoteConflict.Workspace.Projects;
             _revision = _remoteConflict.Revision;
             _remoteConflict = null;
             await PersistRevisionAsync();
             await SetPendingSyncAsync(true);
             SetSyncState(WorkspaceSyncState.Saving, "Retrying your local draft against the latest revision.");
+            Changed?.Invoke();
         }
         finally
         {
@@ -754,6 +757,99 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
 
     public ProjectRecord? Project(string id) => Data.Projects.FirstOrDefault(p => p.Id == id);
     public TaskRecord? Task(string? id) => Data.Tasks.FirstOrDefault(t => t.Id == id);
+
+    public async Task<ProjectWriteResponse> WriteProjectAsync(string projectId, Func<Task<ProjectWriteResponse>> write)
+    {
+        BindAccount();
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            var accountId = auth.Session.Sub ?? "local";
+
+            if (_clearedForDeletion || _invalidPendingDraft || _remoteLoadFailed || _pendingSync || _remoteConflict is not null)
+            {
+                throw new InvalidOperationException("Resolve the pending workspace save before changing a project.");
+            }
+
+            if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken) ||
+                !string.Equals(_storageAccountId, accountId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Sign in again before changing a project.");
+            }
+
+            var timerBaseline = WorkspaceCollectionManifest.Hash(new[] { Data.Timer });
+            var result = await write();
+
+            if (_clearedForDeletion || !string.Equals(accountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Your account changed while the project was being saved. Reload the original account to check it.");
+            }
+
+            if (!string.Equals(result.Project.Id, projectId, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The server returned a different project. Reload and try again.");
+            }
+
+            if (result.WorkspaceRevision is not null && (string.IsNullOrWhiteSpace(result.WorkspaceRevision) || result.Timer is null))
+            {
+                throw new InvalidDataException("The server returned an incomplete timer response. Reload and try again.");
+            }
+
+            var current = Project(projectId);
+
+            if (current is null)
+            {
+                Data.Projects.Add(result.Project);
+            }
+            else
+            {
+                current.Name = result.Project.Name;
+                current.Color = result.Project.Color;
+                current.CreatedAt = result.Project.CreatedAt;
+                current.IsArchived = result.Project.IsArchived;
+            }
+
+            if (result.WorkspaceRevision is not null)
+            {
+                _revision = result.WorkspaceRevision;
+
+                if (WorkspaceCollectionManifest.Hash(new[] { Data.Timer }) == timerBaseline)
+                {
+                    Data.Timer = result.Timer!;
+                }
+                else
+                {
+                    _pendingSync = true;
+                    SetSyncState(WorkspaceSyncState.Pending, "Your timer changed while the project was saved. Its local changes are waiting to sync.");
+                }
+            }
+
+            try
+            {
+                if (result.WorkspaceRevision is null)
+                {
+                    await PersistLocalAsync();
+                }
+                else
+                {
+                    await SetPendingSyncAsync(_pendingSync);
+                }
+            }
+            catch (JSException)
+            {
+                SetSyncState(WorkspaceSyncState.Failed, "The project was saved, but this browser could not update its local copy.");
+            }
+
+            Changed?.Invoke();
+
+            return result;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
 
     public async Task<CoachResponse?> AskCoachAsync(string prompt, string? conversationId, CancellationToken cancellationToken = default)
     {

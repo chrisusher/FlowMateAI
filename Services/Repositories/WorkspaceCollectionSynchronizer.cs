@@ -17,11 +17,14 @@ public sealed class WorkspaceCollectionSynchronizer(DatabaseContext database)
 
             try
             {
-                await SyncAsync(database.Projects, userId, workspace.Projects, item => item.Id,
-                    item => new WorkspaceProjectDocument
-                    {
-                        Project = item
-                    }, (document, item) => document.Project = item, cancellationToken);
+                if (!source.ProjectsAuthoritative)
+                {
+                    await SyncAsync(database.Projects, userId, workspace.Projects, item => item.Id,
+                        item => new WorkspaceProjectDocument
+                        {
+                            Project = item
+                        }, (document, item) => document.Project = item, cancellationToken);
+                }
                 await SyncAsync(database.Tasks, userId, workspace.Tasks, item => item.Id,
                     item => new WorkspaceTaskDocument
                     {

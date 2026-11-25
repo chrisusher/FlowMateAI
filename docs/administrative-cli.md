@@ -4,7 +4,7 @@ The `CLI` project provides explicit administrative operations. Running the AppHo
 
 ## Configuration
 
-The CLI loads `appsettings.json`, `appsettings.{Environment}.json`, CLI user secrets, and then environment variables. Environment variables take precedence. Copy `CLI/appsettings.example.json` to `CLI/appsettings.json` for local values, or use environment variables/user secrets for credentials. `CLI/appsettings.json` is not tracked.
+The CLI loads `appsettings.json`, the repository-root `.env.{Global:Environment}` file (if present), `appsettings.{Environment}.json`, CLI user secrets, and then environment variables. Later sources take precedence. The dotenv filename is selected from `Global:Environment` in `appsettings.json`; for example, `Local` selects `.env.Local`. The environment in the JSON filename is the .NET host environment. Copy `CLI/appsettings.example.json` to `CLI/appsettings.json` for local values, or use environment variables/user secrets for credentials. `CLI/appsettings.json` is not tracked.
 
 Cosmos settings use the same resolution as the API: `Database:AccountEndpoint` (or `Database:AccountName`) and `Database:Key`, with `ConnectionStrings:database` accepted as a fallback source for endpoint and key. `Database:DatabaseName` is optional; without it the CLI uses `flowmate-{Global:Environment}`. Blob cleanup requires `ConnectionStrings:Storage`.
 
@@ -73,3 +73,18 @@ dotnet run --project CLI -- user repair-workspace --user-id "auth0|abc123" --pla
 ```
 
 Omit `--planned-minutes` to migrate the storage representation without changing historical counts. Applying requires a new backup file; the command refuses to overwrite an existing file and uses the original Cosmos ETag to reject concurrent workspace changes. Keep the backup private because it contains the complete workspace. The workspace and derived records are separate writes, so failures can leave the latter partially updated; after checking the workspace and backup, rerun the command to regenerate them. Back up the Cosmos account independently before bulk administrative work. Reopen the app and check the relevant reporting period after repair. Unsynchronised browser drafts can conflict and must not be blindly used to overwrite the repaired workspace.
+
+## Cut over an account's projects
+
+New empty workspaces initialise the project container automatically. Before moving an existing account, resolve its pending browser drafts, back up the Cosmos account independently, and stop **all** old and new API instances, background workspace writers and browser writers for the entire copy and verification. A rolling deployment with old writers running is unsafe: an in-flight legacy projection synchronisation can overwrite project documents after cutover. Deploy the project-aware API, web client and MCP reader, provision the `Projects` container and MCP read permission, and require updated clients before resuming writes.
+
+Configure the intended Cosmos endpoint and `Database:DatabaseName` explicitly. Preview the exact account, check the printed endpoint, database, account and counts, then opt in to the write with a new backup path and confirmation that writers are stopped:
+
+```powershell
+dotnet run --project CLI -- migrations project-cutovers --user-id "auth0|abc123"
+dotnet run --project CLI -- migrations project-cutovers --user-id "auth0|abc123" --apply --writers-stopped --backup ./project-cutover-backup.json
+```
+
+The command refuses to overwrite different destination records or an existing backup, preserves the source workspace, and checks its ETag again before switching authority. The backup contains the full workspace and account identifier; store it privately and retain it separately. Partial copies can be retried with a new backup only if the source and destination still match. After applying, verify project order, names, archives, tasks, timer behaviour, reports and MCP access before resuming writers.
+
+For rollback, stop writers again and preserve the **current** workspace and project containers before any restore. The retained pre-cutover backup predates subsequent edits and must not be blindly written over them. Restore into an isolated database from the independent Cosmos backup, compare and reconcile all newer project and workspace changes, then use a separately reviewed recovery procedure before directing traffic to the restored data. Do not resume old clients against a cut-over account.

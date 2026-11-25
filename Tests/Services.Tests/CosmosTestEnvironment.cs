@@ -5,16 +5,6 @@ using Testcontainers.CosmosDb;
 
 namespace Services.Tests;
 
-[SetUpFixture]
-public sealed class CosmosTestSetup
-{
-    [OneTimeSetUp]
-    public Task StartCosmosEmulatorAsync() => CosmosTestEnvironment.StartAsync();
-
-    [OneTimeTearDown]
-    public Task StopCosmosEmulatorAsync() => CosmosTestEnvironment.DisposeAsync().AsTask();
-}
-
 internal static class CosmosTestEnvironment
 {
     private const string EmulatorImage = "mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview";
@@ -32,7 +22,7 @@ internal static class CosmosTestEnvironment
             await DisposeAsync();
 
             throw new InvalidOperationException(
-                "Services.Tests requires Docker to start the Cosmos DB emulator. " +
+                "Cosmos-backed tests require Docker to start the Cosmos DB emulator. " +
                 "Install Docker Desktop or start a Docker-compatible runtime before running the tests.",
                 exception);
         }

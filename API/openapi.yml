@@ -93,7 +93,7 @@ paths:
     get:
       operationId: listProjects
       summary: List the signed-in user's projects
-      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      description: Reads project documents after account cutover; legacy accounts use the workspace until migrated.
       security:
         - bearerAuth: []
       responses:
@@ -108,6 +108,31 @@ paths:
                   additionalProperties: true
         '401':
           $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createProject
+      summary: Create a project
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, name, color, createdAt]
+              properties:
+                id: { type: string }
+                name: { type: string, maxLength: 80 }
+                color: { type: string, example: '#5b68e8' }
+                createdAt: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Project and record revision. Reuse the same ID and request on retry.
+        '400': { description: Invalid request }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { description: Active project limit reached }
+        '409': { description: Conflicting project or slot reservation }
+        '503': { description: Project storage has not been cut over }
   /v1/projects/{id}:
     get:
       operationId: getProject
@@ -123,6 +148,10 @@ paths:
       responses:
         '200':
           description: The requested record.
+          headers:
+            ETag:
+              description: Project record revision after cutover.
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -136,6 +165,89 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+    put:
+      operationId: renameProject
+      summary: Rename a project
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, revision]
+              properties:
+                name: { type: string, maxLength: 80 }
+                revision: { type: string }
+      responses:
+        '200': { description: Updated project and record revision }
+        '400': { description: Invalid request }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Project not found }
+        '409': { description: Stale revision or unavailable project }
+        '503': { description: Project storage has not been cut over }
+  /v1/projects/{id}/archive:
+    post:
+      operationId: archiveProject
+      summary: Archive a project and clear any idle timer selection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision, workspaceRevision]
+              properties:
+                revision: { type: string }
+                workspaceRevision: { type: string }
+      responses:
+        '200': { description: Archived project, project revision, workspace revision and timer }
+        '400': { description: Invalid request }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Project not found }
+        '409': { description: Stale revision or active timer }
+        '503': { description: Project storage has not been cut over }
+  /v1/projects/{id}/restore:
+    post:
+      operationId: restoreProject
+      summary: Restore an archived project
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision]
+              properties:
+                revision: { type: string }
+      responses:
+        '200': { description: Restored project and record revision }
+        '400': { description: Invalid request }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { description: Active project limit reached }
+        '404': { description: Project not found }
+        '409': { description: Stale revision or unavailable project }
+        '503': { description: Project storage has not been cut over }
   /v1/tasks:
     get:
       operationId: listTasks

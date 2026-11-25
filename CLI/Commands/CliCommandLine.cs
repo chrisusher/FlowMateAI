@@ -1,5 +1,6 @@
 using System.CommandLine;
 using CLI.Commands.Database;
+using CLI.Commands.Migrations;
 using CLI.Commands.User;
 using Shared.Exceptions;
 
@@ -11,6 +12,7 @@ internal static class CliCommandLine
     {
         var root = new RootCommand("FlowMate administrative CLI");
         root.Subcommands.Add(DatabaseCommand.Create());
+        root.Subcommands.Add(MigrationsCommand.Create());
         root.Subcommands.Add(UserCommand.Create());
 
         return root;

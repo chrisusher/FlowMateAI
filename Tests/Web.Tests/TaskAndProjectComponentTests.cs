@@ -1,3 +1,7 @@
+using System.Net;
+using System.Net.Http.Json;
+using ChrisUsher.Core.Shared;
+using Shared.Contracts;
 using Shared.Enums;
 using Web.Components.Features.Editors;
 using Web.Components.Features.Projects;
@@ -438,20 +442,23 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void ProjectEditorDialogTrimsNamesPersistsAndCancels()
+    public async Task SaveProject_ValidName_CreatesProjectAndSupportsCancel()
     {
+        await SignInAsync();
+        UseProjectApi();
         var cut = Render<ProjectEditorDialog>();
-        Projects.AddProject();
+        await Projects.AddProject();
         cut.WaitForElement("[role=dialog]");
         Assert.That(cut.Find("button[type=submit]").HasAttribute("disabled"), Is.True);
         cut.Find("input").Change("  Project two  ");
-        cut.Find("form").Submit();
+        await cut.InvokeAsync(Projects.SaveProject);
         Assert.That(Store.Data.Projects[1].Name, Is.EqualTo("Project two"));
         Assert.That(cut.FindAll("[role=dialog]"), Is.Empty);
-        Projects.AddProject();
+        await Projects.AddProject();
         cut.WaitForElement(".dialog-close").Click();
         Assert.That(Store.Data.Projects.Count, Is.EqualTo(2));
         Assert.That(Projects.DialogOpen, Is.False);
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/projects" }));
     }
 
     [Test]
@@ -468,35 +475,126 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ProjectCanBeRenamedWithoutChangingTasksOrFocusHistory()
+    public async Task SaveProject_Rename_PreservesTasksAndFocusHistory()
     {
+        await SignInAsync();
+        UseProjectApi();
         AddSession(20);
         var cut = Render<ProjectEditorDialog>();
         Projects.EditProject(Project);
         cut.WaitForElement("input").Change("  Client work  ");
-        cut.Find("form").Submit();
+        await cut.InvokeAsync(Projects.SaveProject);
 
         Assert.That(Project.Name, Is.EqualTo("Client work"));
         Assert.That(Store.Data.Tasks.Select(task => task.ProjectId), Is.All.EqualTo(Project.Id));
         Assert.That(Store.Data.Sessions.Single().ProjectId, Is.EqualTo(Project.Id));
         Assert.That(cut.FindAll("[role=dialog]"), Is.Empty);
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/projects/project-one", "/api/v1/projects/project-one" }));
     }
 
     [Test]
-    public async Task ProjectCanBeArchivedAndRestoredWithoutLosingRelatedRecords()
+    public async Task SaveProject_FailedCreate_RetainsDraftAndReusesId()
     {
+        await SignInAsync();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempts = new List<ProjectCreateRequest>();
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            var input = (await request.Content!.ReadFromJsonAsync<ProjectCreateRequest>(SharedCommon.JsonOptions, cancellationToken))!;
+            attempts.Add(input);
+
+            if (attempts.Count == 1)
+            {
+                started.SetResult();
+                await finish.Task.WaitAsync(cancellationToken);
+
+                return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = JsonContent.Create(new ApiError("unavailable", "Try again."), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = JsonContent.Create(new ProjectWriteResponse(new ProjectRecord
+                {
+                    Id = input.Id!,
+                    Name = input.Name!,
+                    Color = input.Color!,
+                    CreatedAt = input.CreatedAt!.Value
+                }, "revision"), options: SharedCommon.JsonOptions)
+            };
+        };
+        await Projects.AddProject();
+        Projects.DraftName = "New project";
+        var saving = Projects.SaveProject();
+        await started.Task;
+        Assert.That(Store.Data.Projects.Count, Is.EqualTo(1));
+        Assert.That(Projects.Saving, Is.True);
+        finish.SetResult();
+        await saving;
+        Assert.That(Projects.DialogOpen, Is.True);
+        Assert.That(Projects.ValidationMessage, Is.EqualTo("Try again."));
+        Assert.That(Store.Data.Projects.Count, Is.EqualTo(1));
+
+        await Projects.SaveProject();
+        Assert.That(Store.Data.Projects.Count, Is.EqualTo(2));
+        Assert.That(attempts[1].Id, Is.EqualTo(attempts[0].Id));
+        Assert.That(attempts[1].CreatedAt, Is.EqualTo(attempts[0].CreatedAt));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/projects", "/api/v1/projects" }));
+    }
+
+    [Test]
+    public async Task SaveProject_RemoteProjectChanged_KeepsRenameDraft()
+    {
+        await SignInAsync();
+        Api.Respond = (_, _) =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new ProjectRecord
+                {
+                    Id = Project.Id,
+                    Name = "Changed elsewhere",
+                    Color = Project.Color,
+                    CreatedAt = Project.CreatedAt
+                }, options: SharedCommon.JsonOptions)
+            };
+            response.Headers.TryAddWithoutValidation("ETag", "\"revision\"");
+
+            return Task.FromResult(response);
+        };
+        Projects.EditProject(Project);
+        Projects.DraftName = "My draft";
+
+        await Projects.SaveProject();
+
+        Assert.That(Projects.DialogOpen, Is.True);
+        Assert.That(Projects.DraftName, Is.EqualTo("My draft"));
+        Assert.That(Projects.ValidationMessage, Does.Contain("changed on another device"));
+        Assert.That(Project.Name, Is.EqualTo("Personal"));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/projects/project-one" }));
+    }
+
+    [Test]
+    public async Task ArchiveAndRestore_ProjectWithHistory_PreservesRelatedRecords()
+    {
+        await SignInAsync();
+        UseProjectApi();
         AddSession(20);
+        await Store.SaveAsync();
         var cut = Render<ProjectsPage>();
         Projects.RequestArchive(Project);
         cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Archive Personal?")));
-        cut.Find(".dialog-actions .timer-primary").Click();
+        await cut.InvokeAsync(Projects.ConfirmArchiveAsync);
 
         Assert.That(Project.IsArchived, Is.True);
         Assert.That(Store.Data.Tasks.Count(task => task.ProjectId == Project.Id), Is.EqualTo(2));
         Assert.That(Store.Data.Sessions.Single().ProjectId, Is.EqualTo(Project.Id));
         Assert.That(cut.Find(".archived-projects").TextContent, Does.Contain("20 min focused"));
 
-        cut.Find(".archived-projects button").Click();
+        await cut.InvokeAsync(() => Projects.RestoreProjectAsync(Project));
         Assert.That(Project.IsArchived, Is.False);
         Assert.That(cut.FindAll(".archived-projects").Count, Is.Zero);
     }
@@ -515,16 +613,107 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ArchivingSelectedProjectClearsIdleTimerSelection()
+    public async Task ConfirmArchiveAsync_IdleSelectedProject_ClearsTimerSelection()
     {
+        await SignInAsync();
+        UseProjectApi();
         Store.Data.Timer.TaskId = PlannedTask.Id;
         Store.Data.Timer.ProjectId = Project.Id;
+        await Store.SaveAsync();
 
         Projects.RequestArchive(Project);
         await Projects.ConfirmArchiveAsync();
 
         Assert.That(Store.Data.Timer.TaskId, Is.Null);
         Assert.That(Store.Data.Timer.ProjectId, Is.Empty);
+    }
+
+    [Test]
+    public async Task ConfirmArchiveAsync_RejectedRequest_PreservesProjectAndTimer()
+    {
+        await SignInAsync();
+        UseProjectApi();
+        Store.Data.Timer.ProjectId = Project.Id;
+        Store.Data.Timer.TaskId = PlannedTask.Id;
+        await Store.SaveAsync();
+        Api.Paths.Clear();
+        Api.Respond = (request, _) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(Project, options: SharedCommon.JsonOptions)
+                };
+                response.Headers.TryAddWithoutValidation("ETag", "\"revision\"");
+
+                return Task.FromResult(response);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = JsonContent.Create(new ApiError("timer_active", "Finish the timer first."), options: SharedCommon.JsonOptions)
+            });
+        };
+        Projects.RequestArchive(Project);
+
+        await Projects.ConfirmArchiveAsync();
+
+        Assert.That(Project.IsArchived, Is.False);
+        Assert.That(Store.Data.Timer.ProjectId, Is.EqualTo(Project.Id));
+        Assert.That(Store.Data.Timer.TaskId, Is.EqualTo(PlannedTask.Id));
+        Assert.That(Projects.ArchiveProjectId, Is.EqualTo(Project.Id));
+        Assert.That(Projects.ActionMessage, Is.EqualTo("Finish the timer first."));
+        Assert.That(Api.Paths, Is.EqualTo(new[] { "/api/v1/projects/project-one", "/api/v1/projects/project-one/archive" }));
+    }
+
+    [Test]
+    public async Task ConfirmArchiveAsync_ConcurrentTimerChange_PreservesTimerDraft()
+    {
+        await SignInAsync();
+        UseProjectApi();
+        await Store.SaveAsync();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            if (request.Method == HttpMethod.Get)
+            {
+                var read = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(Project, options: SharedCommon.JsonOptions)
+                };
+                read.Headers.TryAddWithoutValidation("ETag", "\"revision\"");
+
+                return read;
+            }
+
+            entered.SetResult();
+            await finish.Task.WaitAsync(cancellationToken);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new ProjectWriteResponse(new ProjectRecord
+                {
+                    Id = Project.Id,
+                    Name = Project.Name,
+                    Color = Project.Color,
+                    CreatedAt = Project.CreatedAt,
+                    IsArchived = true
+                }, "\"new-revision\"", "workspace-revision-2", new TimerSnapshot()), options: SharedCommon.JsonOptions)
+            };
+        };
+        Projects.RequestArchive(Project);
+        var archive = Projects.ConfirmArchiveAsync();
+        await entered.Task;
+        Store.Data.Timer.Phase = TimerPhase.Focus;
+        Store.Data.Timer.ProjectId = Project.Id;
+        finish.SetResult();
+        await archive;
+
+        Assert.That(Project.IsArchived, Is.True);
+        Assert.That(Store.Data.Timer.Phase, Is.EqualTo(TimerPhase.Focus));
+        Assert.That(Store.SyncState, Is.EqualTo(WorkspaceSyncState.Pending));
     }
 
     [Test]
@@ -543,9 +732,12 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public async Task ArchivedProjectFreesAnActiveSlotAndInvalidNamesAreRejected()
+    public async Task SaveProject_ArchivedProjectAndInvalidNames_EnforcesLimitAndValidation()
     {
+        await SignInAsync();
+        UseProjectApi();
         Store.Data.Projects.AddRange(Enumerable.Range(2, 2).Select(i => new ProjectRecord { Id = $"project-{i}", Name = $"Project {i}" }));
+        await Store.SaveAsync();
         Projects.RequestArchive(Project);
         await Projects.ConfirmArchiveAsync();
         await Projects.AddProject();
@@ -590,5 +782,98 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         Assert.That(Store.Data.Projects.Count, Is.EqualTo(limit));
         Assert.That(Projects.DialogOpen, Is.False);
         Assert.That(Navigation.Uri, Does.EndWith("/pricing"));
+    }
+
+    private void UseProjectApi()
+    {
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+
+            if (path == "/api/v1/workspace")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(Store.Data, "workspace-revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            if (request.Method == HttpMethod.Get)
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(Project, options: SharedCommon.JsonOptions)
+                };
+                response.Headers.TryAddWithoutValidation("ETag", "\"project-revision\"");
+
+                return response;
+            }
+
+            ProjectRecord saved;
+
+            if (path.EndsWith("/archive", StringComparison.Ordinal))
+            {
+                var timer = System.Text.Json.JsonSerializer.Deserialize<TimerSnapshot>(
+                    System.Text.Json.JsonSerializer.Serialize(Store.Data.Timer, SharedCommon.JsonOptions), SharedCommon.JsonOptions)!;
+
+                if (timer.Phase == TimerPhase.Idle && timer.ProjectId == Project.Id)
+                {
+                    timer.TaskId = null;
+                    timer.ProjectId = "";
+                }
+
+                saved = new ProjectRecord
+                {
+                    Id = Project.Id,
+                    Name = Project.Name,
+                    Color = Project.Color,
+                    CreatedAt = Project.CreatedAt,
+                    IsArchived = true
+                };
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new ProjectWriteResponse(saved, "\"new-revision\"", "workspace-revision-2", timer), options: SharedCommon.JsonOptions)
+                };
+            }
+            else if (path.EndsWith("/restore", StringComparison.Ordinal))
+            {
+                saved = new ProjectRecord
+                {
+                    Id = Project.Id,
+                    Name = Project.Name,
+                    Color = Project.Color,
+                    CreatedAt = Project.CreatedAt,
+                    IsArchived = false
+                };
+            }
+            else if (request.Method == HttpMethod.Post)
+            {
+                var input = await request.Content!.ReadFromJsonAsync<ProjectCreateRequest>(SharedCommon.JsonOptions, cancellationToken);
+                saved = new ProjectRecord
+                {
+                    Id = input!.Id!,
+                    Name = input.Name!,
+                    Color = input.Color!,
+                    CreatedAt = input.CreatedAt!.Value
+                };
+            }
+            else
+            {
+                var input = await request.Content!.ReadFromJsonAsync<ProjectRenameRequest>(SharedCommon.JsonOptions, cancellationToken);
+                saved = new ProjectRecord
+                {
+                    Id = Project.Id,
+                    Name = input!.Name!,
+                    Color = Project.Color,
+                    CreatedAt = Project.CreatedAt
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new ProjectWriteResponse(saved, "\"new-revision\""), options: SharedCommon.JsonOptions)
+            };
+        };
     }
 }

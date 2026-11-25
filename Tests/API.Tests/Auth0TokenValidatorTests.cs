@@ -16,6 +16,17 @@ using Shared.Contracts;
 using Azure.Core.Serialization;
 using Services.Users;
 using Services.Repositories;
+using API.Functions.V1.Projects;
+using ChrisUsher.Core.Shared;
+using Services.ApiRequests;
+using Services.Workspaces;
+using Shared.Enums;
+using Shared.Models;
+using Services.Database;
+using Microsoft.EntityFrameworkCore;
+using API.Functions.V1.Projects.Archive;
+using API.Functions.V1.Projects.Restore;
+using Services.Tests;
 
 namespace API.Tests;
 
@@ -230,6 +241,111 @@ public sealed class Auth0TokenValidatorTests
         Assert.That(await markers.TryBeginOperationAsync(result.UserId!, "late-request"), Is.False);
         await AccountOperation.CompleteAsync(request.FunctionContext);
         Assert.That(await markers.MarkAsync(result.UserId!), Is.False);
+    }
+
+    [Test]
+    public async Task Run_AuthenticatedCreate_ReturnsReadableProjectResponse()
+    {
+        using var key = RSA.Create(2048);
+        var projects = new TestProjects();
+        var function = new CreateProject(CreateValidator(key), new TestUserService("person@example.test"), new AllowRequests(), projects);
+        var input = new ProjectCreateRequest("project", "Project", "#112233", DateTimeOffset.UtcNow);
+        var request = new WritableRequest($"Bearer {CreateToken(key)}", JsonSerializer.Serialize(input, SharedCommon.JsonOptions));
+
+        var response = await function.Run(request, CancellationToken.None);
+        response.Body.Position = 0;
+        var result = await JsonSerializer.DeserializeAsync<ProjectWriteResponse>(response.Body, SharedCommon.JsonOptions);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        Assert.That(projects.Owner, Is.EqualTo("auth0|customer-1"));
+        Assert.That(result!.Project.Id, Is.EqualTo("project"));
+        Assert.That(result.Revision, Is.EqualTo("revision"));
+        await AccountOperation.CompleteAsync(request.FunctionContext);
+    }
+
+    [Test]
+    public async Task Run_MissingAuthentication_RejectsProjectWrite()
+    {
+        using var key = RSA.Create(2048);
+        var projects = new TestProjects();
+        var function = new CreateProject(CreateValidator(key), new TestUserService("person@example.test"), new AllowRequests(), projects);
+        var request = new WritableRequest("", "{}");
+
+        var response = await function.Run(request, CancellationToken.None);
+        response.Body.Position = 0;
+        var error = await JsonSerializer.DeserializeAsync<ApiError>(response.Body, SharedCommon.JsonOptions);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        Assert.That(error!.Code, Is.EqualTo("unauthorized"));
+        Assert.That(projects.Owner, Is.Null);
+    }
+
+    [Test]
+    public async Task Run_AuthenticatedProjectLifecycle_PersistsChangesAndIsolatesAccounts()
+    {
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
+        const string userId = "auth0|customer-1";
+        var workspaces = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
+        await workspaces.SaveAsync(userId, new WorkspaceSnapshot(), null);
+        var billing = new TestBilling();
+        var service = new ProjectWriteService(new ProjectWriteRepository(database), billing, new ProjectArchiveRepository(database));
+        using var key = RSA.Create(2048);
+        var validator = CreateValidator(key);
+        var users = new TestUserService("person@example.test");
+        var limiter = new AllowRequests();
+        var authorization = $"Bearer {CreateToken(key)}";
+
+        var create = new CreateProject(validator, users, limiter, service);
+        var createRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectCreateRequest("project", "Client work", "#112233", DateTimeOffset.UtcNow), SharedCommon.JsonOptions));
+        var created = await create.Run(createRequest, CancellationToken.None);
+        Assert.That(created.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var createdBody = await ReadResponseAsync<ProjectWriteResponse>(created);
+        await AccountOperation.CompleteAsync(createRequest.FunctionContext);
+
+        var rename = new RenameProject(validator, users, limiter, service);
+        var renameRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectRenameRequest("Renamed", createdBody.Revision), SharedCommon.JsonOptions));
+        var renamed = await rename.Run(renameRequest, "project", CancellationToken.None);
+        Assert.That(renamed.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var renamedBody = await ReadResponseAsync<ProjectWriteResponse>(renamed);
+        Assert.That(renamedBody.Project.Name, Is.EqualTo("Renamed"));
+        await AccountOperation.CompleteAsync(renameRequest.FunctionContext);
+
+        var staleRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectRenameRequest("Stale", createdBody.Revision), SharedCommon.JsonOptions));
+        var stale = await rename.Run(staleRequest, "project", CancellationToken.None);
+        Assert.That(stale.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        await AccountOperation.CompleteAsync(staleRequest.FunctionContext);
+
+        var currentWorkspace = await database.Workspaces.AsNoTracking().SingleAsync(item => item.UserId == userId && item.Id == "workspace");
+        var archive = new ArchiveProject(validator, users, limiter, service);
+        var archiveRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectArchiveRequest(renamedBody.Revision, currentWorkspace.ETag), SharedCommon.JsonOptions));
+        var archived = await archive.Run(archiveRequest, "project", CancellationToken.None);
+        Assert.That(archived.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var archivedBody = await ReadResponseAsync<ProjectWriteResponse>(archived);
+        Assert.That(archivedBody.Project.IsArchived, Is.True);
+        Assert.That(archivedBody.WorkspaceRevision, Is.Not.Empty);
+        Assert.That(archivedBody.Timer, Is.Not.Null);
+        await AccountOperation.CompleteAsync(archiveRequest.FunctionContext);
+
+        var restore = new RestoreProject(validator, users, limiter, service);
+        var restoreRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new ProjectStateRequest(archivedBody.Revision), SharedCommon.JsonOptions));
+        var restored = await restore.Run(restoreRequest, "project", CancellationToken.None);
+        Assert.That(restored.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That((await ReadResponseAsync<ProjectWriteResponse>(restored)).Project.IsArchived, Is.False);
+        await AccountOperation.CompleteAsync(restoreRequest.FunctionContext);
+
+        database.ChangeTracker.Clear();
+        var reloaded = await workspaces.GetAsync(userId);
+        Assert.That(reloaded!.Workspace!.Projects.Single().Name, Is.EqualTo("Renamed"));
+        Assert.That(reloaded.Workspace.Projects.Single().IsArchived, Is.False);
+        Assert.That(await new WorkspaceItemsRepository(database).GetProjectAsync("other-account", "project"), Is.Null);
+    }
+
+    private static async Task<T> ReadResponseAsync<T>(HttpResponseData response)
+    {
+        response.Body.Position = 0;
+
+        return (await JsonSerializer.DeserializeAsync<T>(response.Body, SharedCommon.JsonOptions))!;
     }
 
     [Test]
@@ -497,6 +613,69 @@ public sealed class Auth0TokenValidatorTests
         public override HttpHeadersCollection Headers { get; set; } = new();
         public override Stream Body { get; set; } = new MemoryStream();
         public override HttpCookies Cookies => null!;
+    }
+
+    private sealed class WritableRequest : HttpRequestData
+    {
+        public WritableRequest(string authorization, string body) : base(new TestFunctionContext(new UnmarkedAccounts()))
+        {
+            if (!string.IsNullOrEmpty(authorization))
+            {
+                Headers.Add("Authorization", authorization);
+            }
+            Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+        }
+
+        public override Stream Body { get; }
+        public override HttpHeadersCollection Headers { get; } = new();
+        public override IReadOnlyCollection<IHttpCookie> Cookies => Array.Empty<IHttpCookie>();
+        public override Uri Url => new("https://api.flowmate.test/v1/projects");
+        public override IEnumerable<ClaimsIdentity> Identities => Array.Empty<ClaimsIdentity>();
+        public override string Method => "POST";
+        public override HttpResponseData CreateResponse() => new WritableResponse(FunctionContext);
+    }
+
+    private sealed class WritableResponse(FunctionContext context) : HttpResponseData(context)
+    {
+        public override HttpStatusCode StatusCode { get; set; }
+        public override HttpHeadersCollection Headers { get; set; } = new();
+        public override Stream Body { get; set; } = new MemoryStream();
+        public override HttpCookies Cookies => null!;
+    }
+
+    private sealed class AllowRequests : IAuthenticatedApiRateLimiter
+    {
+        public Task<ApiRateLimitAdmission> AdmitAsync(string userId, AuthenticatedApiRateLimitScope scope, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ApiRateLimitAdmission(true, 0));
+    }
+
+    private sealed class TestProjects : IProjectWriteService
+    {
+        public string? Owner { get; private set; }
+
+        public Task<ProjectWriteResult> CreateAsync(string userId, ProjectRecord project, CancellationToken cancellationToken = default)
+        {
+            Owner = userId;
+
+            return Task.FromResult(new ProjectWriteResult(project, "revision", ProjectChangeRejection.None));
+        }
+
+        public Task<ProjectWriteResult> RenameAsync(string userId, string id, string? name, string revision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ProjectWriteResult> RestoreAsync(string userId, string id, string revision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ProjectWriteResult> ArchiveAsync(string userId, string id, string revision, string workspaceRevision, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class TestBilling : IBillingRepository
+    {
+        public Task<BillingEntitlementDocument> GetEntitlementAsync(string userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new BillingEntitlementDocument
+            {
+                UserId = userId
+            });
+        public Task SaveEntitlementAsync(BillingEntitlementDocument entitlement, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> UpdateExistingEntitlementAsync(string userId, Action<BillingEntitlementDocument> update, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> HasProcessedEventAsync(string eventId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task MarkEventProcessedAsync(string eventId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class TestFunctionContext(IAccountDeletionMarkerRepository markers) : FunctionContext
