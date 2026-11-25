@@ -105,7 +105,7 @@ public class DatabaseContext : DbContext
                 workspace.Property(x => x.FirstRunState).HasConversion<string>();
                 workspace.OwnsMany(x => x.Projects);
                 workspace.OwnsMany(x => x.Tasks, task => task.Property(x => x.Priority).HasConversion<string>());
-                workspace.OwnsMany(x => x.Sessions);
+                workspace.OwnsMany(x => x.Sessions, session => session.OwnsMany(x => x.Intervals));
                 workspace.OwnsMany(x => x.Conversations, conversation => conversation.OwnsMany(x => x.Messages, message => message.Property(x => x.Role).HasConversion<string>()));
                 workspace.OwnsOne(x => x.Timer, timer =>
                 {
@@ -122,7 +122,7 @@ public class DatabaseContext : DbContext
             entity.HasPartitionKey(x => x.UserId);
             entity.OwnsOne(x => x.Project);
             entity.OwnsOne(x => x.Task, task => task.Property(x => x.Priority).HasConversion<string>());
-            entity.OwnsOne(x => x.Focus);
+            entity.OwnsOne(x => x.Focus, focus => focus.OwnsMany(x => x.Intervals));
             entity.OwnsOne(x => x.Conversation, conversation => conversation.OwnsMany(x => x.Messages, message => message.Property(x => x.Role).HasConversion<string>()));
             entity.OwnsOne(x => x.Timer, timer =>
             {
@@ -137,7 +137,7 @@ public class DatabaseContext : DbContext
         ConfigureWorkspaceItem<WorkspaceConversationDocument>(modelBuilder, "Conversations");
         modelBuilder.Entity<WorkspaceProjectDocument>().OwnsOne(x => x.Project);
         modelBuilder.Entity<WorkspaceTaskDocument>().OwnsOne(x => x.Task, task => task.Property(x => x.Priority).HasConversion<string>());
-        modelBuilder.Entity<WorkspaceSessionDocument>().OwnsOne(x => x.Session);
+        modelBuilder.Entity<WorkspaceSessionDocument>().OwnsOne(x => x.Session, session => session.OwnsMany(x => x.Intervals));
         modelBuilder.Entity<WorkspaceConversationDocument>().OwnsOne(x => x.Conversation, conversation => conversation.OwnsMany(x => x.Messages, message => message.Property(x => x.Role).HasConversion<string>()));
     }
 

@@ -12,6 +12,7 @@ public sealed class FocusSessionRecord
     public int FocusMinutes { get; set; }
     public double? FocusSeconds { get; set; }
     public int? PlannedSeconds { get; set; }
+    public List<FocusIntervalRecord> Intervals { get; set; } = [];
 
     [JsonIgnore]
     public double ElapsedSeconds => FocusSeconds ?? FocusMinutes * 60d;

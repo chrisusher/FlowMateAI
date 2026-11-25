@@ -976,6 +976,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                     session.EndedAt = segmentEnd;
                     session.FocusSeconds = session.ElapsedSeconds + seconds;
                     session.FocusMinutes = (int)(session.ElapsedSeconds / 60);
+                    session.Intervals.Add(new FocusIntervalRecord
+                    {
+                        StartedAt = cursor,
+                        EndedAt = segmentEnd
+                    });
                 }
                 else
                 {
@@ -987,6 +992,11 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                         FocusSeconds = seconds,
                         PlannedSeconds = plannedSeconds,
                         FocusMinutes = (int)(seconds / 60),
+                        Intervals = [new FocusIntervalRecord
+                        {
+                            StartedAt = cursor,
+                            EndedAt = segmentEnd
+                        }],
                         TaskId = taskId,
                         ProjectId = projectId
                     });

@@ -54,6 +54,8 @@ internal static class WorkspaceRequestValidator
                 !HasLength(session.TaskId, 0, 128) ||
                 session.EndedAt < session.StartedAt || session.FocusMinutes is < 0 or > 1440 ||
                 (session.FocusSeconds is { } seconds && (!double.IsFinite(seconds) || seconds < 0 || seconds > 86_400)) ||
+                !Bounded(session.Intervals, 101) || !ValidIntervals(session.Intervals) ||
+                session.Intervals.Any(interval => interval.StartedAt < session.StartedAt || interval.EndedAt > session.EndedAt) ||
                 session.PlannedSeconds is <= 0 or > 86_400))
         {
             return "Workspace records contain invalid fields or references.";
