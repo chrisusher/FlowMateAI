@@ -1,0 +1,14 @@
+.timeline-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1.5rem; margin: 1.5rem 0; }
+.timeline-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.timeline-heading h2 { margin: 0; }
+.timeline-heading p, .timeline-zone { color: var(--muted); font-size: .875rem; }
+.timeline-controls { display: flex; align-items: center; gap: .75rem; }
+.timeline-scroll { overflow-x: auto; }
+.timeline-grid { min-width: 700px; }
+.timeline-axis, .timeline-day { display: grid; grid-template-columns: 110px 1fr; gap: .75rem; align-items: center; }
+.timeline-hours { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); }
+.timeline-day { margin-top: .5rem; }
+.timeline-day-label { font-size: .85rem; }
+.timeline-track { position: relative; height: 30px; border-radius: 4px; background: repeating-linear-gradient(to right, color-mix(in srgb, var(--surface) 94%, var(--text)) 0, color-mix(in srgb, var(--surface) 94%, var(--text)) calc(16.666% - 1px), color-mix(in srgb, var(--surface) 85%, var(--text)) calc(16.666% - 1px), color-mix(in srgb, var(--surface) 85%, var(--text)) 16.666%); }
+.timeline-block { position: absolute; top: 4px; height: 22px; border-radius: 3px; min-width: 3px; }
+.timeline-block:focus { outline: 3px solid var(--text); outline-offset: 2px; z-index: 1; }

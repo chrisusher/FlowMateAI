@@ -60,6 +60,7 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         }
 
         request.Workspace.Plan = plan;
+        PreserveSessionLabels(current, request.Workspace);
 
         try
         {
@@ -78,6 +79,48 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         catch (WorkspaceSaveConflictException)
         {
             return new(null, WorkspaceSaveErrorCode.RevisionConflict, "This workspace changed on another device. Reload it and try again.");
+        }
+    }
+
+    private static void PreserveSessionLabels(WorkspaceSnapshot current, WorkspaceSnapshot requested)
+    {
+        var previousSessions = current.Sessions.ToDictionary(session => session.Id, StringComparer.Ordinal);
+        var projects = current.Projects.Concat(requested.Projects).GroupBy(project => project.Id).ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        var tasks = current.Tasks.Concat(requested.Tasks).GroupBy(task => task.Id).ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        var requestedProjectIds = requested.Projects.Select(project => project.Id).ToHashSet(StringComparer.Ordinal);
+        var requestedTaskIds = requested.Tasks.Select(task => task.Id).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var session in requested.Sessions)
+        {
+            previousSessions.TryGetValue(session.Id, out var previous);
+            projects.TryGetValue(session.ProjectId, out var project);
+            TaskRecord? task = null;
+
+            if (session.TaskId is not null)
+            {
+                tasks.TryGetValue(session.TaskId, out task);
+            }
+
+            if (session.Intervals.Count == 0 && previous?.Intervals is { Count: > 0 } &&
+                session.StartedAt == previous.StartedAt && session.EndedAt == previous.EndedAt)
+            {
+                session.Intervals = previous.Intervals;
+            }
+
+            session.ProjectName ??= previous?.ProjectName;
+            session.ProjectColour ??= previous?.ProjectColour;
+            session.TaskName ??= previous?.TaskName;
+
+            if (previous is null || !requestedProjectIds.Contains(session.ProjectId))
+            {
+                session.ProjectName ??= project?.Name;
+                session.ProjectColour ??= project?.Color;
+            }
+
+            if (session.TaskId is not null && (previous is null || !requestedTaskIds.Contains(session.TaskId)))
+            {
+                session.TaskName ??= task?.Title;
+            }
         }
     }
 

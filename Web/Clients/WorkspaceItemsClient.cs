@@ -1,5 +1,8 @@
 using System.Net.Http.Headers;
 using ChrisUsher.Core.Shared;
+using Shared.Contracts;
+using System.Globalization;
+using System.Text.Json;
 
 namespace Web.Clients;
 
@@ -14,6 +17,17 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
     public Task<TaskRecord?> GetTaskAsync(string id, CancellationToken cancellationToken = default) => GetAsync<TaskRecord>("tasks", id, cancellationToken);
     public Task<FocusSessionRecord?> GetSessionAsync(string id, CancellationToken cancellationToken = default) => GetAsync<FocusSessionRecord>("sessions", id, cancellationToken);
     public Task<ConversationRecord?> GetConversationAsync(string id, CancellationToken cancellationToken = default) => GetAsync<ConversationRecord>("conversations", id, cancellationToken);
+
+    public async Task<FocusTimeline> GetFocusTimelineAsync(DateOnly? date = null, CancellationToken cancellationToken = default)
+    {
+        var query = date is null ? "" : $"?date={date.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}";
+        using var request = CreateRequest($"api/v1/reports/focus-timeline{query}");
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<FocusTimeline>(new JsonSerializerOptions(JsonSerializerDefaults.Web), cancellationToken)
+            ?? throw new InvalidDataException("The server returned an empty timeline response.");
+    }
 
     private async Task<List<T>> ListAsync<T>(string collection, CancellationToken cancellationToken)
     {

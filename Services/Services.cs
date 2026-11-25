@@ -141,6 +141,7 @@ public static class Services
         services.AddScoped<IUserDataResetService, UserDataResetService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IFocusTimelineService, FocusTimelineService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
         services.AddScoped<IAuthenticatedApiRateLimiter, AuthenticatedApiRateLimiterService>();
         #endregion
@@ -174,6 +175,7 @@ public static class Services
         services.AddSingleton(client);
         services.AddScoped<IWorkspaceReportRepository, WorkspaceReportRepository>();
         services.AddScoped<IWorkspaceReportService, WorkspaceReportService>();
+        services.AddScoped<IFocusTimelineService, FocusTimelineService>();
         services.AddScoped<IMcpCredentialRepository, McpCredentialRepository>();
         services.AddScoped<IMcpCredentialService, McpCredentialService>();
 

@@ -7,11 +7,15 @@ public sealed class FocusSessionRecord
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string? TaskId { get; set; }
     public string ProjectId { get; set; } = "";
+    public string? ProjectName { get; set; }
+    public string? ProjectColour { get; set; }
+    public string? TaskName { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset EndedAt { get; set; }
     public int FocusMinutes { get; set; }
     public double? FocusSeconds { get; set; }
     public int? PlannedSeconds { get; set; }
+    public List<FocusIntervalRecord> Intervals { get; set; } = [];
 
     [JsonIgnore]
     public double ElapsedSeconds => FocusSeconds ?? FocusMinutes * 60d;

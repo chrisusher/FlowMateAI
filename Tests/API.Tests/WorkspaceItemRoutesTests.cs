@@ -7,6 +7,7 @@ namespace API.Tests;
 [TestFixture]
 public sealed class WorkspaceItemRoutesTests
 {
+    [TestCase("GetFocusTimeline", "v1/reports/focus-timeline")]
     [TestCase("ListProjects", "v1/projects")]
     [TestCase("GetProject", "v1/projects/{id}")]
     [TestCase("ListTasks", "v1/tasks")]

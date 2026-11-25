@@ -1,0 +1,55 @@
+@implements IDisposable
+@inject WorkspaceItemsClient Items
+@inject WorkspaceStore Store
+
+<section class="timeline-card" aria-labelledby="timeline-title">
+    <div class="timeline-heading">
+        <div>
+            <h2 id="timeline-title">Weekly focus timeline</h2>
+            <p>When you focused, in your workspace time zone.</p>
+        </div>
+        <div class="timeline-controls" aria-label="Timeline week navigation">
+            <button type="button" class="quiet-button" aria-label="Previous week" disabled="@(!CanGoPrevious)" @onclick="PreviousWeek">&larr;</button>
+            <span aria-live="polite">@WeekLabel</span>
+            <button type="button" class="quiet-button" aria-label="Next week" disabled="@(!CanGoNext)" @onclick="NextWeek">&rarr;</button>
+        </div>
+    </div>
+    @if (_loading)
+    {
+        <p role="status">Loading focus timeline…</p>
+    }
+    else if (_error)
+    {
+        <p role="alert">The focus timeline could not be loaded. <button type="button" @onclick="LoadAsync">Try again</button></p>
+    }
+    else if (_timeline is not null)
+    {
+        @if (_timeline.HistoryTruncated)
+        {
+            <p role="status">This week is partially available. History starts @FormatDate(_timeline.HistoryAvailableFrom).</p>
+        }
+        @if (_timeline.Entries.Count == 0)
+        {
+            <p role="status">No recorded focus in this week.</p>
+        }
+        <div class="timeline-scroll">
+            <div class="timeline-grid">
+                <div class="timeline-axis"><span></span><div class="timeline-hours">@foreach (var hour in Hours) { <span>@hour.ToString("00"):00</span> }</div></div>
+                @for (var index = 0; index < 7; index++)
+                {
+                    var day = _timeline.WeekStart.AddDays(index);
+                    <div class="timeline-day">
+                        <div class="timeline-day-label">@day.ToString("ddd d MMM")</div>
+                        <div class="timeline-track" aria-label="@day.ToString("dddd d MMMM yyyy")">
+                            @foreach (var entry in _timeline.Entries.Where(entry => entry.LocalDate == day))
+                            {
+                                <div class="timeline-block" tabindex="0" role="img" aria-label="@Describe(entry)" title="@Describe(entry)" style="@BlockStyle(entry)"></div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+        <p class="timeline-zone">Times shown in @_timeline.TimeZone. Approximate entries show the recorded span; pause times are unavailable.</p>
+    }
+</section>
