@@ -24,7 +24,12 @@ public sealed class WorkspaceReportRepository(DatabaseContext database) : IWorks
 
     public async Task<WorkspaceReportSource> GetWorkspaceAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var document = await database.Workspaces.AsNoTracking().FirstAsync(x => x.Id == "workspace" && x.UserId == userId, cancellationToken);
+        var document = await database.Workspaces.AsNoTracking().FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == userId, cancellationToken);
+
+        if (document is null)
+        {
+            return new(new WorkspaceSnapshot(), "missing");
+        }
 
         var workspace = WorkspaceStorageFormat.Read(document);
         var projects = document.ProjectsAuthoritative ? await ReadProjectsAsync(userId, cancellationToken) : null;

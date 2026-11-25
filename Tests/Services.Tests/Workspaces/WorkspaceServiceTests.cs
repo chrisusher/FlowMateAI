@@ -254,6 +254,56 @@ public sealed class WorkspaceServiceTests
         Assert.That(repository.SaveCount, Is.Zero);
     }
 
+    [Test]
+    public async Task SaveAsync_DeletedTaskAndOlderClient_PreservesLabelsAndIntervals()
+    {
+        var start = new DateTimeOffset(2026, 11, 23, 10, 0, 0, TimeSpan.Zero);
+        var current = new WorkspaceSnapshot
+        {
+            Projects = [new ProjectRecord
+            {
+                Id = "p",
+                Name = "Project",
+                Color = "#123456"
+            }],
+            Tasks = [new TaskRecord
+            {
+                Id = "t",
+                ProjectId = "p",
+                Title = "Task"
+            }],
+            Sessions = [new FocusSessionRecord
+            {
+                Id = "s",
+                ProjectId = "p",
+                TaskId = "t",
+                StartedAt = start,
+                EndedAt = start.AddMinutes(5),
+                FocusSeconds = 300,
+                Intervals = [new FocusIntervalRecord
+                {
+                    StartedAt = start,
+                    EndedAt = start.AddMinutes(5)
+                }]
+            }]
+        };
+        var repository = new InMemoryWorkspaceRepository();
+        repository.Seed("user", current, "revision-1");
+        var requested = repository.Read("user");
+        requested.Tasks.Clear();
+        requested.Projects.Clear();
+        requested.Sessions[0].Intervals.Clear();
+
+        var result = await CreateService(repository).SaveAsync("user", new(requested, "revision-1"));
+
+        Assert.That(result.Succeeded, Is.True);
+        var session = repository.Read("user").Sessions.Single();
+        Assert.That(session.TaskName, Is.EqualTo("Task"));
+        Assert.That(session.ProjectName, Is.EqualTo("Project"));
+        Assert.That(session.ProjectColour, Is.EqualTo("#123456"));
+        Assert.That(session.Intervals.Single().StartedAt, Is.EqualTo(start));
+    }
+
     private static WorkspaceService CreateService(IWorkspaceRepository repository) =>
         new(repository, new EmptyActivityArchiveRepository(), new StubBillingRepository());
 

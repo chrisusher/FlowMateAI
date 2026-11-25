@@ -10,14 +10,16 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using API.Functions.V1;
+using API.Functions.V1.Reports;
+using Services.Reporting;
+using Shared.Contracts;
+using Azure.Core.Serialization;
 using Services.Users;
 using Services.Repositories;
 using API.Functions.V1.Projects;
-using Azure.Core.Serialization;
 using ChrisUsher.Core.Shared;
 using Services.ApiRequests;
 using Services.Workspaces;
-using Shared.Contracts;
 using Shared.Enums;
 using Shared.Models;
 using Services.Database;
@@ -346,6 +348,60 @@ public sealed class Auth0TokenValidatorTests
         return (await JsonSerializer.DeserializeAsync<T>(response.Body, SharedCommon.JsonOptions))!;
     }
 
+    [Test]
+    public async Task GetFocusTimeline_MissingToken_ReturnsUnauthorizedWithoutReadingTimeline()
+    {
+        using var key = RSA.Create(2048);
+        var timeline = new TestTimelineService();
+        var function = new GetFocusTimeline(CreateValidator(key), new TestUserService("person@example.test"), timeline);
+        var response = await function.Run(new TestHttpRequestData(""), CancellationToken.None);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+        Assert.That(timeline.UserId, Is.Null);
+    }
+
+    [TestCase("?date=2026-02-30")]
+    [TestCase("?date=2026-1-01")]
+    [TestCase("?date=2026-01-01&date=2026-01-02")]
+    public async Task GetFocusTimeline_InvalidDate_ReturnsBadRequest(string query)
+    {
+        using var key = RSA.Create(2048);
+        var timeline = new TestTimelineService();
+        var function = new GetFocusTimeline(CreateValidator(key), new TestUserService("person@example.test"), timeline);
+        var response = await function.Run(new TestHttpRequestData($"Bearer {CreateToken(key)}", url: "https://api.flowmate.test/test" + query), CancellationToken.None);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Assert.That(timeline.UserId, Is.Null);
+    }
+
+    [Test]
+    public async Task GetFocusTimeline_ValidRequest_PassesAuthenticatedSubjectAndDate()
+    {
+        using var key = RSA.Create(2048);
+        var timeline = new TestTimelineService();
+        var function = new GetFocusTimeline(CreateValidator(key), new TestUserService("person@example.test"), timeline);
+        var response = await function.Run(new TestHttpRequestData($"Bearer {CreateToken(key)}", url: "https://api.flowmate.test/test?date=2026-11-25"), CancellationToken.None);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(timeline.UserId, Is.EqualTo("auth0|customer-1"));
+        Assert.That(timeline.Date, Is.EqualTo(new DateOnly(2026, 11, 25)));
+    }
+
+    private sealed class TestTimelineService : IFocusTimelineService
+    {
+        public string? UserId { get; private set; }
+        public DateOnly? Date { get; private set; }
+
+        public Task<FocusTimeline> GetAsync(string userId, DateOnly? date, CancellationToken cancellationToken = default)
+        {
+            UserId = userId;
+            Date = date;
+            var day = new DateOnly(2026, 11, 23);
+
+            return Task.FromResult(new FocusTimeline(day, day.AddDays(6), "UTC", day.AddDays(-29), day.AddDays(2), false, []));
+        }
+    }
+
     private static Auth0TokenValidator CreateValidator(
         RSA key,
         HttpStatusCode status = HttpStatusCode.OK,
@@ -531,19 +587,32 @@ public sealed class Auth0TokenValidatorTests
 
     private sealed class TestHttpRequestData : HttpRequestData
     {
-        public TestHttpRequestData(string authorization, IAccountDeletionMarkerRepository? markers = null)
+        public TestHttpRequestData(string authorization, IAccountDeletionMarkerRepository? markers = null, string url = "https://api.flowmate.test/test")
             : base(new TestFunctionContext(markers ?? new UnmarkedAccounts()))
         {
-            Headers.Add("Authorization", authorization);
+            if (!string.IsNullOrEmpty(authorization))
+            {
+                Headers.Add("Authorization", authorization);
+            }
+
+            Url = new Uri(url);
         }
 
         public override Stream Body => Stream.Null;
         public override HttpHeadersCollection Headers { get; } = new();
         public override IReadOnlyCollection<IHttpCookie> Cookies => Array.Empty<IHttpCookie>();
-        public override Uri Url => new("https://api.flowmate.test/test");
+        public override Uri Url { get; }
         public override IEnumerable<ClaimsIdentity> Identities => Array.Empty<ClaimsIdentity>();
         public override string Method => "GET";
-        public override HttpResponseData CreateResponse() => throw new NotSupportedException();
+        public override HttpResponseData CreateResponse() => new TestHttpResponseData(FunctionContext);
+    }
+
+    private sealed class TestHttpResponseData(FunctionContext context) : HttpResponseData(context)
+    {
+        public override HttpStatusCode StatusCode { get; set; }
+        public override HttpHeadersCollection Headers { get; set; } = new();
+        public override Stream Body { get; set; } = new MemoryStream();
+        public override HttpCookies Cookies => null!;
     }
 
     private sealed class WritableRequest : HttpRequestData

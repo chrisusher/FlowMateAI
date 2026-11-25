@@ -178,6 +178,23 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
     }
 
     [Test]
+    public void RecordFocusIntervals_PausedSession_PreservesExactIntervals()
+    {
+        var start = new DateTimeOffset(2026, 10, 6, 12, 0, 0, TimeSpan.Zero);
+        FocusIntervalRecord[] intervals =
+        [
+            new() { StartedAt = start, EndedAt = start.AddMinutes(2) },
+            new() { StartedAt = start.AddMinutes(5), EndedAt = start.AddMinutes(8) }
+        ];
+
+        Store.RecordFocusIntervals(intervals, PlannedTask.Id, Project.Id, 240, "paused");
+
+        var recorded = Store.Data.Sessions.Single().Intervals;
+        Assert.That(recorded.Select(interval => interval.StartedAt), Is.EqualTo(new[] { start, start.AddMinutes(5) }));
+        Assert.That(recorded.Select(interval => interval.EndedAt), Is.EqualTo(new[] { start.AddMinutes(2), start.AddMinutes(7) }));
+    }
+
+    [Test]
     public void PausedFocusAccountingCarriesSecondsAcrossLocalMidnight()
     {
         Store.Data.TimeZone = "Europe/London";
@@ -194,6 +211,7 @@ public sealed class WorkspaceRegressionTests : WorkspaceComponentTest
 
         Assert.That(FocusSessionRecord.TotalMinutes(Store.Data.Sessions), Is.EqualTo(1));
         Assert.That(Store.Data.Sessions.Select(session => session.ElapsedSeconds), Is.EqualTo(new[] { 30d, 30d }));
+        Assert.That(Store.Data.Sessions.Select(session => session.Intervals.Single().EndedAt), Is.EqualTo(intervals.Select(interval => interval.EndedAt)));
         Assert.That(FocusSessionRecord.TotalSessions(Store.Data.Sessions), Is.EqualTo(1d));
         Assert.That(Store.Data.Sessions.Last().StartedAt, Is.EqualTo(new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(midnight, zone), TimeSpan.Zero)));
     }

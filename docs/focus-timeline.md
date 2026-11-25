@@ -1,0 +1,7 @@
+# Focus timeline
+
+`GET /api/v1/reports/focus-timeline` requires a FlowMate bearer token. An optional `date` query parameter selects a date in the requested Monday–Sunday week and must use `yyyy-MM-dd`. Omitting it selects the current week in the workspace time zone. Requests for wholly unavailable past weeks or future weeks return `400`; unauthenticated requests return `401`.
+
+The response includes the week boundaries, workspace time zone, first and last available history dates, a truncation flag and the timeline entries. Each entry includes its UTC-offset timestamps, local date, project colour and labels, focus seconds and `isApproximate`. New sessions retain their actual focus intervals. Older sessions without intervals use their recorded start-to-end span and are approximate: their pauses cannot be reconstructed. Approximate focus seconds are apportioned by elapsed time when a legacy span crosses a boundary, so the placement of focus within that span is not known.
+
+Weeks intersecting a plan's history limit are returned as partially available; only entries within the available local dates are included. The current week includes no entries from dates after today. Entries crossing a local midnight or a time-zone offset transition are split, preserving elapsed focus duration across daylight-saving changes. Repeated local times during the autumn transition can overlap on the 24-hour axis; the timestamps retain their offsets to distinguish them.

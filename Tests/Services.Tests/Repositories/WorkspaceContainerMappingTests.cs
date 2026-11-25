@@ -45,5 +45,10 @@ public sealed class WorkspaceContainerMappingTests
         {
             Assert.That(owned.FindNavigation(nameof(ConversationRecord.Messages))!.TargetEntityType.IsOwned(), Is.True);
         }
+
+        if (recordType == typeof(FocusSessionRecord))
+        {
+            Assert.That(owned.FindNavigation(nameof(FocusSessionRecord.Intervals))!.TargetEntityType.IsOwned(), Is.True);
+        }
     }
 }
