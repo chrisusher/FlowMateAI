@@ -14,6 +14,11 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
         {
             document.Workspace = WorkspaceStorageFormat.Read(document);
 
+            if (document.TasksAuthoritative)
+            {
+                document.Workspace.Tasks = await ReadTasksAsync(ownerId, cancellationToken);
+            }
+
             if (document.ProjectsAuthoritative)
             {
                 document.Workspace.Projects = await ReadProjectsAsync(ownerId, cancellationToken);
@@ -32,17 +37,27 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
         return documents.OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal).Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToList();
     }
 
+    private async Task<List<TaskRecord>> ReadTasksAsync(string userId, CancellationToken cancellationToken)
+    {
+        var documents = await database.Tasks.AsNoTracking().Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+
+        return documents.Where(item => !item.IsDeleted).OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal)
+            .Select(item => item.Task ?? throw new InvalidDataException("A task document has no task data.")).ToList();
+    }
+
     public async Task<WorkspaceDocument?> SaveAsync(string ownerId, WorkspaceSnapshot workspace, string? expectedRevision, CancellationToken cancellationToken = default)
     {
         var existing = await database.Workspaces.FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == ownerId, cancellationToken);
 
-        if ((existing is not null && (existing.PendingProjectArchive is not null || string.IsNullOrEmpty(expectedRevision) || existing.ETag != expectedRevision)) ||
+        if ((existing is not null && (existing.PendingProjectArchive is not null || existing.PendingTaskOperation is not null || string.IsNullOrEmpty(expectedRevision) || existing.ETag != expectedRevision)) ||
             (existing is null && !string.IsNullOrEmpty(expectedRevision)))
         {
             return null;
         }
 
         var initialiseProjects = existing is null && workspace.Projects.Count == 0;
+        var initialiseTasks = existing is null && workspace.Tasks.Count == 0 &&
+            !await database.Tasks.AsNoTracking().AnyAsync(item => item.UserId == ownerId, cancellationToken);
         string? projectIndexId = null;
 
         if (initialiseProjects)
@@ -59,6 +74,7 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
         {
             UserId = ownerId,
             ProjectsAuthoritative = initialiseProjects,
+            TasksAuthoritative = initialiseTasks,
             ProjectIndexId = projectIndexId ?? "project-index"
         };
 
@@ -66,14 +82,25 @@ public sealed class WorkspaceRepository(DatabaseContext database, WorkspaceColle
         {
             database.Workspaces.Add(document);
         }
-        document.Workspace = workspace;
+
+        if (document.TasksAuthoritative)
+        {
+            // Do not restore a stale task copy into the workspace document.
+            var copy = JsonSerializer.Deserialize<WorkspaceSnapshot>(JsonSerializer.Serialize(workspace))!;
+            copy.Tasks.Clear();
+            document.Workspace = copy;
+        }
+        else
+        {
+            document.Workspace = workspace;
+        }
         document.Payload = null;
         document.UpdatedAt = DateTimeOffset.UtcNow;
 
         try
         {
             await database.SaveChangesAsync(cancellationToken);
-            await SynchronizeRecordsAsync(ownerId, workspace, cancellationToken);
+            await SynchronizeRecordsAsync(ownerId, document.Workspace!, cancellationToken);
         }
         catch (DbUpdateException exception)
         {

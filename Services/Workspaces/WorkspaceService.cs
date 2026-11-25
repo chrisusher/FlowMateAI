@@ -8,7 +8,7 @@ using Shared.Models;
 namespace Services.Workspaces;
 
 public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityArchiveRepository activityArchive, IBillingRepository billingRepository,
-    IProjectArchiveRepository? projectArchives = null) : IWorkspaceService
+    IProjectArchiveRepository? projectArchives = null, ITaskRepository? tasks = null) : IWorkspaceService
 {
     public async Task<WorkspaceResponse> GetAsync(string ownerId, CancellationToken cancellationToken = default)
     {
@@ -38,10 +38,28 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
             return new(null, WorkspaceSaveErrorCode.RevisionConflict, "Projects changed on another device. Reload before saving this workspace.");
         }
 
+        if (existing?.TasksAuthoritative == true)
+        {
+            // Task documents are authoritative; stale task data in an unrelated
+            // workspace save must neither overwrite them nor block the save.
+            request.Workspace.Tasks = current.Tasks;
+        }
+
         if (existing?.ProjectsAuthoritative == true && !string.IsNullOrEmpty(request.Workspace.Timer.ProjectId) &&
             current.Projects.Any(project => project.Id == request.Workspace.Timer.ProjectId && project.IsArchived))
         {
             return new(null, WorkspaceSaveErrorCode.TimerConflict, "The selected project has been archived. Reload before changing the timer.");
+        }
+
+        if (existing?.TasksAuthoritative == true && !string.IsNullOrWhiteSpace(request.Workspace.Timer.TaskId))
+        {
+            var selected = current.Tasks.SingleOrDefault(task => task.Id == request.Workspace.Timer.TaskId);
+
+            if (selected is null || selected.ProjectId != request.Workspace.Timer.ProjectId ||
+                !current.Projects.Any(project => project.Id == selected.ProjectId && !project.IsArchived))
+            {
+                return new(null, WorkspaceSaveErrorCode.TimerConflict, "The selected task is no longer available. Reload before changing the timer.");
+            }
         }
 
         var entitlement = await billingRepository.GetEntitlementAsync(ownerId, cancellationToken);
@@ -105,6 +123,17 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         {
             await projectArchives.RecoverAsync(ownerId, cancellationToken);
             document = await repository.GetAsync(ownerId, cancellationToken);
+        }
+
+        if (document?.PendingTaskOperation is not null && tasks is not null)
+        {
+            await tasks.RecoverAsync(ownerId, cancellationToken);
+            document = await repository.GetAsync(ownerId, cancellationToken);
+        }
+
+        if (document?.PendingTaskOperation is not null)
+        {
+            throw new InvalidOperationException("A task change is still being completed. Try again shortly.");
         }
 
         if (document?.PendingProjectArchive is not null)

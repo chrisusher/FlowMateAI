@@ -758,6 +758,112 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
     public ProjectRecord? Project(string id) => Data.Projects.FirstOrDefault(p => p.Id == id);
     public TaskRecord? Task(string? id) => Data.Tasks.FirstOrDefault(t => t.Id == id);
 
+    public async Task<TaskWriteResponse> WriteTaskAsync(string taskId, bool remove, Func<Task<TaskWriteResponse>> write)
+    {
+        BindAccount();
+        await _saveGate.WaitAsync();
+
+        try
+        {
+            var accountId = auth.Session.Sub ?? "local";
+
+            if (_clearedForDeletion || _invalidPendingDraft || _remoteLoadFailed || _pendingSync || _remoteConflict is not null)
+            {
+                throw new InvalidOperationException("Resolve the pending workspace save before changing a task.");
+            }
+
+            if (!auth.Session.SignedIn || string.IsNullOrWhiteSpace(auth.Session.AccessToken) ||
+                !string.Equals(_storageAccountId, accountId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Sign in again before changing a task.");
+            }
+
+            var timerBaseline = WorkspaceCollectionManifest.Hash(new[] { Data.Timer });
+            var result = await write();
+
+            if (_clearedForDeletion || !string.Equals(accountId, auth.Session.Sub ?? "local", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Your account changed while the task was being saved. Reload the original account to check it.");
+            }
+
+            if (!string.Equals(result.Task.Id, taskId, StringComparison.Ordinal) ||
+                (result.WorkspaceRevision is not null && (string.IsNullOrWhiteSpace(result.WorkspaceRevision) || result.Timer is null)))
+            {
+                throw new InvalidDataException("The server returned an incomplete task response. Reload and try again.");
+            }
+
+            var index = Data.Tasks.FindIndex(task => task.Id == taskId);
+
+            if (remove)
+            {
+                if (index >= 0)
+                {
+                    Data.Tasks.RemoveAt(index);
+                }
+
+                foreach (var session in Data.Sessions.Where(session => session.TaskId == taskId && session.TaskName is null))
+                {
+                    session.TaskName = result.Task.Title;
+                }
+            }
+            else if (index < 0)
+            {
+                Data.Tasks.Add(result.Task);
+            }
+            else
+            {
+                var current = Data.Tasks[index];
+                current.Title = result.Task.Title;
+                current.ProjectId = result.Task.ProjectId;
+                current.DueDate = result.Task.DueDate;
+                current.Priority = result.Task.Priority;
+                current.IsComplete = result.Task.IsComplete;
+                current.PlannedToday = result.Task.PlannedToday;
+                current.FocusMinutesToday = result.Task.FocusMinutesToday;
+                current.CreatedAt = result.Task.CreatedAt;
+            }
+
+            if (result.WorkspaceRevision is not null)
+            {
+                _revision = result.WorkspaceRevision;
+
+                if (WorkspaceCollectionManifest.Hash(new[] { Data.Timer }) == timerBaseline)
+                {
+                    Data.Timer = result.Timer!;
+                }
+                else
+                {
+                    _pendingSync = true;
+                    SetSyncState(WorkspaceSyncState.Pending, "Your timer changed while the task was saved. Its local changes are waiting to sync.");
+                }
+            }
+
+            try
+            {
+                if (result.WorkspaceRevision is null)
+                {
+                    await PersistLocalAsync();
+                }
+                else
+                {
+                    await SetPendingSyncAsync(_pendingSync);
+                }
+            }
+            catch (JSException)
+            {
+                SetSyncState(WorkspaceSyncState.Failed, "The task was saved, but this browser could not update its local copy.");
+            }
+
+            Changed?.Invoke();
+
+            return result;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
     public async Task<ProjectWriteResponse> WriteProjectAsync(string projectId, Func<Task<ProjectWriteResponse>> write)
     {
         BindAccount();

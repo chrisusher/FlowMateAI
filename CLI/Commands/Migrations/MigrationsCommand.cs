@@ -8,6 +8,7 @@ internal static class MigrationsCommand
     {
         var command = new Command("migrations", "Data migrations");
         command.Subcommands.Add(ProjectCutoversCommand.Create());
+        command.Subcommands.Add(TaskCutoversCommand.Create());
 
         return command;
     }

@@ -40,6 +40,53 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
         return new(project, revision);
     }
 
+    public async Task<TaskWriteResponse?> GetTaskVersionedAsync(string id, CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest($"api/v1/tasks/{Uri.EscapeDataString(id)}");
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken);
+        var task = await response.Content.ReadFromJsonAsync<TaskRecord>(SharedCommon.JsonOptions, cancellationToken);
+        var revision = response.Headers.TryGetValues("ETag", out var values) ? values.SingleOrDefault() : null;
+
+        if (task is null || string.IsNullOrWhiteSpace(revision))
+        {
+            throw new InvalidDataException("The server did not return a task revision.");
+        }
+
+        return new(task, revision);
+    }
+
+    public Task<TaskWriteResponse> CreateTaskAsync(TaskRecord task, string workspaceRevision, CancellationToken cancellationToken = default) =>
+        WriteTaskAsync(HttpMethod.Post, "api/v1/tasks", new(task, null, workspaceRevision), cancellationToken);
+
+    public Task<TaskWriteResponse> UpdateTaskAsync(TaskRecord task, string revision, string workspaceRevision, CancellationToken cancellationToken = default) =>
+        WriteTaskAsync(HttpMethod.Put, $"api/v1/tasks/{Uri.EscapeDataString(task.Id)}", new(task, revision, workspaceRevision), cancellationToken);
+
+    public Task<TaskWriteResponse> DeleteTaskAsync(string id, string revision, string workspaceRevision, CancellationToken cancellationToken = default) =>
+        WriteTaskAsync(HttpMethod.Delete, $"api/v1/tasks/{Uri.EscapeDataString(id)}", new(null, revision, workspaceRevision), cancellationToken);
+
+    private async Task<TaskWriteResponse> WriteTaskAsync(HttpMethod method, string path, TaskWriteRequest payload, CancellationToken cancellationToken)
+    {
+        using var request = CreateRequest(path, method);
+        request.Content = JsonContent.Create(payload, options: SharedCommon.JsonOptions);
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<TaskWriteResponse>(SharedCommon.JsonOptions, cancellationToken);
+
+        if (result?.Task is null || string.IsNullOrWhiteSpace(result.Revision))
+        {
+            throw new InvalidDataException("The server returned an incomplete task response.");
+        }
+
+        return result;
+    }
+
     public Task<ProjectWriteResponse> CreateProjectAsync(ProjectCreateRequest project, CancellationToken cancellationToken = default) =>
         WriteProjectAsync(HttpMethod.Post, "api/v1/projects", project, cancellationToken);
 
@@ -83,7 +130,7 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
         }
         catch (JsonException) { }
 
-        throw new HttpRequestException(error?.Message ?? "The project request could not be completed.", null, response.StatusCode);
+        throw new HttpRequestException(error?.Message ?? "The request could not be completed.", null, response.StatusCode);
     }
 
     public async Task<FocusTimeline> GetFocusTimelineAsync(DateOnly? date = null, CancellationToken cancellationToken = default)

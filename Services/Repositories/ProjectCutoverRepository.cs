@@ -13,7 +13,7 @@ public sealed class ProjectCutoverRepository(DatabaseContext database)
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         var workspace = await ReadWorkspaceAsync(userId, cancellationToken);
 
-        if (workspace.ProjectsAuthoritative || workspace.PendingProjectArchive is not null)
+        if (workspace.ProjectsAuthoritative || workspace.PendingProjectArchive is not null || workspace.PendingTaskOperation is not null)
         {
             throw new InvalidOperationException("Projects have already been cut over for this account.");
         }

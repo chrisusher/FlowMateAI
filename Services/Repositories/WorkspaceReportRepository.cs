@@ -19,7 +19,9 @@ public sealed class WorkspaceReportRepository(DatabaseContext database) : IWorks
 
         var projects = document.ProjectsAuthoritative ? await ReadProjectsAsync(userId, cancellationToken) : null;
 
-        return Revision(document, projects);
+        var tasks = document.TasksAuthoritative ? await ReadTasksAsync(userId, cancellationToken) : null;
+
+        return Revision(document, projects, tasks);
     }
 
     public async Task<WorkspaceReportSource> GetWorkspaceAsync(string userId, CancellationToken cancellationToken = default)
@@ -39,7 +41,14 @@ public sealed class WorkspaceReportRepository(DatabaseContext database) : IWorks
             workspace.Projects = projects;
         }
 
-        return new(workspace, Revision(document, projects));
+        var tasks = document.TasksAuthoritative ? await ReadTasksAsync(userId, cancellationToken) : null;
+
+        if (tasks is not null)
+        {
+            workspace.Tasks = tasks;
+        }
+
+        return new(workspace, Revision(document, projects, tasks));
     }
 
     public async Task<BillingAccess?> GetBillingAccessAsync(string userId, CancellationToken cancellationToken = default)
@@ -57,10 +66,23 @@ public sealed class WorkspaceReportRepository(DatabaseContext database) : IWorks
         return documents.OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal).Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToList();
     }
 
-    private static string Revision(WorkspaceDocument document, List<ProjectRecord>? projects)
+    private async Task<List<TaskRecord>> ReadTasksAsync(string userId, CancellationToken cancellationToken)
+    {
+        var documents = await database.Tasks.AsNoTracking().Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+
+        return documents.Where(item => !item.IsDeleted).OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal)
+            .Select(item => item.Task ?? throw new InvalidDataException("A task document has no task data.")).ToList();
+    }
+
+    private static string Revision(WorkspaceDocument document, List<ProjectRecord>? projects, List<TaskRecord>? tasks)
     {
         var revision = document.ETag ?? document.UpdatedAt.UtcTicks.ToString();
 
-        return projects is null ? revision : $"{revision}:{WorkspaceCollectionManifest.Hash(projects)}";
+        if (projects is not null)
+        {
+            revision += $":{WorkspaceCollectionManifest.Hash(projects)}";
+        }
+
+        return tasks is null ? revision : $"{revision}:{WorkspaceCollectionManifest.Hash(tasks)}";
     }
 }

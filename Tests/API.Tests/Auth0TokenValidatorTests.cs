@@ -1,3 +1,5 @@
+using API.Functions.V1.Tasks;
+using API.Functions.V1.Tasks.Bulk;
 using System.Net;
 using System.Reflection;
 using System.Security.Claims;
@@ -339,6 +341,77 @@ public sealed class Auth0TokenValidatorTests
         Assert.That(reloaded!.Workspace!.Projects.Single().Name, Is.EqualTo("Renamed"));
         Assert.That(reloaded.Workspace.Projects.Single().IsArchived, Is.False);
         Assert.That(await new WorkspaceItemsRepository(database).GetProjectAsync("other-account", "project"), Is.Null);
+    }
+
+    [Test]
+    public async Task Run_AuthenticatedTaskBulkWithStaleRecord_ReturnsPerRecordOutcomesAndPersistsAcceptedChanges()
+    {
+        await using var testDatabase = await CosmosTestEnvironment.CreateDatabaseAsync();
+        await using var database = testDatabase.CreateContext();
+        const string userId = "auth0|customer-1";
+        var workspaces = new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database));
+        await workspaces.SaveAsync(userId, new WorkspaceSnapshot(), null);
+        var projects = new ProjectWriteService(new ProjectWriteRepository(database), new TestBilling());
+        Assert.That((await projects.CreateAsync(userId, new ProjectRecord
+        {
+            Id = "project",
+            Name = "Project",
+            Color = "#112233"
+        })).Rejection, Is.EqualTo(ProjectChangeRejection.None));
+        database.ChangeTracker.Clear();
+        var workspace = await workspaces.GetAsync(userId);
+        var service = new TaskService(new TaskRepository(database));
+        using var key = RSA.Create(2048);
+        var validator = CreateValidator(key);
+        var users = new TestUserService("person@example.test");
+        var limiter = new AllowRequests();
+        var authorization = $"Bearer {CreateToken(key)}";
+        var create = new CreateTask(validator, users, limiter, service);
+        var task = new TaskRecord
+        {
+            Id = "one",
+            Title = "First",
+            ProjectId = "project"
+        };
+        var firstRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new TaskWriteRequest(task, null, workspace!.ETag), SharedCommon.JsonOptions));
+        var firstResponse = await create.Run(firstRequest, CancellationToken.None);
+        Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var first = await ReadResponseAsync<TaskWriteResponse>(firstResponse);
+        await AccountOperation.CompleteAsync(firstRequest.FunctionContext);
+
+        var secondRequest = new WritableRequest(authorization, JsonSerializer.Serialize(new TaskWriteRequest(new TaskRecord
+        {
+            Id = "two",
+            Title = "Second",
+            ProjectId = "project"
+        }, null, first.WorkspaceRevision), SharedCommon.JsonOptions));
+        var secondResponse = await create.Run(secondRequest, CancellationToken.None);
+        Assert.That(secondResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created));
+        var second = await ReadResponseAsync<TaskWriteResponse>(secondResponse);
+        await AccountOperation.CompleteAsync(secondRequest.FunctionContext);
+
+        first.Task.PlannedToday = true;
+        second.Task.PlannedToday = true;
+        var batch = new
+        {
+            Changes = new[]
+            {
+                new TaskWriteRequest(first.Task, "stale", second.WorkspaceRevision),
+                new TaskWriteRequest(second.Task, second.Revision, second.WorkspaceRevision)
+            }
+        };
+        var request = new WritableRequest(authorization, JsonSerializer.Serialize(batch, SharedCommon.JsonOptions));
+        var response = await new BulkUpdateTasks(validator, users, limiter, service).Run(request, CancellationToken.None);
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var outcomes = await ReadResponseAsync<List<TaskBulkWriteOutcome>>(response);
+        Assert.That(outcomes.Single(item => item.Id == "one").ErrorCode, Is.EqualTo("task_conflict"));
+        Assert.That(outcomes.Single(item => item.Id == "two").Result!.Task.PlannedToday, Is.True);
+        await AccountOperation.CompleteAsync(request.FunctionContext);
+        database.ChangeTracker.Clear();
+        var reloaded = await workspaces.GetAsync(userId);
+        Assert.That(reloaded!.Workspace!.Tasks.Single(item => item.Id == "one").PlannedToday, Is.False);
+        Assert.That(reloaded.Workspace.Tasks.Single(item => item.Id == "two").PlannedToday, Is.True);
+        Assert.That(await new WorkspaceItemsRepository(database).GetTaskAsync("other-account", "two"), Is.Null);
     }
 
     private static async Task<T> ReadResponseAsync<T>(HttpResponseData response)

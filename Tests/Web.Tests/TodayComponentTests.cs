@@ -81,8 +81,9 @@ public sealed class TodayComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void TodayPlanCardSelectsAndUnplansTasks()
+    public async Task TodayPlanCardSelectsAndUnplansTasks()
     {
+        await EnableTaskWritesAsync();
         var cut = Render<TodayPlanCard>();
         Assert.That(cut.FindAll(".task-row"), Has.Exactly(1).Items);
         cut.Find(".task-title").Click();
@@ -96,8 +97,9 @@ public sealed class TodayComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void TodayPlanCardHidesCompletedTasksImmediately()
+    public async Task TodayPlanCardHidesCompletedTasksImmediately()
     {
+        await EnableTaskWritesAsync();
         var cut = Render<TodayPlanCard>();
         cut.Find(".check-circle").Click();
 

@@ -31,15 +31,28 @@ public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorksp
     }
 
 
-    public Task<IReadOnlyList<TaskRecord>> ListTasksAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<TaskRecord>> ListTasksAsync(string userId, CancellationToken cancellationToken = default)
     {
-        return ListAsync<WorkspaceTaskDocument, TaskRecord>(database.Tasks, userId, workspace => workspace.Tasks, cancellationToken);
+        var source = await database.Workspaces.AsNoTracking()
+            .FirstOrDefaultAsync(item => item.UserId == userId && item.Id == "workspace", cancellationToken);
+
+        if (source?.TasksAuthoritative == true)
+        {
+            var documents = await database.Tasks.AsNoTracking().Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+
+            return documents.Where(item => !item.IsDeleted).OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal)
+                .Select(item => item.Task ?? throw new InvalidDataException("A task document has no task data.")).ToArray();
+        }
+
+        return await ListAsync<WorkspaceTaskDocument, TaskRecord>(database.Tasks, userId, workspace => workspace.Tasks, cancellationToken);
     }
 
 
-    public Task<TaskRecord?> GetTaskAsync(string userId, string id, CancellationToken cancellationToken = default)
+    public async Task<TaskRecord?> GetTaskAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
-        return GetAsync<WorkspaceTaskDocument, TaskRecord>(database.Tasks, userId, id, workspace => workspace.Tasks, item => item.Id, cancellationToken);
+        var tasks = await ListTasksAsync(userId, cancellationToken);
+
+        return tasks.SingleOrDefault(item => item.Id == id);
     }
 
 
