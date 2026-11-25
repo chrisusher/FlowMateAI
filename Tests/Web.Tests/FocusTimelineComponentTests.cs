@@ -38,6 +38,7 @@ public sealed class FocusTimelineComponentTests : WorkspaceComponentTest
         cut.WaitForAssertion(() => Assert.That(cut.Find(".timeline-block").GetAttribute("aria-label"), Does.Contain("Project, Task, 10:00 +00:00 to 10:30 +00:00, 15 minutes focused, approximate")));
         Assert.That(cut.Markup, Does.Contain("partially available"));
         Assert.That(cut.Find(".timeline-block").GetAttribute("tabindex"), Is.EqualTo("0"));
+        Assert.That(cut.Find(".timeline-block").GetAttribute("style"), Does.Contain("background-color:#123456"));
     }
 
     [Test]
@@ -71,6 +72,7 @@ public sealed class FocusTimelineComponentTests : WorkspaceComponentTest
             if (request.RequestUri!.AbsolutePath.EndsWith("focus-timeline", StringComparison.Ordinal))
             {
                 calls++;
+
                 return Task.FromResult(Json(Timeline(start, [])));
             }
 

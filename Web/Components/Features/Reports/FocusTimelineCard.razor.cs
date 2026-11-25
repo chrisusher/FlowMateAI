@@ -32,6 +32,7 @@ public partial class FocusTimelineCard
         var request = ++_requestNumber;
         _loading = true;
         _error = false;
+
         try
         {
             var result = await Items.GetFocusTimelineAsync(_selectedWeek);

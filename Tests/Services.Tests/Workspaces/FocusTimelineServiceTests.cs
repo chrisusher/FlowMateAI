@@ -55,9 +55,53 @@ public sealed class FocusTimelineServiceTests
         Assert.That(result.Entries.Take(2).All(entry => !entry.IsApproximate), Is.True);
         Assert.That(result.Entries.Take(2).Select(entry => entry.FocusSeconds), Is.EqualTo(new[] { 300d, 300d }));
         Assert.That(result.Entries[0].ProjectName, Is.EqualTo("Former project"));
+        Assert.That(result.Entries[0].ProjectColour, Is.EqualTo("#123456"));
         Assert.That(result.Entries[0].TaskName, Is.EqualTo("Former task"));
         Assert.That(result.Entries[2].IsApproximate, Is.True);
         Assert.That(result.Entries[2].FocusSeconds, Is.EqualTo(1800));
+    }
+
+    [Test]
+    public async Task GetAsync_ProjectsWithDifferentColours_UsesEachSavedProjectColour()
+    {
+        var start = new DateTimeOffset(2026, 11, 23, 10, 0, 0, TimeSpan.Zero);
+        var workspace = Workspace();
+        workspace.Projects.AddRange(
+        [
+            new ProjectRecord
+            {
+                Id = "one",
+                Name = "First",
+                Color = "#123456"
+            },
+            new ProjectRecord
+            {
+                Id = "two",
+                Name = "Second",
+                Color = "#aabbcc"
+            }
+        ]);
+        workspace.Sessions.AddRange(
+        [
+            new FocusSessionRecord
+            {
+                ProjectId = "one",
+                StartedAt = start,
+                EndedAt = start.AddMinutes(5),
+                FocusSeconds = 300
+            },
+            new FocusSessionRecord
+            {
+                ProjectId = "two",
+                StartedAt = start.AddMinutes(5),
+                EndedAt = start.AddMinutes(10),
+                FocusSeconds = 300
+            }
+        ]);
+
+        var result = await Service(workspace).GetAsync("user", null);
+
+        Assert.That(result.Entries.Select(entry => entry.ProjectColour), Is.EqualTo(new[] { "#123456", "#aabbcc" }));
     }
 
     [Test]

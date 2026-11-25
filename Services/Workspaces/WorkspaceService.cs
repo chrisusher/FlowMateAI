@@ -87,6 +87,8 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
         var previousSessions = current.Sessions.ToDictionary(session => session.Id, StringComparer.Ordinal);
         var projects = current.Projects.Concat(requested.Projects).GroupBy(project => project.Id).ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
         var tasks = current.Tasks.Concat(requested.Tasks).GroupBy(task => task.Id).ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+        var requestedProjectIds = requested.Projects.Select(project => project.Id).ToHashSet(StringComparer.Ordinal);
+        var requestedTaskIds = requested.Tasks.Select(task => task.Id).ToHashSet(StringComparer.Ordinal);
 
         foreach (var session in requested.Sessions)
         {
@@ -105,9 +107,20 @@ public sealed class WorkspaceService(IWorkspaceRepository repository, IActivityA
                 session.Intervals = previous.Intervals;
             }
 
-            session.ProjectName ??= previous?.ProjectName ?? project?.Name;
-            session.ProjectColour ??= previous?.ProjectColour ?? project?.Color;
-            session.TaskName ??= previous?.TaskName ?? task?.Title;
+            session.ProjectName ??= previous?.ProjectName;
+            session.ProjectColour ??= previous?.ProjectColour;
+            session.TaskName ??= previous?.TaskName;
+
+            if (previous is null || !requestedProjectIds.Contains(session.ProjectId))
+            {
+                session.ProjectName ??= project?.Name;
+                session.ProjectColour ??= project?.Color;
+            }
+
+            if (session.TaskId is not null && (previous is null || !requestedTaskIds.Contains(session.TaskId)))
+            {
+                session.TaskName ??= task?.Title;
+            }
         }
     }
 

@@ -239,6 +239,7 @@ public sealed class WorkspaceServiceTests
         repository.Seed("user", current, "revision-1");
         var requested = repository.Read("user");
         requested.Tasks.Clear();
+        requested.Projects.Clear();
         requested.Sessions[0].Intervals.Clear();
 
         var result = await CreateService(repository).SaveAsync("user", new(requested, "revision-1"));
