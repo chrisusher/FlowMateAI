@@ -4,7 +4,7 @@ The `CLI` project provides explicit administrative operations. Running the AppHo
 
 ## Configuration
 
-The CLI loads `appsettings.json`, `appsettings.{Environment}.json`, CLI user secrets, and then environment variables. Environment variables take precedence. Copy `CLI/appsettings.example.json` to `CLI/appsettings.json` for local values, or use environment variables/user secrets for credentials. `CLI/appsettings.json` is not tracked.
+The CLI loads `appsettings.json`, the repository-root `.env.{Global:Environment}` file (if present), `appsettings.{Environment}.json`, CLI user secrets, and then environment variables. Later sources take precedence. The dotenv filename is selected from `Global:Environment` in `appsettings.json`; for example, `Local` selects `.env.Local`. The environment in the JSON filename is the .NET host environment. Copy `CLI/appsettings.example.json` to `CLI/appsettings.json` for local values, or use environment variables/user secrets for credentials. `CLI/appsettings.json` is not tracked.
 
 Cosmos settings use the same resolution as the API: `Database:AccountEndpoint` (or `Database:AccountName`) and `Database:Key`, with `ConnectionStrings:database` accepted as a fallback source for endpoint and key. `Database:DatabaseName` is optional; without it the CLI uses `flowmate-{Global:Environment}`. Blob cleanup requires `ConnectionStrings:Storage`.
 
