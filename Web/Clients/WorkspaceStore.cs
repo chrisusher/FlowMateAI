@@ -998,7 +998,10 @@ public sealed class WorkspaceStore(IJSRuntime js, HttpClient http, Auth0Client a
                             EndedAt = segmentEnd
                         }],
                         TaskId = taskId,
-                        ProjectId = projectId
+                        ProjectId = projectId,
+                        ProjectName = Data.Projects.FirstOrDefault(project => project.Id == projectId)?.Name,
+                        ProjectColour = Data.Projects.FirstOrDefault(project => project.Id == projectId)?.Color,
+                        TaskName = Data.Tasks.FirstOrDefault(task => task.Id == taskId)?.Title
                     });
                 }
                 cursor = segmentEnd;

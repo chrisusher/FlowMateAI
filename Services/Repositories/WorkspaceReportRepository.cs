@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Services.Database;
 using Shared.Enums;
+using Shared.Models;
 
 namespace Services.Repositories;
 
@@ -15,9 +16,11 @@ public sealed class WorkspaceReportRepository(DatabaseContext database) : IWorks
 
     public async Task<WorkspaceReportSource> GetWorkspaceAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var document = await database.Workspaces.AsNoTracking().FirstAsync(x => x.Id == "workspace" && x.UserId == userId, cancellationToken);
+        var document = await database.Workspaces.AsNoTracking().FirstOrDefaultAsync(x => x.Id == "workspace" && x.UserId == userId, cancellationToken);
 
-        return new(WorkspaceStorageFormat.Read(document), document.ETag ?? document.UpdatedAt.UtcTicks.ToString());
+        return document is null
+            ? new(new WorkspaceSnapshot(), "missing")
+            : new(WorkspaceStorageFormat.Read(document), document.ETag ?? document.UpdatedAt.UtcTicks.ToString());
     }
 
     public async Task<BillingAccess?> GetBillingAccessAsync(string userId, CancellationToken cancellationToken = default)
