@@ -134,6 +134,56 @@ public sealed class WorkspaceRequestValidatorTests
         Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.Not.Null);
     }
 
+    [Test]
+    public void Validate_NullSessionIntervals_ReturnsRecordError()
+    {
+        var workspace = CreateWorkspace();
+        workspace.Sessions[0].Intervals = null!;
+
+        Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.EqualTo("Workspace records contain invalid fields or references."));
+    }
+
+    [Test]
+    public void Validate_IntervalOutsideSession_ReturnsRecordError()
+    {
+        var workspace = CreateWorkspace();
+        var session = workspace.Sessions[0];
+        session.Intervals.Add(new FocusIntervalRecord
+        {
+            StartedAt = session.StartedAt.AddSeconds(-1),
+            EndedAt = session.StartedAt.AddSeconds(1)
+        });
+
+        Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.EqualTo("Workspace records contain invalid fields or references."));
+    }
+
+    [Test]
+    public void Validate_NullConversationMessages_ReturnsConversationError()
+    {
+        var workspace = CreateWorkspace();
+        workspace.Conversations.Add(new ConversationRecord
+        {
+            Messages = null!
+        });
+
+        Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.EqualTo("Conversation data exceeds the supported limits."));
+    }
+
+    [Test]
+    public void Validate_TimerTaskFromAnotherProject_ReturnsTimerError()
+    {
+        var workspace = CreateWorkspace();
+        workspace.Projects.Add(new ProjectRecord
+        {
+            Id = "other-project",
+            Name = "Other"
+        });
+        workspace.Timer.ProjectId = "other-project";
+        workspace.Timer.TaskId = workspace.Tasks[0].Id;
+
+        Assert.That(WorkspaceRequestValidator.Validate(workspace), Is.EqualTo("Timer data is invalid or exceeds the supported limits."));
+    }
+
     private static WorkspaceSnapshot CreateWorkspace()
     {
         var project = new ProjectRecord { Id = "project-1", Name = "Project" };
