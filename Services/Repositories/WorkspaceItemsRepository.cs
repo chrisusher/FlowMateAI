@@ -14,9 +14,9 @@ public sealed class WorkspaceItemsRepository(DatabaseContext database) : IWorksp
         if (source?.ProjectsAuthoritative == true)
         {
             var projects = await database.Projects.AsNoTracking().Where(item => item.UserId == userId)
-                .OrderBy(item => item.Position).ThenBy(item => item.Id).ToListAsync(cancellationToken);
+                .ToListAsync(cancellationToken);
 
-            return projects.Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToArray();
+            return projects.OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal).Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToArray();
         }
 
         return await ListAsync<WorkspaceProjectDocument, ProjectRecord>(database.Projects, userId, workspace => workspace.Projects, cancellationToken);

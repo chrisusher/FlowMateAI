@@ -52,9 +52,9 @@ public sealed class WorkspaceReportRepository(DatabaseContext database) : IWorks
     private async Task<List<ProjectRecord>> ReadProjectsAsync(string userId, CancellationToken cancellationToken)
     {
         var documents = await database.Projects.AsNoTracking().Where(item => item.UserId == userId)
-            .OrderBy(item => item.Position).ThenBy(item => item.Id).ToListAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
 
-        return documents.Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToList();
+        return documents.OrderBy(item => item.Position).ThenBy(item => item.Id, StringComparer.Ordinal).Select(item => item.Project ?? throw new InvalidDataException("A project document has no project data.")).ToList();
     }
 
     private static string Revision(WorkspaceDocument document, List<ProjectRecord>? projects)

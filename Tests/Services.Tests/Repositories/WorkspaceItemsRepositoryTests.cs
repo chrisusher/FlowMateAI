@@ -8,6 +8,41 @@ namespace Services.Tests.Repositories;
 public sealed class WorkspaceItemsRepositoryTests
 {
     [Test]
+    public async Task AuthoritativeProjectReads_UnorderedProjects_ReturnOwnerProjectsInDeterministicOrder()
+    {
+        var options = new DbContextOptionsBuilder<DatabaseContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        await using var database = new DatabaseContext(options);
+        database.Workspaces.Add(new WorkspaceDocument
+        {
+            UserId = "user-1",
+            ProjectsAuthoritative = true,
+            Workspace = new WorkspaceSnapshot()
+        });
+        foreach (var (user, id, position) in new[] { ("user-1", "b", 1), ("user-1", "a", 1), ("user-1", "c", 0), ("other", "x", 0) })
+        {
+            database.Projects.Add(new WorkspaceProjectDocument
+            {
+                UserId = user,
+                Id = id,
+                Position = position,
+                Project = new ProjectRecord
+                {
+                    Id = id
+                }
+            });
+        }
+        await database.SaveChangesAsync();
+
+        var workspace = await new WorkspaceRepository(database, new WorkspaceCollectionSynchronizer(database)).GetAsync("user-1");
+        var projects = await new WorkspaceItemsRepository(database).ListProjectsAsync("user-1");
+        var report = await new WorkspaceReportRepository(database).GetWorkspaceAsync("user-1");
+        var expected = new[] { "c", "a", "b" };
+        Assert.That(workspace!.Workspace!.Projects.Select(project => project.Id), Is.EqualTo(expected));
+        Assert.That(projects.Select(project => project.Id), Is.EqualTo(expected));
+        Assert.That(report.Workspace.Projects.Select(project => project.Id), Is.EqualTo(expected));
+    }
+
+    [Test]
     public void CollectionListQueriesTranslateForCosmos()
     {
         using var database = new DatabaseContext(new DbContextOptionsBuilder<DatabaseContext>()
