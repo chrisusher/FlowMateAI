@@ -1,0 +1,31 @@
+@implements IDisposable
+@inject WorkspaceItemsClient Items
+@inject WorkspaceStore Store
+
+<article class="panel task-focus-panel">
+    <div class="panel-heading"><div><h3>Focus by task</h3><p>Where your attention went on this day</p></div></div>
+    @if (_loading)
+    {
+        <p role="status">Loading task focus…</p>
+    }
+    else if (_error)
+    {
+        <p role="alert">Task focus could not be loaded. <button type="button" @onclick="LoadAsync">Try again</button></p>
+    }
+    else if (_tasks.Count == 0)
+    {
+        <p role="status">No focus recorded against tasks on this day.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th scope="col">Task</th><th scope="col">Minutes</th><th scope="col">Pomodoros</th></tr></thead>
+            <tbody>
+                @foreach (var task in _tasks)
+                {
+                    <tr><th scope="row">@task.Name</th><td>@task.TotalMinutes</td><td>@task.Pomodoros.ToString("0.#")</td></tr>
+                }
+            </tbody>
+        </table>
+    }
+</article>

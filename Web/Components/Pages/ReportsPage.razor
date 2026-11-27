@@ -30,7 +30,14 @@
 </div>
 <p>Use your recorded focus time with an AI assistant. <a href="settings#integrations">Connect your AI assistant</a></p>
 <FocusTimelineCard />
-<FocusChartCard />
+@if (Stats.Period == ReportPeriod.Day)
+{
+    <TaskFocusCard Date="Stats.SelectedDate" />
+}
+else
+{
+    <FocusChartCard />
+}
 <ProjectBreakdownCard />
 @if (Stats.HistoryIsTruncated)
 {

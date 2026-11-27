@@ -97,6 +97,16 @@ public sealed class WorkspaceItemsClient(HttpClient http, Auth0Client auth)
             ?? throw new InvalidDataException("The server returned an empty timeline response.");
     }
 
+    public async Task<List<TaskFocus>> GetTaskFocusAsync(DateOnly date, CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest($"api/v1/reports/task-focus?date={date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+        using var response = await auth.SendAsync(http, request, requiresAuthentication: true, cancellationToken: cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<List<TaskFocus>>(new JsonSerializerOptions(JsonSerializerDefaults.Web), cancellationToken)
+            ?? throw new InvalidDataException("The server returned an empty task focus response.");
+    }
+
     private async Task<List<T>> ListAsync<T>(string collection, CancellationToken cancellationToken)
     {
         using var request = CreateRequest($"api/v1/{collection}");
