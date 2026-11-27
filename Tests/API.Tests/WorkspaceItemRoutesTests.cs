@@ -23,6 +23,7 @@ public sealed class WorkspaceItemRoutesTests
     }
 
     [TestCase("GetFocusTimeline", "v1/reports/focus-timeline")]
+    [TestCase("GetTaskFocus", "v1/reports/task-focus")]
     [TestCase("ListProjects", "v1/projects")]
     [TestCase("GetProject", "v1/projects/{id}")]
     [TestCase("ListTasks", "v1/tasks")]
