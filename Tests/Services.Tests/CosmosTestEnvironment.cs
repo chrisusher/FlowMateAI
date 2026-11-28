@@ -54,6 +54,14 @@ internal static class CosmosTestEnvironment
 
 internal sealed class CosmosTestDatabase(string connectionString, string name) : IAsyncDisposable
 {
+    public CosmosClient CreateLegacySeedClient() => new(connectionString, new CosmosClientOptions
+    {
+        ConnectionMode = ConnectionMode.Gateway,
+        HttpClientFactory = CosmosTestEnvironment.CreateHttpClient
+    });
+
+    public string Name => name;
+
     public DbContextOptions<DatabaseContext> CreateOptions() => new DbContextOptionsBuilder<DatabaseContext>()
         .UseCosmos(
             connectionString,

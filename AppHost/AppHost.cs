@@ -522,8 +522,8 @@ if (builder.ExecutionContext.IsRunMode)
     gateway.WithEnvironment(context =>
     {
         const string key = "ClientApps__frontend__ConfigResponse";
-        context.EnvironmentVariables[key] = new Auth0ClientConfiguration(
-            context.EnvironmentVariables[key], auth0Authority.Resource, auth0ClientId.Resource, auth0Audience.Resource);
+        context.EnvironmentVariables[key] = new FrontendClientConfiguration(
+            context.EnvironmentVariables[key], auth0Authority.Resource, auth0ClientId.Resource, auth0Audience.Resource, mcp.GetEndpoint("http"));
     });
 }
 
@@ -549,7 +549,7 @@ static string? FindRepositoryRoot()
     return null;
 }
 
-internal sealed class Auth0ClientConfiguration(object? generated, IValueProvider authority, IValueProvider clientId, IValueProvider audience) : IValueProvider
+internal sealed class FrontendClientConfiguration(object? generated, IValueProvider authority, IValueProvider clientId, IValueProvider audience, IValueProvider mcpEndpoint) : IValueProvider
 {
     public async ValueTask<string?> GetValueAsync(CancellationToken cancellationToken = default)
     {
@@ -563,6 +563,18 @@ internal sealed class Auth0ClientConfiguration(object? generated, IValueProvider
         clientEnvironment["Auth0__Domain"] = await authority.GetValueAsync(cancellationToken);
         clientEnvironment["Auth0__ClientId"] = await clientId.GetValueAsync(cancellationToken);
         clientEnvironment["Auth0__Audience"] = await audience.GetValueAsync(cancellationToken);
+        var endpoint = await mcpEndpoint.GetValueAsync(cancellationToken);
+
+        if (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttp && uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            // Expose the loopback endpoint that the settings UI accepts for local HTTP.
+            endpoint = new UriBuilder(uri)
+            {
+                Host = "localhost"
+            }.Uri.ToString();
+        }
+
+        clientEnvironment["McpEndpoint"] = endpoint;
 
         return configuration.ToJsonString();
     }

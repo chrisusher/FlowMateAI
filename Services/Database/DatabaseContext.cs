@@ -54,6 +54,8 @@ public class DatabaseContext : DbContext
             entity.ToContainer("McpKeys");
             entity.HasKey(x => x.Id);
             entity.HasPartitionKey(x => x.UserId);
+            // Preserve the non-discriminated document shape and CLR property names.
+            entity.HasNoDiscriminator();
             entity.Property(x => x.ETag).IsETagConcurrency();
         });
 

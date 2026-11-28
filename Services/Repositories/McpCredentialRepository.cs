@@ -1,91 +1,76 @@
-using System.Net;
-using Microsoft.Azure.Cosmos;
-using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
 using Services.Database;
 
 namespace Services.Repositories;
 
-public sealed class McpCredentialRepository(CosmosClient cosmos, IConfiguration configuration) : IMcpCredentialRepository
+public sealed class McpCredentialRepository(DatabaseContext database) : IMcpCredentialRepository
 {
-    private Container Keys => cosmos.GetContainer(
-        configuration["Database:DatabaseName"] ?? configuration["Database__DatabaseName"] ?? "flowmate-Development",
-        "McpKeys");
+    public async Task CreateAsync(McpKeyDocument document, CancellationToken cancellationToken = default)
+    {
+        var entry = database.McpKeys.Add(document);
 
-    public async Task CreateAsync(McpKeyDocument document, CancellationToken cancellationToken = default) =>
-        await Keys.CreateItemAsync(document, new PartitionKey(document.UserId), cancellationToken: cancellationToken);
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            entry.State = EntityState.Detached;
+        }
+    }
 
     public async Task DeleteAsync(string userId, string id, CancellationToken cancellationToken = default)
     {
+        var document = await GetAsync(userId, id, cancellationToken);
+
+        if (document is null)
+        {
+            return;
+        }
+
+        var entry = database.McpKeys.Remove(document);
+
         try
         {
-            await Keys.DeleteItemAsync<McpKeyDocument>(id, new PartitionKey(userId), cancellationToken: cancellationToken);
+            await database.SaveChangesAsync(cancellationToken);
         }
-        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound) { }
-    }
-
-    public async Task<IReadOnlyList<McpKeyDocument>> ListAsync(string userId, CancellationToken cancellationToken = default)
-    {
-        var query = new QueryDefinition("SELECT * FROM c WHERE c.userId = @userId ORDER BY c.createdAt DESC").WithParameter("@userId", userId);
-        using var iterator = Keys.GetItemQueryIterator<McpKeyDocument>(query, requestOptions: new QueryRequestOptions
+        finally
         {
-            PartitionKey = new PartitionKey(userId)
-        });
-        var result = new List<McpKeyDocument>();
-
-        while (iterator.HasMoreResults)
-        {
-            result.AddRange(await iterator.ReadNextAsync(cancellationToken));
-        }
-
-        return result;
-    }
-
-    public async Task<McpKeyDocument?> GetAsync(string userId, string id, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var response = await Keys.ReadItemAsync<McpKeyDocument>(id, new PartitionKey(userId), cancellationToken: cancellationToken);
-            response.Resource.ETag = response.ETag;
-
-            return response.Resource;
-        }
-        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
+            entry.State = EntityState.Detached;
         }
     }
 
-    public async Task<McpKeyDocument?> FindByIdAsync(string id, CancellationToken cancellationToken = default)
-    {
-        using var iterator = Keys.GetItemQueryIterator<McpKeyDocument>(new QueryDefinition("SELECT * FROM c WHERE c.id = @id").WithParameter("@id", id));
+    public async Task<IReadOnlyList<McpKeyDocument>> ListAsync(string userId, CancellationToken cancellationToken = default) =>
+        await database.McpKeys.AsNoTracking()
+            .Where(document => document.UserId == userId)
+            .OrderByDescending(document => document.CreatedAt)
+            .ToListAsync(cancellationToken);
 
-        while (iterator.HasMoreResults)
-        {
-            var item = (await iterator.ReadNextAsync(cancellationToken)).FirstOrDefault();
+    public Task<McpKeyDocument?> GetAsync(string userId, string id, CancellationToken cancellationToken = default) =>
+        database.McpKeys.AsNoTracking().FirstOrDefaultAsync(document => document.UserId == userId && document.Id == id, cancellationToken);
 
-            if (item is not null)
-            {
-                return item;
-            }
-        }
-
-        return null;
-    }
+    public Task<McpKeyDocument?> FindByIdAsync(string id, CancellationToken cancellationToken = default) =>
+        database.McpKeys.AsNoTracking().FirstOrDefaultAsync(document => document.Id == id, cancellationToken);
 
     public async Task<bool> ReplaceAsync(McpKeyDocument document, string? etag, CancellationToken cancellationToken = default)
     {
+        var entry = database.McpKeys.Update(document);
+        entry.Property(x => x.ETag).OriginalValue = etag;
+        entry.Property(x => x.ETag).IsModified = false;
+
         try
         {
-            await Keys.ReplaceItemAsync(document, document.Id, new PartitionKey(document.UserId), new ItemRequestOptions
-            {
-                IfMatchEtag = etag
-            }, cancellationToken);
+            await database.SaveChangesAsync(cancellationToken);
 
             return true;
         }
-        catch (CosmosException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+        catch (DbUpdateConcurrencyException)
         {
             return false;
+        }
+        finally
+        {
+            entry.State = EntityState.Detached;
         }
     }
 }

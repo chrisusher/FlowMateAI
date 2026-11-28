@@ -94,7 +94,9 @@ public static class Services
         {
             var settings = ResolveDatabaseSettings(configuration);
 
-            return new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
+            return string.IsNullOrWhiteSpace(settings.AccountKey)
+                ? new CosmosClient(settings.AccountEndpoint, new DefaultAzureCredential())
+                : new CosmosClient(settings.AccountEndpoint, settings.AccountKey);
         });
 
         if (Uri.TryCreate(configuration["KeyVault:VaultUri"] ?? configuration["KeyVault__VaultUri"] ?? configuration["FLOWMATE_SECRETS_URI"], UriKind.Absolute, out var vaultUri))

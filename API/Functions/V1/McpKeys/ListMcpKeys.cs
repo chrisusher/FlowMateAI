@@ -23,7 +23,8 @@ public sealed class ListMcpKeys(Auth0TokenValidator tokens, IMcpCredentialServic
             key.Prefix,
             key.CreatedAt,
             key.ExpiresAt,
-            key.Revoked)), cancellationToken);
+            key.Revoked,
+            key.VaultCleanupPending)), cancellationToken);
 
         return response;
     }
