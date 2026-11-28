@@ -387,6 +387,25 @@ public sealed class Auth0TokenValidatorTests
         Assert.That(timeline.Date, Is.EqualTo(new DateOnly(2026, 11, 25)));
     }
 
+    [TestCase("?date=2026-02-30")]
+    [TestCase("?date=2026-1-01")]
+    [TestCase("?date=2026-01-01&date=2026-01-02")]
+    public async Task GetTaskFocus_InvalidDate_ReturnsBadRequestWithoutReadingReport(string query)
+    {
+        using var key = RSA.Create(2048);
+        var function = new GetTaskFocus(CreateValidator(key), new TestUserService("person@example.test"), new UnusedReportService());
+        var response = await function.Run(new TestHttpRequestData($"Bearer {CreateToken(key)}", url: "https://api.flowmate.test/test" + query), CancellationToken.None);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+    }
+
+    private sealed class UnusedReportService : IWorkspaceReportService
+    {
+        public Task<WorkspaceReport> GetAsync(string userId, ReportPeriod period, DateOnly? date, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Report should not be read.");
+        public Task<ReportPage> GetPageAsync(string userId, ReportPeriod period, DateOnly? date, string? cursor, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<string> GetRevisionAsync(string userId, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+    }
+
     private sealed class TestTimelineService : IFocusTimelineService
     {
         public string? UserId { get; private set; }

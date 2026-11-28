@@ -42,14 +42,21 @@ public sealed class PageAndLayoutTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void ReportsPageSharesTheSelectedPeriodWithItsCards()
+    public void ReportsPage_SelectedPeriod_ShowsTheCorrespondingFocusCard()
     {
         var cut = Render<ReportsPage>();
         Assert.That(cut.FindAll(".report-summary article").Count, Is.EqualTo(3));
         cut.Find("select").Change("Day");
         Assert.That(Stats.Period, Is.EqualTo(ReportPeriod.Day));
-        Assert.That(cut.FindAll(".bar-column"), Has.Exactly(1).Items);
+        Assert.That(cut.FindAll(".task-focus-panel"), Has.Exactly(1).Items);
+        Assert.That(cut.FindAll(".bar-column"), Is.Empty);
         Assert.That(cut.FindAll(".history-note"), Has.Exactly(1).Items);
+        cut.Find("select").Change("Week");
+        Assert.That(cut.FindAll(".task-focus-panel"), Is.Empty);
+        Assert.That(cut.FindAll(".bar-column"), Has.Exactly(7).Items);
+        cut.Find("select").Change("Month");
+        Assert.That(cut.FindAll(".task-focus-panel"), Is.Empty);
+        Assert.That(cut.FindAll(".bar-column"), Is.Not.Empty);
     }
 
     [Test]

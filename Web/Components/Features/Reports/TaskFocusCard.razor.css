@@ -1,0 +1,21 @@
+.task-focus-panel {
+    padding: 19px 21px;
+    margin-bottom: 15px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+th,
+td {
+    border-top: 1px solid var(--line);
+    padding: .75rem .5rem;
+    text-align: right;
+}
+
+th:first-child {
+    text-align: left;
+}

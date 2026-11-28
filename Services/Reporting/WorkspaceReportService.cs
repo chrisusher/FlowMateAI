@@ -61,7 +61,7 @@ public sealed class WorkspaceReportService(IWorkspaceReportRepository repository
             .Where(x => x.Day >= effectiveStart && x.Day <= effectiveEnd)
             .OrderBy(x => x.Session.StartedAt)
             .Select(x => new ReportEntry(x.Session.Id, x.Session.ProjectId, projects.GetValueOrDefault(x.Session.ProjectId, "Deleted project"), x.Session.TaskId,
-                x.Session.TaskId is { } taskId ? tasks.GetValueOrDefault(taskId, "Deleted task") : "", x.Session.StartedAt, x.Session.EndedAt, x.Session.FocusMinutes, x.Day) { FocusSeconds = x.Session.FocusSeconds, PlannedSeconds = x.Session.PlannedSeconds }).ToArray();
+                x.Session.TaskId is { } taskId ? tasks.GetValueOrDefault(taskId, x.Session.TaskName ?? "Deleted task") : "", x.Session.StartedAt, x.Session.EndedAt, x.Session.FocusMinutes, x.Day) { FocusSeconds = x.Session.FocusSeconds, PlannedSeconds = x.Session.PlannedSeconds }).ToArray();
         var days = Enumerable.Range(0, effectiveEnd.DayNumber - effectiveStart.DayNumber + 1)
             .Select(i => new DateOnly(effectiveStart.Year, effectiveStart.Month, effectiveStart.Day).AddDays(i))
             .Select(day => new ReportDay(day, ReportEntry.TotalMinutes(entries.Where(e => e.LocalDate == day)))).ToArray();
