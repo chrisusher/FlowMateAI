@@ -6,6 +6,15 @@ namespace Web.Tests;
 
 public sealed class IntegrationsComponentTests : WorkspaceComponentTest
 {
+    [Test]
+    public void Render_LoopbackMcpEndpoint_ShowsCompleteAssistantUrl()
+    {
+        Configuration["McpEndpoint"] = "http://localhost:44905";
+        var cut = Render<IntegrationsCard>();
+
+        Assert.That(cut.Markup, Does.Contain("http://localhost:44905/runtime/webhooks/mcp"));
+    }
+
     [TestCase("https://support.example.test/help", true)]
     [TestCase("mailto:help@example.test", true)]
     [TestCase("javascript:alert(1)", false)]
@@ -81,5 +90,20 @@ public sealed class IntegrationsComponentTests : WorkspaceComponentTest
         cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Revoked")));
         Assert.That(cut.FindAll("button").Any(b => b.TextContent.Contains("Revoke")), Is.False);
         Assert.That(Api.Paths, Does.Contain("/api/v1/mcp-keys/key-1"));
+    }
+
+    [Test]
+    public async Task Render_PendingVaultCleanup_OffersRevocationRetry()
+    {
+        await SignInAsync();
+        var now = DateTimeOffset.UtcNow;
+        Api.Respond = (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new[] { new McpKeySummary("key-1", "Laptop", "fm_abc", now, now.AddDays(30), true, true) })
+        });
+        var cut = Render<IntegrationsCard>();
+
+        cut.WaitForAssertion(() => Assert.That(cut.Markup, Does.Contain("Revocation incomplete")));
+        Assert.That(cut.FindAll("button").Any(button => button.TextContent.Contains("Finish revocation")), Is.True);
     }
 }

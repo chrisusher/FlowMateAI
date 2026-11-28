@@ -1,5 +1,6 @@
 using Services.Repositories;
 using Services.Workspaces;
+using Microsoft.Azure.Cosmos;
 
 namespace Services.Tests;
 
@@ -45,5 +46,22 @@ public sealed class ServicesRegistrationTests
 
         Assert.That(archiveRepository, Is.InstanceOf<DisabledActivityArchiveRepository>());
         Assert.That(workspaceService, Is.InstanceOf<WorkspaceService>());
+    }
+
+    [Test]
+    public void AddServices_CosmosWithoutAccountKey_ResolvesClientUsingAzureCredential()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Database:AccountEndpoint"] = "https://localhost:8081/",
+                ["Database:DatabaseName"] = "flowmate-tests"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddServices(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        Assert.That(provider.GetRequiredService<CosmosClient>(), Is.Not.Null);
     }
 }

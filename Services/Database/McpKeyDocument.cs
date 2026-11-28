@@ -20,5 +20,7 @@ public sealed class McpKeyDocument
 
     public DateTimeOffset? RevokedAt { get; set; }
 
+    public bool VaultCleanupPending { get; set; }
+
     public string? ETag { get; set; }
 }

@@ -59,8 +59,8 @@
             <ul>
                 @foreach (var key in _keys)
                 {
-                    <li @key="key.Id"><strong>@key.Name</strong> (@key.Prefix…) — @(key.Revoked ? "Revoked" : key.ExpiresAt <= DateTimeOffset.UtcNow ? "Expired" : "Active"); created @key.CreatedAt.ToString("d MMM yyyy"), expires @key.ExpiresAt.ToString("d MMM yyyy")
-                    @if (!key.Revoked) { <button type="button" class="text-button" disabled="@_busy" @onclick="() => RevokeAsync(key.Id)">Revoke <span class="visually-hidden">@key.Name</span></button> }</li>
+                    <li @key="key.Id"><strong>@key.Name</strong> (@key.Prefix…) — @(key.VaultCleanupPending ? "Revocation incomplete" : key.Revoked ? "Revoked" : key.ExpiresAt <= DateTimeOffset.UtcNow ? "Expired" : "Active"); created @key.CreatedAt.ToString("d MMM yyyy"), expires @key.ExpiresAt.ToString("d MMM yyyy")
+                    @if (!key.Revoked || key.VaultCleanupPending) { <button type="button" class="text-button" disabled="@_busy" @onclick="() => RevokeAsync(key.Id)">@(key.VaultCleanupPending ? "Finish revocation" : "Revoke") <span class="visually-hidden">@key.Name</span></button> }</li>
                 }
             </ul>
         }
