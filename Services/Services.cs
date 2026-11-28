@@ -130,6 +130,8 @@ public static class Services
         services.AddScoped<IProjectWriteRepository, ProjectWriteRepository>();
         services.AddScoped<IProjectArchiveRepository, ProjectArchiveRepository>();
         services.AddScoped<ProjectCutoverRepository>();
+        services.AddScoped<TaskCutoverRepository>();
+        services.AddScoped<ITaskRepository, TaskRepository>();
         #endregion
 
         #region Services
@@ -147,6 +149,7 @@ public static class Services
         services.AddScoped<IFocusTimelineService, FocusTimelineService>();
         services.AddScoped<IWorkspaceService, WorkspaceService>();
         services.AddScoped<IProjectWriteService, ProjectWriteService>();
+        services.AddScoped<ITaskService, TaskService>();
         services.AddScoped<IAuthenticatedApiRateLimiter, AuthenticatedApiRateLimiterService>();
         #endregion
 

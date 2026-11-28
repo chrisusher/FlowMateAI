@@ -101,6 +101,11 @@ resource projectReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments
   name: guid(cosmos.id, app.identity.principalId, 'Projects', 'reader')
   properties: { principalId: app.identity.principalId, roleDefinitionId: cosmosReaderRole, scope: '${dataScope}Projects' }
 }
+resource taskReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
+  parent: cosmos
+  name: guid(cosmos.id, app.identity.principalId, 'Tasks', 'reader')
+  properties: { principalId: app.identity.principalId, roleDefinitionId: cosmosReaderRole, scope: '${dataScope}Tasks' }
+}
 resource billingReader 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-05-15' = {
   parent: cosmos
   name: guid(cosmos.id, app.identity.principalId, 'BillingEntitlements', 'reader')

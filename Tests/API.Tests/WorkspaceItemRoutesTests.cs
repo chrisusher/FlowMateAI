@@ -22,6 +22,21 @@ public sealed class WorkspaceItemRoutesTests
         Assert.That(trigger.Methods, Is.EquivalentTo(new[] { verb }));
     }
 
+    [TestCase("CreateTask", "v1/tasks", "post")]
+    [TestCase("UpdateTask", "v1/tasks/{id}", "put")]
+    [TestCase("DeleteTask", "v1/tasks/{id}", "delete")]
+    [TestCase("BulkUpdateTasks", "v1/tasks/bulk", "post")]
+    public void Run_TaskWriteFunctions_ExposeExpectedRoutes(string functionName, string route, string verb)
+    {
+        var method = typeof(ListProjects).Assembly.GetTypes().Single(type => type.Name == functionName).GetMethod("Run")!;
+        var function = method.GetCustomAttribute<FunctionAttribute>();
+        var trigger = method.GetParameters().Select(parameter => parameter.GetCustomAttribute<HttpTriggerAttribute>()).Single(attribute => attribute is not null)!;
+
+        Assert.That(function!.Name, Is.EqualTo(functionName));
+        Assert.That(trigger.Route, Is.EqualTo(route));
+        Assert.That(trigger.Methods, Is.EquivalentTo(new[] { verb }));
+    }
+
     [TestCase("GetFocusTimeline", "v1/reports/focus-timeline")]
     [TestCase("GetTaskFocus", "v1/reports/task-focus")]
     [TestCase("ListProjects", "v1/projects")]

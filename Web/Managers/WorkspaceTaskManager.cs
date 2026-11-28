@@ -5,9 +5,12 @@ using Web.Clients;
 
 namespace Web.Managers;
 
-public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatistics statistics, NavigationManager navigation) : WorkspaceManager
+public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatistics statistics, NavigationManager navigation, WorkspaceItemsClient items) : WorkspaceManager
 {
     private WorkspaceStore Store => store;
+    private string? _editingBaseline;
+    private string? _removeBaseline;
+    public bool Saving { get; private set; }
 
     public TaskRecord Draft { get; private set; } = new();
     public bool Editing
@@ -33,31 +36,112 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
 
     public async Task ToggleComplete(TaskRecord task)
     {
-        task.IsComplete = !task.IsComplete;
+        var candidate = Copy(task);
+        candidate.IsComplete = !candidate.IsComplete;
 
-        if (task.IsComplete)
+        if (candidate.IsComplete)
         {
-            task.PlannedToday = true;
+            candidate.PlannedToday = true;
         }
 
-        await Store.SaveAsync();
+        await ChangeTaskAsync(task, candidate);
     }
 
     public async Task TogglePlan(TaskRecord task)
     {
-        task.PlannedToday = !task.PlannedToday;
-        await Store.SaveAsync();
+        var candidate = Copy(task);
+        candidate.PlannedToday = !candidate.PlannedToday;
+        await ChangeTaskAsync(task, candidate);
     }
 
     public async Task ToggleAllPlan()
     {
-        foreach (var task in Store.Data.Tasks)
+        if (Saving)
         {
-            task.PlannedToday = !task.PlannedToday;
+            return;
         }
 
-        await Store.SaveAsync();
+        var changes = Store.Data.Tasks.Select(Copy).ToArray();
+        var failures = new List<string>();
+
+        foreach (var original in changes)
+        {
+            var candidate = Copy(original);
+            candidate.PlannedToday = !candidate.PlannedToday;
+
+            if (!await ChangeTaskAsync(original, candidate))
+            {
+                failures.Add(original.Title);
+            }
+        }
+
+        ActionMessage = failures.Count == 0 ? "Planning updated." : $"Could not update: {string.Join(", ", failures)}. Reload and retry those tasks.";
+        NotifyChanged();
     }
+
+    private async Task<bool> ChangeTaskAsync(TaskRecord original, TaskRecord candidate)
+    {
+        if (Saving)
+        {
+            return false;
+        }
+
+        var baseline = WorkspaceCollectionManifest.Hash(new[] { original });
+        Saving = true;
+        ActionMessage = "Saving task…";
+        NotifyChanged();
+
+        try
+        {
+            await Store.WriteTaskAsync(original.Id, false, async () =>
+            {
+                var remote = await RequireUnchangedAsync(original.Id, baseline);
+
+                return await items.UpdateTaskAsync(candidate, remote.Revision, Store.WorkspaceRevision ?? "");
+            });
+            ActionMessage = "Task saved.";
+
+            return true;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or InvalidDataException or JsonException or TaskCanceledException)
+        {
+            ActionMessage = exception is TaskCanceledException ? "The task request timed out. Reload before retrying." : exception.Message;
+
+            return false;
+        }
+        finally
+        {
+            Saving = false;
+            NotifyChanged();
+        }
+    }
+
+    private async Task<TaskWriteResponse> RequireUnchangedAsync(string id, string baseline)
+    {
+        var local = Store.Task(id);
+        var remote = await items.GetTaskVersionedAsync(id);
+
+        if (local is null || remote is null || WorkspaceCollectionManifest.Hash(new[] { local }) != baseline ||
+            WorkspaceCollectionManifest.Hash(new[] { remote.Task }) != baseline)
+        {
+            throw new InvalidOperationException("This task changed on another device. Reload it before editing.");
+        }
+
+        return remote;
+    }
+
+    private static TaskRecord Copy(TaskRecord task) => new()
+    {
+        Id = task.Id,
+        Title = task.Title,
+        ProjectId = task.ProjectId,
+        DueDate = task.DueDate,
+        Priority = task.Priority,
+        IsComplete = task.IsComplete,
+        PlannedToday = task.PlannedToday,
+        FocusMinutesToday = task.FocusMinutesToday,
+        CreatedAt = task.CreatedAt
+    };
 
     public async Task SelectTask(TaskRecord task)
     {
@@ -152,6 +236,7 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
             FocusMinutesToday = task.FocusMinutesToday,
             CreatedAt = task.CreatedAt
         };
+        _editingBaseline = WorkspaceCollectionManifest.Hash(new[] { task });
         Editing = true;
         DialogOpen = true;
         NotifyChanged();
@@ -159,6 +244,11 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
 
     public void CloseTaskDialog()
     {
+        if (Saving)
+        {
+            return;
+        }
+
         DialogOpen = false;
         ValidationMessage = null;
         NotifyChanged();
@@ -166,7 +256,7 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
 
     public void HandleDialogKeyDown(KeyboardEventArgs args)
     {
-        if (args.Key == "Escape")
+        if (!Saving && args.Key == "Escape")
         {
             DialogOpen = false;
             RemoveTaskId = null;
@@ -202,49 +292,61 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
             return;
         }
 
-        if (Editing)
+        if (Editing && existingTask is not null && existingTask.ProjectId != Draft.ProjectId &&
+            TimerReferencesTask(existingTask) && IsTimerRunningOrPaused())
         {
-            var index = Store.Data.Tasks.FindIndex(t => t.Id == Draft.Id);
+            ValidationMessage = "Finish this task's timer before moving it.";
+            NotifyChanged();
 
-            if (index < 0)
-            {
-                ValidationMessage = "This task is no longer available. Reload your workspace and try again.";
-                NotifyChanged();
-
-                return;
-            }
-
-            var original = Store.Data.Tasks[index];
-
-            if (original.ProjectId != project.Id && TimerReferencesTask(original) && IsTimerRunningOrPaused())
-            {
-                ValidationMessage = "Pause or finish this task's timer before moving it.";
-                NotifyChanged();
-
-                return;
-            }
-
-            Draft.Title = title;
-            Store.Data.Tasks[index] = Draft;
-
-            if (Store.Data.Timer.Phase == TimerPhase.Idle && Store.Data.Timer.TaskId == Draft.Id)
-            {
-                Store.Data.Timer.ProjectId = Draft.ProjectId;
-            }
-        }
-        else
-        {
-            Draft.Title = title;
-            Store.Data.Tasks.Add(Draft);
+            return;
         }
 
-        DialogOpen = false;
+        if (Saving)
+        {
+            return;
+        }
+
+        Draft.Title = title;
+        Saving = true;
         ValidationMessage = null;
         ActionMessage = "Saving task…";
         NotifyChanged();
-        await Store.SaveAsync();
-        ActionMessage = Store.SyncMessage ?? "Task saved.";
-        NotifyChanged();
+
+        try
+        {
+            var candidate = Copy(Draft);
+            await Store.WriteTaskAsync(candidate.Id, false, async () =>
+            {
+                if (!Editing)
+                {
+                    var created = await items.CreateTaskAsync(candidate, Store.WorkspaceRevision ?? "");
+
+                    if (created.WorkspaceRevision is null || created.Timer is null)
+                    {
+                        throw new InvalidOperationException("The task may already have been saved. Reload the workspace to check it.");
+                    }
+
+                    return created;
+                }
+
+                var remote = await RequireUnchangedAsync(candidate.Id, _editingBaseline ?? "");
+
+                return await items.UpdateTaskAsync(candidate, remote.Revision, Store.WorkspaceRevision ?? "");
+            });
+            DialogOpen = false;
+            _editingBaseline = null;
+            ActionMessage = "Task saved.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or InvalidDataException or JsonException or TaskCanceledException)
+        {
+            ValidationMessage = exception is TaskCanceledException ? "The task request timed out. Reload before retrying." : exception.Message;
+            ActionMessage = null;
+        }
+        finally
+        {
+            Saving = false;
+            NotifyChanged();
+        }
     }
 
     public void RequestRemoveTask(TaskRecord task)
@@ -253,18 +355,24 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
 
         if (TimerReferencesTask(task) && IsTimerRunningOrPaused())
         {
-            ActionMessage = "Pause or finish this task's timer before removing it.";
+            ActionMessage = "Finish this task's timer before removing it.";
             NotifyChanged();
 
             return;
         }
 
         RemoveTaskId = task.Id;
+        _removeBaseline = WorkspaceCollectionManifest.Hash(new[] { task });
         NotifyChanged();
     }
 
     public void CloseRemoveTaskDialog()
     {
+        if (Saving)
+        {
+            return;
+        }
+
         RemoveTaskId = null;
         NotifyChanged();
     }
@@ -283,25 +391,42 @@ public sealed class WorkspaceTaskManager(WorkspaceStore store, WorkspaceStatisti
         if (TimerReferencesTask(task) && IsTimerRunningOrPaused())
         {
             RemoveTaskId = null;
-            ActionMessage = "Pause or finish this task's timer before removing it.";
+            ActionMessage = "Finish this task's timer before removing it.";
             NotifyChanged();
 
             return;
         }
 
-        if (Store.Data.Timer.Phase == TimerPhase.Idle && Store.Data.Timer.TaskId == task.Id)
+        if (Saving)
         {
-            Store.Data.Timer.TaskId = null;
-            Store.Data.Timer.ProjectId = "";
+            return;
         }
 
-        Store.Data.Tasks.Remove(task);
-        RemoveTaskId = null;
-        ActionMessage = "Saving task…";
+        Saving = true;
+        ActionMessage = "Removing task…";
         NotifyChanged();
-        await Store.SaveAsync();
-        ActionMessage = Store.SyncMessage ?? "Task removed. Focus history is preserved.";
-        NotifyChanged();
+
+        try
+        {
+            await Store.WriteTaskAsync(task.Id, true, async () =>
+            {
+                var remote = await RequireUnchangedAsync(task.Id, _removeBaseline ?? "");
+
+                return await items.DeleteTaskAsync(task.Id, remote.Revision, Store.WorkspaceRevision ?? "");
+            });
+            RemoveTaskId = null;
+            _removeBaseline = null;
+            ActionMessage = "Task removed. Focus history is preserved.";
+        }
+        catch (Exception exception) when (exception is HttpRequestException or InvalidOperationException or InvalidDataException or JsonException or TaskCanceledException)
+        {
+            ActionMessage = exception is TaskCanceledException ? "The task request timed out. Reload before retrying." : exception.Message;
+        }
+        finally
+        {
+            Saving = false;
+            NotifyChanged();
+        }
     }
 
     private bool TimerReferencesTask(TaskRecord task) =>

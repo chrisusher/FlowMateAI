@@ -10,7 +10,7 @@
                     <span class="eyebrow">PLAN YOUR NEXT STEP</span>
                     <h2 id="task-dialog-title">@(Tasks.Editing ? "Edit task" : "New task")</h2>
                 </div>
-                <button type="button" class="dialog-close" aria-label="Close task form" @onclick="Tasks.CloseTaskDialog">&#215;</button>
+                <button type="button" class="dialog-close" aria-label="Close task form" disabled="@Tasks.Saving" @onclick="Tasks.CloseTaskDialog">&#215;</button>
             </div>
             <EditForm Model="Tasks.Draft" OnSubmit="Tasks.SaveTask">
                 @if (!string.IsNullOrWhiteSpace(Tasks.ValidationMessage))
@@ -19,12 +19,12 @@
                 }
                 <label class="field-label">
                     Task name
-                    <InputText class="field-input" maxlength="160" @bind-Value="Tasks.Draft.Title" placeholder="What needs your attention?" />
+                    <InputText class="field-input" disabled="@Tasks.Saving" maxlength="160" @bind-Value="Tasks.Draft.Title" placeholder="What needs your attention?" />
                 </label>
                 <div class="dialog-fields">
                     <label class="field-label">
                         Project
-                        <InputSelect class="field-input" @bind-Value="Tasks.Draft.ProjectId">
+                        <InputSelect disabled="@Tasks.Saving" class="field-input" @bind-Value="Tasks.Draft.ProjectId">
                             <option value="">Choose an active project</option>
                             @foreach (var project in Store.Data.Projects.Where(project => !project.IsArchived || project.Id == Tasks.Draft.ProjectId))
                             {
@@ -43,15 +43,15 @@
                 </div>
                 <label class="field-label">
                     Due date
-                    <InputDate TValue="DateOnly?" class="field-input" @bind-Value="Tasks.Draft.DueDate" />
+                    <InputDate disabled="@Tasks.Saving" TValue="DateOnly?" class="field-input" @bind-Value="Tasks.Draft.DueDate" />
                 </label>
                 <label class="dialog-checkbox">
-                    <InputCheckbox @bind-Value="Tasks.Draft.PlannedToday" />
+                    <InputCheckbox disabled="@Tasks.Saving" @bind-Value="Tasks.Draft.PlannedToday" />
                     Add to today's plan
                 </label>
                 <div class="dialog-actions">
-                    <button type="button" class="text-button" @onclick="Tasks.CloseTaskDialog">Cancel</button>
-                    <button type="submit" class="timer-primary">Save task</button>
+                    <button type="button" class="text-button" disabled="@Tasks.Saving" @onclick="Tasks.CloseTaskDialog">Cancel</button>
+                    <button type="submit" class="timer-primary" disabled="@Tasks.Saving">@(Tasks.Saving ? "Saving…" : "Save task")</button>
                 </div>
             </EditForm>
         </section>

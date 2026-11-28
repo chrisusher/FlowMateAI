@@ -252,49 +252,105 @@ paths:
     get:
       operationId: listTasks
       summary: List the signed-in user's tasks
-      description: Reads the collection container, which is synchronised when the workspace is saved. Existing accounts may need migration.
+      description: Reads authoritative task documents after account cutover; legacy accounts read the workspace.
       security:
         - bearerAuth: []
       responses:
-        '200':
-          description: Records in workspace order.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+        '200': { description: Records in workspace order }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      operationId: createTask
+      summary: Create a task in an active project
+      description: Reuse the same task ID on retry. Reload after an uncertain response before changing the workspace.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskWriteRequest' }
+      responses:
+        '201': { description: Task, record revision, workspace revision and timer }
+        '400': { description: Invalid task or capacity reached }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: Conflicting ID, project or workspace revision }
+        '503': { description: Task storage has not been cut over }
+  /v1/tasks/bulk:
+    post:
+      operationId: bulkUpdateTasks
+      summary: Apply up to 100 distinct task changes
+      description: Returns a result or error for each task; successful records are not rolled back when another record fails.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [changes]
+              properties:
+                changes:
+                  type: array
+                  maxItems: 100
+                  items: { $ref: '#/components/schemas/TaskWriteRequest' }
+      responses:
+        '200': { description: Per-record outcomes }
+        '400': { description: Invalid batch }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
     get:
       operationId: getTask
       summary: Get one of the signed-in user's tasks
       security:
         - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
       responses:
         '200':
-          description: The requested record.
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: The record was not found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiError'
+          description: The requested record; ETag is the record revision after cutover.
+          headers:
+            ETag:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Record not found }
+    put:
+      operationId: updateTask
+      summary: Edit, move, complete, reopen, plan or unplan a task
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskWriteRequest' }
+      responses:
+        '200': { description: Updated task and record revision; moves also return workspace revision and timer }
+        '400': { description: Invalid task }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Task not found }
+        '409': { description: Stale revision, unavailable project or active timer }
+        '503': { description: Task storage has not been cut over }
+    delete:
+      operationId: deleteTask
+      summary: Remove a task while retaining focus history
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TaskWriteRequest' }
+      responses:
+        '200': { description: Removed task, record revision, workspace revision and timer }
+        '400': { description: Invalid revision }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: Task not found }
+        '409': { description: Stale revision or active timer }
+        '503': { description: Task storage has not been cut over }
   /v1/sessions:
     get:
       operationId: listSessions
@@ -600,6 +656,26 @@ components:
           schema:
             $ref: '#/components/schemas/BillingActionResponse'
   schemas:
+    TaskWriteRequest:
+      type: object
+      description: Supply task for create and update, its ETag revision for update and delete, and the workspace revision for create, move and delete.
+      properties:
+        task:
+          type: object
+          required: [id, title, projectId, priority, isComplete, plannedToday, focusMinutesToday, createdAt]
+          properties:
+            id: { type: string, maxLength: 128 }
+            title: { type: string, maxLength: 160 }
+            projectId: { type: string, maxLength: 128 }
+            dueDate: { type: string, format: date, nullable: true }
+            priority: { type: string }
+            isComplete: { type: boolean }
+            plannedToday: { type: boolean }
+            focusMinutesToday: { type: integer }
+            createdAt: { type: string, format: date-time }
+        revision: { type: string }
+        workspaceRevision: { type: string }
+
     ApiError:
       type: object
       required: [code, message]

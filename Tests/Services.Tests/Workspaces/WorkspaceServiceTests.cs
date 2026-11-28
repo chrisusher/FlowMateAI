@@ -38,6 +38,34 @@ public sealed class WorkspaceServiceTests
     }
 
     [Test]
+    public async Task SaveAsync_StaleTaskSnapshot_PreservesAuthoritativeTasks()
+    {
+        var repository = new InMemoryWorkspaceRepository();
+        repository.Seed("user", new WorkspaceSnapshot
+        {
+            Tasks = [new TaskRecord
+            {
+                Id = "task",
+                Title = "Current"
+            }]
+        }, "revision-1", tasksAuthoritative: true);
+        var stale = new WorkspaceSnapshot
+        {
+            Tasks = [new TaskRecord
+            {
+                Id = "task",
+                Title = "Stale"
+            }]
+        };
+
+        var result = await CreateService(repository).SaveAsync("user", new(stale, "revision-1"));
+
+        Assert.That(result.Succeeded, Is.True);
+        Assert.That(result.Response!.Workspace.Tasks.Single().Title, Is.EqualTo("Current"));
+        Assert.That(repository.Read("user").Tasks.Single().Title, Is.EqualTo("Current"));
+    }
+
+    [Test]
     public async Task SaveAsync_ArchivedTimerProject_RejectsWorkspaceWrite()
     {
         var repository = new InMemoryWorkspaceRepository();
@@ -318,12 +346,13 @@ public sealed class WorkspaceServiceTests
         private static WorkspaceSnapshot Clone(WorkspaceSnapshot snapshot) =>
             JsonSerializer.Deserialize<WorkspaceSnapshot>(JsonSerializer.Serialize(snapshot, SharedCommon.JsonOptions), SharedCommon.JsonOptions)!;
 
-        public void Seed(string ownerId, WorkspaceSnapshot snapshot, string revision, bool projectsAuthoritative = false) =>
+        public void Seed(string ownerId, WorkspaceSnapshot snapshot, string revision, bool projectsAuthoritative = false, bool tasksAuthoritative = false) =>
             _documents[ownerId] = new WorkspaceDocument
             {
                 UserId = ownerId,
                 Workspace = Clone(snapshot),
                 ProjectsAuthoritative = projectsAuthoritative,
+                TasksAuthoritative = tasksAuthoritative,
                 ETag = revision
             };
 

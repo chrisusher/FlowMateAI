@@ -88,3 +88,18 @@ dotnet run --project CLI -- migrations project-cutovers --user-id "auth0|abc123"
 The command refuses to overwrite different destination records or an existing backup, preserves the source workspace, and checks its ETag again before switching authority. The backup contains the full workspace and account identifier; store it privately and retain it separately. Partial copies can be retried with a new backup only if the source and destination still match. After applying, verify project order, names, archives, tasks, timer behaviour, reports and MCP access before resuming writers.
 
 For rollback, stop writers again and preserve the **current** workspace and project containers before any restore. The retained pre-cutover backup predates subsequent edits and must not be blindly written over them. Restore into an isolated database from the independent Cosmos backup, compare and reconcile all newer project and workspace changes, then use a separately reviewed recovery procedure before directing traffic to the restored data. Do not resume old clients against a cut-over account.
+
+## Cut over an account's tasks
+
+New empty workspaces initialise task storage automatically. For existing accounts, first complete the project cutover, resolve pending browser drafts, and make an independent recoverable Cosmos backup. Stop all old and new API instances, background workspace writers and browser writers throughout copy and verification. A legacy synchronisation running after cutover can overwrite task documents. Deploy the task-aware API, web client and MCP reader together, grant the MCP identity read access to the Tasks container, and require updated clients before restarting writers.
+
+Set the intended Cosmos endpoint and `Database:DatabaseName` explicitly. Preview the exact account and verify the endpoint, database, account and task count before applying:
+
+```powershell
+dotnet run --project CLI -- migrations task-cutovers --user-id "auth0|abc123"
+dotnet run --project CLI -- migrations task-cutovers --user-id "auth0|abc123" --apply --writers-stopped --backup ./task-cutover-backup.json
+```
+
+The command requires a new private backup file, checks the workspace ETag and refuses to overwrite different destination documents. Partial copies can be retried with a new backup when the source and destination still match. After cutover, verify task order and contents, timer selection, reports and MCP reads before restarting writers. Task documents are partitioned by `/UserId`; deleted task tombstones retain the ID and deletion revision for safe retries.
+
+For rollback, stop writers and preserve the current workspace and task containers first. The pre-cutover backup does not include later edits. Restore to an isolated database, compare and reconcile later changes, and use a separately reviewed recovery procedure. Never restart an old client or API against a cut-over account.

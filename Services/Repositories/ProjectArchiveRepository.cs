@@ -25,7 +25,7 @@ public sealed class ProjectArchiveRepository(DatabaseContext database) : IProjec
             return new(null, null, ProjectChangeRejection.StorageNotReady);
         }
 
-        if (workspace.PendingProjectArchive is not null || string.IsNullOrWhiteSpace(workspaceRevision) || workspace.ETag != workspaceRevision)
+        if (workspace.PendingProjectArchive is not null || workspace.PendingTaskOperation is not null || string.IsNullOrWhiteSpace(workspaceRevision) || workspace.ETag != workspaceRevision)
         {
             return new(null, null, ProjectChangeRejection.Conflict);
         }
@@ -43,7 +43,8 @@ public sealed class ProjectArchiveRepository(DatabaseContext database) : IProjec
         }
 
         var snapshot = WorkspaceStorageFormat.Read(workspace);
-        var decision = ProjectChangePolicy.CanArchive(project.Project, snapshot.Timer, snapshot.Tasks);
+        var tasks = workspace.TasksAuthoritative ? await ReadTasksAsync(userId, cancellationToken) : snapshot.Tasks;
+        var decision = ProjectChangePolicy.CanArchive(project.Project, snapshot.Timer, tasks);
 
         if (decision != ProjectChangeRejection.None)
         {
@@ -68,6 +69,13 @@ public sealed class ProjectArchiveRepository(DatabaseContext database) : IProjec
         }
 
         return await RecoverAsync(userId, cancellationToken) ?? new(null, null, ProjectChangeRejection.Conflict);
+    }
+
+    private async Task<List<Shared.Models.TaskRecord>> ReadTasksAsync(string userId, CancellationToken cancellationToken)
+    {
+        var documents = await database.Tasks.AsNoTracking().Where(item => item.UserId == userId).ToListAsync(cancellationToken);
+
+        return documents.Where(item => !item.IsDeleted).Select(item => item.Task ?? throw new InvalidDataException("A task document has no task data.")).ToList();
     }
 
     public async Task<ProjectWriteResult?> RecoverAsync(string userId, CancellationToken cancellationToken = default)
@@ -138,8 +146,9 @@ public sealed class ProjectArchiveRepository(DatabaseContext database) : IProjec
 
             var snapshot = WorkspaceStorageFormat.Read(workspace);
             var timer = snapshot.Timer;
+            var tasks = workspace.TasksAuthoritative ? await ReadTasksAsync(userId, cancellationToken) : snapshot.Tasks;
             var referencesProject = timer.ProjectId == project.Id ||
-                snapshot.Tasks.Any(task => task.Id == timer.TaskId && task.ProjectId == project.Id);
+                tasks.Any(task => task.Id == timer.TaskId && task.ProjectId == project.Id);
 
             if (timer.Phase == TimerPhase.Idle && referencesProject)
             {

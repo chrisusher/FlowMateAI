@@ -25,11 +25,15 @@ public sealed class WorkspaceCollectionSynchronizer(DatabaseContext database)
                             Project = item
                         }, (document, item) => document.Project = item, cancellationToken);
                 }
-                await SyncAsync(database.Tasks, userId, workspace.Tasks, item => item.Id,
-                    item => new WorkspaceTaskDocument
-                    {
-                        Task = item
-                    }, (document, item) => document.Task = item, cancellationToken);
+
+                if (!source.TasksAuthoritative)
+                {
+                    await SyncAsync(database.Tasks, userId, workspace.Tasks, item => item.Id,
+                        item => new WorkspaceTaskDocument
+                        {
+                            Task = item
+                        }, (document, item) => document.Task = item, cancellationToken);
+                }
                 await SyncAsync(database.Sessions, userId, workspace.Sessions, item => item.Id,
                     item => new WorkspaceSessionDocument
                     {

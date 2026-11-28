@@ -124,8 +124,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void AllTasksCardSortsAndHandlesTaskActions()
+    public async Task AllTasksCardSortsAndHandlesTaskActions()
     {
+        await EnableTaskWritesAsync();
         var cut = Render<AllTasksCard>();
         Assert.That(cut.FindAll(".task-title").Select(Content), Is.EqualTo(new[] { "Choose one thing", "Take a reset" }));
         cut.Find(".check-circle").Click();
@@ -144,8 +145,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void AllTasksFilterTogglesCompletedTasksAndUpdatesWhenReopened()
+    public async Task AllTasksFilterTogglesCompletedTasksAndUpdatesWhenReopened()
     {
+        await EnableTaskWritesAsync();
         PlannedTask.IsComplete = true;
         var cut = Render<AllTasksCard>();
 
@@ -160,8 +162,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void AllTasksCardTodayControlTogglesEachTaskAndSelectsActiveTask()
+    public async Task AllTasksCardTodayControlTogglesEachTaskAndSelectsActiveTask()
     {
+        await EnableTaskWritesAsync();
         var cut = Render<AllTasksCard>();
         cut.FindAll(".filter-chip")[1].Click();
         Assert.That(PlannedTask.PlannedToday, Is.False);
@@ -171,11 +174,12 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void TaskEditorDialogCreatesAndEditsWithoutMutatingTheOriginalDraft()
+    public async Task TaskEditorDialogCreatesAndEditsWithoutMutatingTheOriginalDraft()
     {
+        await EnableTaskWritesAsync();
         var cut = Render<TaskEditorDialog>();
         Assert.That(cut.FindAll("[role=dialog]"), Is.Empty);
-        Tasks.AddQuickTask();
+        await Tasks.AddQuickTask();
         cut.WaitForElement("[role=dialog]");
         cut.Find("input.field-input").Change("New task");
         cut.Find("form").Submit();
@@ -223,8 +227,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void MovingTaskPreservesFocusHistoryAndUpdatesIdleTimerSelection()
+    public async Task MovingTaskPreservesFocusHistoryAndUpdatesIdleTimerSelection()
     {
+        await EnableTaskWritesAsync();
         var destination = new ProjectRecord { Id = "project-two", Name = "Client work" };
         Store.Data.Projects.Add(destination);
         AddSession(25);
@@ -243,8 +248,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void RemovingTaskRequiresConfirmationAndKeepsFocusHistory()
+    public async Task RemovingTaskRequiresConfirmationAndKeepsFocusHistory()
     {
+        await EnableTaskWritesAsync();
         var removedTask = PlannedTask;
         AddSession(25);
         Store.Data.Timer.TaskId = removedTask.Id;
@@ -280,13 +286,13 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
         editor.Find("select.field-input").Change("project-two");
         editor.Find("form").Submit();
         Assert.That(PlannedTask.ProjectId, Is.EqualTo(Project.Id));
-        Assert.That(Tasks.ValidationMessage, Does.Contain("Pause or finish"));
+        Assert.That(Tasks.ValidationMessage, Does.Contain("Finish"));
 
         Tasks.CloseTaskDialog();
         var tasks = Render<AllTasksCard>();
         tasks.Find(".task-remove").Click();
         Assert.That(Tasks.RemoveTaskId, Is.Null);
-        Assert.That(Tasks.ActionMessage, Does.Contain("Pause or finish"));
+        Assert.That(Tasks.ActionMessage, Does.Contain("Finish"));
         Assert.That(Store.Data.Tasks, Does.Contain(PlannedTask));
     }
 
@@ -306,8 +312,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void TasksWithArchivedOrRemovedProjectsCanBeMovedToAnActiveProject()
+    public async Task TasksWithArchivedOrRemovedProjectsCanBeMovedToAnActiveProject()
     {
+        await EnableTaskWritesAsync();
         var destination = new ProjectRecord { Id = "project-two", Name = "Client work" };
         Store.Data.Projects.Add(destination);
         Project.IsArchived = true;
@@ -368,8 +375,9 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
     }
 
     [Test]
-    public void ProjectCardCreatesATaskForTheSelectedProject()
+    public async Task ProjectCardCreatesATaskForTheSelectedProject()
     {
+        await EnableTaskWritesAsync();
         var other = new ProjectRecord
         {
             Id = "project-two",
@@ -876,4 +884,42 @@ public sealed class TaskAndProjectComponentTests : WorkspaceComponentTest
             };
         };
     }
+    [Test]
+    public async Task ToggleAllPlan_OneRejectedChange_AppliesOnlyAcceptedTask()
+    {
+        await EnableTaskWritesAsync();
+        var original = Api.Respond!;
+        Api.Respond = (request, token) => request.Method == HttpMethod.Put && request.RequestUri!.AbsolutePath.EndsWith("/task-one")
+            ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = JsonContent.Create(new ApiError("task_conflict", "Reload the task."), options: SharedCommon.JsonOptions)
+            })
+            : original(request, token);
+
+        await Tasks.ToggleAllPlan();
+
+        Assert.That(Store.Data.Tasks.Single(task => task.Id == "task-one").PlannedToday, Is.True);
+        Assert.That(Store.Data.Tasks.Single(task => task.Id == "task-two").PlannedToday, Is.True);
+        Assert.That(Tasks.ActionMessage, Does.Contain("Choose one thing"));
+        Assert.That(Api.Paths.Count(path => path.StartsWith("/api/v1/tasks/", StringComparison.Ordinal)), Is.EqualTo(4));
+    }
+
+    [Test]
+    public async Task ToggleComplete_RejectedRequest_LeavesLocalTaskUnchanged()
+    {
+        await EnableTaskWritesAsync();
+        var original = Api.Respond!;
+        Api.Respond = (request, token) => request.Method == HttpMethod.Put
+            ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict)
+            {
+                Content = JsonContent.Create(new ApiError("task_conflict", "Reload the task."), options: SharedCommon.JsonOptions)
+            })
+            : original(request, token);
+
+        await Tasks.ToggleComplete(PlannedTask);
+
+        Assert.That(PlannedTask.IsComplete, Is.False);
+        Assert.That(Tasks.ActionMessage, Does.Contain("Reload"));
+    }
+
 }

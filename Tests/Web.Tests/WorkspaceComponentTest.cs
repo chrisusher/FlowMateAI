@@ -90,6 +90,72 @@ public abstract class WorkspaceComponentTest : BunitContext
         await Auth.InitialiseAsync();
     }
 
+    protected async Task EnableTaskWritesAsync()
+    {
+        await SignInAsync();
+        Api.Respond = async (request, cancellationToken) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+
+            if (path.StartsWith("/api/v1/tasks/", StringComparison.Ordinal) && request.Method == HttpMethod.Get)
+            {
+                var id = Uri.UnescapeDataString(path["/api/v1/tasks/".Length..]);
+                var task = Store.Data.Tasks.SingleOrDefault(item => item.Id == id);
+
+                if (task is null)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.NotFound);
+                }
+
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(task, options: SharedCommon.JsonOptions)
+                };
+                response.Headers.TryAddWithoutValidation("ETag", "revision");
+
+                return response;
+            }
+
+            if (path.StartsWith("/api/v1/tasks", StringComparison.Ordinal))
+            {
+                var input = await request.Content!.ReadFromJsonAsync<TaskWriteRequest>(SharedCommon.JsonOptions, cancellationToken);
+                var id = input!.Task?.Id ?? Uri.UnescapeDataString(path["/api/v1/tasks/".Length..]);
+                var original = Store.Data.Tasks.SingleOrDefault(item => item.Id == id);
+                var task = input.Task ?? original!;
+                var guarded = request.Method == HttpMethod.Post || request.Method == HttpMethod.Delete || original?.ProjectId != task.ProjectId;
+                var timer = JsonSerializer.Deserialize<TimerSnapshot>(JsonSerializer.Serialize(Store.Data.Timer, SharedCommon.JsonOptions), SharedCommon.JsonOptions)!;
+
+                if (timer.TaskId == id && guarded)
+                {
+                    if (request.Method == HttpMethod.Delete)
+                    {
+                        timer.TaskId = null;
+                        timer.ProjectId = "";
+                    }
+                    else
+                    {
+                        timer.ProjectId = task.ProjectId;
+                    }
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new TaskWriteResponse(task, "revision", guarded ? "workspace-revision" : null, guarded ? timer : null), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            if (path == "/api/v1/workspace" && request.Method == HttpMethod.Put)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new WorkspaceResponse(Store.Data, "workspace-revision"), options: SharedCommon.JsonOptions)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        };
+    }
+
     protected void AddSession(int minutes, DateTimeOffset? startedAt = null)
     {
         var start = startedAt ?? DateTimeOffset.UtcNow;
